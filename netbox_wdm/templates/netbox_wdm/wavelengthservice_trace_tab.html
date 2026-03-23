@@ -1,0 +1,35 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col col-md-8 mx-auto">
+        <div class="card">
+            <h5 class="card-header">{% trans "Stitched Wavelength Path" %}</h5>
+            <div class="card-body">
+                {% if stitched_path %}
+                <div class="d-flex flex-column align-items-center">
+                    {% for hop in stitched_path %}
+                    {% if not forloop.first %}
+                    <div style="width: 2px; height: 20px; background-color: #6c757d;"></div>
+                    {% endif %}
+                    <div class="border rounded p-3 mb-2 text-center" style="min-width: 300px; background-color: #d4edda; border-color: #28a745 !important;">
+                        <strong>{{ hop.node_name }}</strong><br>
+                        <small class="text-muted">
+                            {{ hop.channel_label }} &mdash; {{ hop.wavelength_nm }} nm
+                        </small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-muted text-center py-4">
+                    {% trans "No path segments assigned" %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
