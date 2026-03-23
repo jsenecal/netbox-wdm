@@ -1,0 +1,36 @@
+services:
+  netbox:
+    container_name: netbox-wdm-devcontainer
+    image: netboxcommunity/netbox:latest-devcontainer
+    depends_on:
+      - postgres
+      - redis
+    build:
+      dockerfile: .devcontainer/Dockerfile-plugin_dev
+      context: ..
+    env_file: env/netbox.env
+    volumes:
+      - ../:/opt/netbox-wdm:cached
+      - ~/.gitconfig:/home/ubuntu/.gitconfig:z,ro
+      - ~/.ssh:/home/ubuntu/.ssh
+      - ./configuration:/etc/netbox/config:z,ro
+    ports:
+      - "8090:8080"
+    command: ["sleep", "infinity"]
+
+  postgres:
+    container_name: netbox-wdm-postgres
+    image: postgis/postgis:16-3.4
+    env_file: env/postgres.env
+    volumes:
+      - netbox-wdm-postgres-data:/var/lib/postgresql/data
+
+  redis:
+    container_name: netbox-wdm-redis
+    image: redis:7-alpine
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass $$REDIS_PASSWORD"]
+    env_file: env/redis.env
+
+volumes:
+  netbox-wdm-postgres-data:
+    driver: local

@@ -1,0 +1,25 @@
+{
+  "name": "NetBox WDM Plugin Development",
+  "dockerComposeFile": ["docker-compose.yml"],
+  "service": "netbox",
+  "workspaceFolder": "/opt/netbox-wdm",
+  "overrideCommand": false,
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.analysis.extraPaths": ["/opt/netbox/netbox"],
+        "python.autoComplete.extraPaths": ["/opt/netbox/netbox"],
+        "python.defaultInterpreterPath": "/opt/netbox/venv/bin/python3",
+        "python.terminal.activateEnvironment": true,
+        "python.venvPath": "/opt/netbox/"
+      },
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "batisteo.vscode-django"
+      ]
+    }
+  },
+  "remoteUser": "ubuntu"
+}

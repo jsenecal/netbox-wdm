@@ -1,0 +1,7 @@
+debugpy
+ipython
+pre-commit
+pytest
+pytest-cov
+pytest-django
+ruff

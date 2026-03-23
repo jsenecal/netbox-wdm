@@ -1,0 +1,35 @@
+ARG NETBOX_VARIANT=v4.5.5-4.0.2
+
+FROM ghcr.io/netbox-community/netbox:${NETBOX_VARIANT}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get -y install --no-install-recommends \
+        curl git make openssh-client python3-dev sudo wget fish npm postgresql-client \
+        gdal-bin libgdal-dev libgeos-dev libproj-dev \
+    && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+COPY .devcontainer/requirements-dev.txt /tmp/pip-tmp/
+RUN /usr/local/bin/uv pip install --no-cache-dir -r /tmp/pip-tmp/requirements-dev.txt && rm -rf /tmp/*
+
+COPY .devcontainer/entrypoint-dev.sh /bin/entrypoint-dev.sh
+RUN chmod +x /bin/entrypoint-dev.sh
+
+ARG USERNAME=ubuntu
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+
+RUN chsh -s /usr/bin/fish $USERNAME; \
+    chown -R $USER_UID:$USER_GID /home/ubuntu; \
+    usermod -aG sudo $USERNAME \
+    && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers.d/nopasswd
+
+COPY --chown=${USERNAME}:${USERNAME} . /opt/netbox-wdm
+
+RUN chown $USERNAME:$USERNAME /opt/netbox /etc/netbox -R
+
+USER ${USERNAME}
+
+RUN /usr/local/bin/uv pip install --no-cache-dir -e /opt/netbox-wdm
+
+ENTRYPOINT ["/bin/entrypoint-dev.sh"]
