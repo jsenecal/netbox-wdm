@@ -1,0 +1,38 @@
+const esbuild = require('esbuild');
+const path = require('path');
+
+const isWatch = process.argv.includes('--watch');
+
+const shared = {
+  bundle: true,
+  minify: !isWatch,
+  sourcemap: 'linked',
+  target: 'es2016',
+  format: 'iife',
+  logLevel: 'info',
+};
+
+const entries = [
+  {
+    entryPoints: [path.join(__dirname, 'src', 'wavelength-editor.ts')],
+    globalName: 'WavelengthEditor',
+    outfile: path.join(__dirname, 'dist', 'wavelength-editor.min.js'),
+  },
+];
+
+async function main() {
+  if (isWatch) {
+    for (const entry of entries) {
+      const ctx = await esbuild.context({ ...shared, ...entry });
+      await ctx.watch();
+    }
+    console.log('Watching for changes...');
+  } else {
+    await Promise.all(entries.map((entry) => esbuild.build({ ...shared, ...entry })));
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
