@@ -1,5 +1,5 @@
 from django.urls import include, path
-from netbox.urls import get_model_urls
+from utilities.urls import get_model_urls
 
 from . import views
 

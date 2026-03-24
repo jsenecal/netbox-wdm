@@ -30,12 +30,11 @@ from netbox_wdm.models import (
 @pytest.fixture
 def api_client():
     """Authenticated DRF test client with superuser-level access."""
-    from users.models import Token, User
+    from users.models import User
 
     user = User.objects.create_superuser(username="test_api_user", password="password")
-    token = Token.objects.create(user=user)
     client = APIClient()
-    client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+    client.force_login(user)
     return client
 
 
@@ -390,7 +389,10 @@ class TestApplyMappingAPI:
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data == {"added": 0, "removed": 0, "changed": 0}
+        assert response.data["added"] == 0
+        assert response.data["removed"] == 0
+        assert response.data["changed"] == 0
+        assert "last_updated" in response.data
 
 
 # ---------------------------------------------------------------------------

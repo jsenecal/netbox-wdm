@@ -19,6 +19,3 @@ htmlcov/
 site/
 .devcontainer/home/
 .devcontainer/env/
-.superpowers/
-.worktrees/
-docs/superpowers/
