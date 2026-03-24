@@ -5,7 +5,7 @@
 The WDM component library provides shared UI primitives for WDM visualization views: wavelength editors, channel planners, and service path traces. It is **not** a full design system — it covers the specific patterns that appear across WDM canvases and panels.
 
 **Files:**
-- CSS: `netbox_wdm/static/netbox_wdm/css/wdm-components.css` (when created)
+- CSS: `netbox_wdm/static/netbox_wdm/css/wdm-components.css` (not yet created — follow this guide when implementing)
 - TypeScript: `netbox_wdm/static/netbox_wdm/src/`
 - Built output: `netbox_wdm/static/netbox_wdm/dist/` (via `npm run build`)
 
