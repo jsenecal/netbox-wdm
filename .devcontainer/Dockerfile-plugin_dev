@@ -52,12 +52,6 @@ USER ${USERNAME}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Add ohmyfish
-RUN curl "https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install" > /tmp/install_omf && fish /tmp/install_omf --noninteractive && rm /tmp/install_omf && fish -c "omf install bobthefish"
-
-# Add Claude Code to the devcontainer
-RUN mkdir -p ~/.npm && npm config set prefix ~/.npm && npm install -g @anthropic-ai/claude-code
-
 RUN /usr/local/bin/uv pip install netbox-initializers==$NETBOX_INITIALIZERS_VARIANT
 
 # Install netbox-wdm (editable)
