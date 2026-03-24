@@ -1,7 +1,8 @@
+---
 services:
-  netbox:
+  netbox: &netbox
     container_name: netbox-wdm-devcontainer
-    image: netboxcommunity/netbox:latest-devcontainer
+    image: netboxcommunity/netbox:${NETBOX_VARIANT-latest}-devcontainer
     depends_on:
       - postgres
       - redis
@@ -13,10 +14,29 @@ services:
       - ../:/opt/netbox-wdm:cached
       - ~/.gitconfig:/home/ubuntu/.gitconfig:z,ro
       - ~/.ssh:/home/ubuntu/.ssh
+      - ./home/.config/:/home/ubuntu/.config/
+      - ./home/.claude:/home/ubuntu/.claude
+      - ./home/.claude.json:/home/ubuntu/.claude.json
       - ./configuration:/etc/netbox/config:z,ro
+      - netbox-scripts:/etc/netbox/scripts
     ports:
       - "8090:8080"
-    command: ["sleep", "infinity"]
+    command:
+      - sleep
+      - infinity
+  netbox-worker:
+    <<: *netbox
+    container_name: netbox-wdm-worker
+    command:
+      - /opt/netbox/venv/bin/python
+      - /opt/netbox/netbox/manage.py
+      - rqworker
+    ports: []
+    healthcheck:
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      test: "ps -aux | grep -v grep | grep -q rqworker || exit 1"
 
   postgres:
     container_name: netbox-wdm-postgres
@@ -28,9 +48,14 @@ services:
   redis:
     container_name: netbox-wdm-redis
     image: redis:7-alpine
-    command: ["sh", "-c", "redis-server --appendonly yes --requirepass $$REDIS_PASSWORD"]
+    command:
+      - sh
+      - -c
+      - redis-server --appendonly yes --requirepass $$REDIS_PASSWORD
     env_file: env/redis.env
 
 volumes:
   netbox-wdm-postgres-data:
+    driver: local
+  netbox-scripts:
     driver: local
