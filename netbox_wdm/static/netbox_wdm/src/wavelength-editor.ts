@@ -380,3 +380,12 @@ class WavelengthEditor {
     });
   }
 }
+
+// Entry point
+const config = (window as unknown as { WAVELENGTH_EDITOR_CONFIG?: EditorConfig }).WAVELENGTH_EDITOR_CONFIG;
+if (config) {
+  const container = document.getElementById('wavelength-editor-container');
+  if (container) {
+    new WavelengthEditor(container, config);
+  }
+}

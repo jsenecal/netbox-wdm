@@ -339,6 +339,9 @@ class WavelengthService(NetBoxModel):
         """Validate channel consistency: same grid, matching wavelength."""
         super().clean()
 
+        if not self.pk:
+            return
+
         channel_assignments = self.channel_assignments.select_related("channel__wdm_node").all()
         if not channel_assignments.exists():
             return

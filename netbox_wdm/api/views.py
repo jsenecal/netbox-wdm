@@ -155,13 +155,15 @@ class WdmNodeViewSet(NetBoxModelViewSet):
         desired = request.data.get("mapping", {})
         desired = {int(k): (int(v) if v else None) for k, v in desired.items()}
 
-        errors = WdmNode.validate_channel_mapping(node, desired)
-        if errors:
-            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
         with transaction.atomic():
+            errors = WdmNode.validate_channel_mapping(node, desired)
+            if errors:
+                return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
             result = _apply_mapping(node, desired)
 
+        node.refresh_from_db()
+        result["last_updated"] = str(node.last_updated)
         return Response(result)
 
 

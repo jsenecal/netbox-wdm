@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 include = ["netbox_wdm", "netbox_wdm.*"]
 
 [tool.setuptools.package-data]
-netbox_wdm = ["templates/**/*"]
+netbox_wdm = ["templates/**/*", "static/**/*"]
 
 [project]
 name = "netbox-wdm"
