@@ -810,13 +810,17 @@ class Command(BaseCommand):
             self.stdout.write(f"  Cable: {label}")
             return cable
 
-        # === East side ===
-        # Router eth0 -> CWDM MUX CH1-MUX + CH1-DEMUX (duplex: one cable, two front ports)
-        create_cable(
-            get_interface(dev_east_router, "eth0"),
-            [get_front_port(dev_east_cwdm, "CH1-MUX"), get_front_port(dev_east_cwdm, "CH1-DEMUX")],
-            "East Router eth0 to CWDM CH1",
-        )
+        # === East side client cables ===
+        # Cable CH1-CH3 and CH6 to router interfaces (CH4-5, CH7-8 left disconnected)
+        for i, ch_num in enumerate([1, 2, 3, 6]):
+            create_cable(
+                get_interface(dev_east_router, f"eth{i}"),
+                [
+                    get_front_port(dev_east_cwdm, f"CH{ch_num}-MUX"),
+                    get_front_port(dev_east_cwdm, f"CH{ch_num}-DEMUX"),
+                ],
+                f"East Router eth{i} to CWDM CH{ch_num}",
+            )
 
         # CWDM MUX COM-TX + COM-RX -> East PP RP-01 + RP-02 (duplex trunk pair)
         create_cable(
@@ -832,20 +836,23 @@ class Command(BaseCommand):
             "East-West Trunk Fiber",
         )
 
-        # === West side ===
-        # West PP RP-01 + RP-02 -> CWDM MUX COM-TX + COM-RX
+        # === West side client cables ===
+        # Mirror East: cable CH1-CH3 and CH6
         create_cable(
             [get_rear_port(dev_west_pp, "RP-01"), get_rear_port(dev_west_pp, "RP-02")],
             [get_rear_port(dev_west_cwdm, "COM-TX"), get_rear_port(dev_west_cwdm, "COM-RX")],
             "West PP to CWDM COM",
         )
 
-        # CWDM MUX CH1-MUX + CH1-DEMUX -> Router eth0 (duplex)
-        create_cable(
-            [get_front_port(dev_west_cwdm, "CH1-MUX"), get_front_port(dev_west_cwdm, "CH1-DEMUX")],
-            get_interface(dev_west_router, "eth0"),
-            "West CWDM CH1 to Router eth0",
-        )
+        for i, ch_num in enumerate([1, 2, 3, 6]):
+            create_cable(
+                [
+                    get_front_port(dev_west_cwdm, f"CH{ch_num}-MUX"),
+                    get_front_port(dev_west_cwdm, f"CH{ch_num}-DEMUX"),
+                ],
+                get_interface(dev_west_router, f"eth{i}"),
+                f"West CWDM CH{ch_num} to Router eth{i}",
+            )
 
         # === EXP daisy-chain demo ===
         # EAST-CWDM-MUX-01 EXP-MUX + EXP-DEMUX -> EAST-CWDM-SF-01 COM (duplex to single-fiber)
@@ -860,25 +867,46 @@ class Command(BaseCommand):
     # ================================================================
 
     def _configure_channels(self, dev_east_cwdm, dev_west_cwdm):
-        """Assign front ports to first 4 channels on East and West, set statuses."""
+        """Set channel statuses to demonstrate all combined cable+status states.
+
+        Combined states across 8 channels per MUX:
+          CH1: Active   + Connected  (fully operational)
+          CH2: Active   + Connected  (fully operational)
+          CH3: Reserved + Connected  (wired, held for future use)
+          CH4: Active   + Disconnected (problem - service active but no cable!)
+          CH5: Reserved + Disconnected (planned, not yet cabled)
+          CH6: Available + Connected  (cabled but no service)
+          CH7: Available + Disconnected (empty slot)
+          CH8: Available + Disconnected (empty slot)
+
+        Cables: CH1,CH2,CH3,CH6 are cabled to router. CH4,CH5,CH7,CH8 are not.
+        """
         from netbox_wdm.models import WavelengthChannel
 
         for dev in [dev_east_cwdm, dev_west_cwdm]:
             if not hasattr(dev, "wdm_node"):
                 continue
 
-            channels = list(dev.wdm_node.channels.order_by("grid_position")[:4])
-            # Channels auto-populated with mux/demux ports from templates, so they should already be set.
-            # Set statuses to match service lifecycle:
-            #   CH1 (1270nm) -> active service  -> lit
-            #   CH2 (1290nm) -> planned service -> available (not yet provisioned)
-            #   CH3 (1310nm) -> staged service  -> reserved (provisioned, not active)
-            #   CH4+         -> no service      -> available
-            if len(channels) >= 3:
-                channels[0].status = "active"
-                channels[2].status = "reserved"
-                WavelengthChannel.objects.bulk_update([channels[0], channels[2]], ["status"])
-                self.stdout.write(f"  Channel status on {dev.name}: 1 lit, 1 reserved, {len(channels) - 2} available")
+            channels = list(dev.wdm_node.channels.order_by("grid_position"))
+            if len(channels) < 8:
+                continue
+
+            channels[0].status = "active"  # CH1: active + connected
+            channels[1].status = "active"  # CH2: active + connected
+            channels[2].status = "reserved"  # CH3: reserved + connected
+            channels[3].status = "active"  # CH4: active + disconnected (problem!)
+            channels[4].status = "reserved"  # CH5: reserved + disconnected
+            # CH6: available + connected (default status, has cable)
+            # CH7: available + disconnected (default)
+            # CH8: available + disconnected (default)
+
+            WavelengthChannel.objects.bulk_update(channels[:5], ["status"])
+            self.stdout.write(
+                f"  Channel status on {dev.name}: "
+                f"2 active+connected, 1 reserved+connected, "
+                f"1 active+disconnected, 1 reserved+disconnected, "
+                f"1 available+connected, 2 available+disconnected"
+            )
 
     # ================================================================
     # Wavelength Services
@@ -902,13 +930,13 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("  Skipping services: missing channels"))
             return
 
-        # Service 1: ACTIVE East-West on channel 1 (1270nm)
+        # Service 1: ACTIVE East-West on CH1 (1270nm) - active+connected on both ends
         svc1, created = WavelengthService.objects.get_or_create(
             name="CWDM-1270-EastWest",
             defaults={
                 "status": "active",
                 "wavelength_nm": east_channels[0].wavelength_nm,
-                "description": "Active CWDM wavelength service from East Coast to West Coast.",
+                "description": "Active CWDM service, fully cabled East to West.",
             },
         )
         if created:
@@ -916,33 +944,61 @@ class Command(BaseCommand):
             self._assign_channels(svc1, [east_channels[0], west_channels[0]])
             self.stdout.write(f"  Service: {svc1.name} (ACTIVE, 2-hop, {svc1.wavelength_nm}nm)")
 
-        # Service 2: PLANNED East-West on channel 2 (1290nm)
+        # Service 2: ACTIVE East-West on CH2 (1290nm) - active+connected
         svc2, created = WavelengthService.objects.get_or_create(
-            name="CWDM-1290-Planned",
+            name="CWDM-1290-EastWest",
             defaults={
-                "status": "planned",
+                "status": "active",
                 "wavelength_nm": east_channels[1].wavelength_nm,
-                "description": "Planned CWDM wavelength service pending fiber turn-up.",
+                "description": "Active CWDM service, fully cabled East to West.",
             },
         )
         if created:
             self._tag(svc2, tag)
             self._assign_channels(svc2, [east_channels[1], west_channels[1]])
-            self.stdout.write(f"  Service: {svc2.name} (PLANNED, 2-hop, {svc2.wavelength_nm}nm)")
+            self.stdout.write(f"  Service: {svc2.name} (ACTIVE, 2-hop, {svc2.wavelength_nm}nm)")
 
-        # Service 3: STAGED East-only on channel 3 (1310nm)
+        # Service 3: STAGED East-West on CH3 (1310nm) - reserved+connected
         svc3, created = WavelengthService.objects.get_or_create(
             name="CWDM-1310-Staged",
             defaults={
                 "status": "staged",
                 "wavelength_nm": east_channels[2].wavelength_nm,
-                "description": "Staged CWDM wavelength service, single-hop on East side.",
+                "description": "Staged service, cabled and reserved, awaiting activation.",
             },
         )
         if created:
             self._tag(svc3, tag)
-            self._assign_channels(svc3, [east_channels[2]])
-            self.stdout.write(f"  Service: {svc3.name} (STAGED, 1-hop, {svc3.wavelength_nm}nm)")
+            self._assign_channels(svc3, [east_channels[2], west_channels[2]])
+            self.stdout.write(f"  Service: {svc3.name} (STAGED, 2-hop, {svc3.wavelength_nm}nm)")
+
+        # Service 4: ACTIVE East-only on CH4 (1330nm) - active+DISCONNECTED (problem state!)
+        svc4, created = WavelengthService.objects.get_or_create(
+            name="CWDM-1330-Fault",
+            defaults={
+                "status": "active",
+                "wavelength_nm": east_channels[3].wavelength_nm,
+                "description": "Active service on disconnected channel - cable fault or missing patch.",
+            },
+        )
+        if created:
+            self._tag(svc4, tag)
+            self._assign_channels(svc4, [east_channels[3]])
+            self.stdout.write(f"  Service: {svc4.name} (ACTIVE but DISCONNECTED, 1-hop, {svc4.wavelength_nm}nm)")
+
+        # Service 5: PLANNED East-only on CH5 (1350nm) - reserved+disconnected
+        svc5, created = WavelengthService.objects.get_or_create(
+            name="CWDM-1350-Planned",
+            defaults={
+                "status": "planned",
+                "wavelength_nm": east_channels[4].wavelength_nm,
+                "description": "Planned service, channel reserved but not yet cabled.",
+            },
+        )
+        if created:
+            self._tag(svc5, tag)
+            self._assign_channels(svc5, [east_channels[4]])
+            self.stdout.write(f"  Service: {svc5.name} (PLANNED, 1-hop, {svc5.wavelength_nm}nm)")
 
     def _assign_channels(self, service, channels):
         from netbox_wdm.models import WavelengthServiceChannelAssignment, WavelengthServiceNode
@@ -993,11 +1049,11 @@ class Command(BaseCommand):
         self.stdout.write("\n--- Channel Status Breakdown ---")
         for node in WdmNode.objects.filter(tags__slug=SAMPLE_TAG).select_related("device"):
             total = node.channels.count()
-            lit = node.channels.filter(status="active").count()
+            active = node.channels.filter(status="active").count()
             reserved = node.channels.filter(status="reserved").count()
             available = node.channels.filter(status="available").count()
             self.stdout.write(
-                f"  {node.device.name}: {total} total ({lit} lit, {reserved} reserved, {available} available)"
+                f"  {node.device.name}: {total} total ({active} active, {reserved} reserved, {available} available)"
             )
 
         self.stdout.write("\n--- Services ---")
