@@ -64,14 +64,14 @@
                     </div>
                     {% endif %}
                 </div>
-                <div class="d-flex flex-wrap gap-3">
-                    <small><span class="badge bg-success">{{ channel_stats.active_connected }}</span> {% trans "Active" %}</small>
-                    {% if channel_stats.active_disconnected %}
-                    <small><span class="badge bg-success bg-opacity-50">{{ channel_stats.active_disconnected }}</span> {% trans "Active (no cable)" %}</small>
-                    {% endif %}
-                    <small><span class="badge bg-warning text-dark">{{ channel_stats.reserved_connected|add:channel_stats.reserved_disconnected }}</span> {% trans "Reserved" %}</small>
-                    <small><span class="badge bg-secondary">{{ channel_stats.available_connected|add:channel_stats.available_disconnected }}</span> {% trans "Available" %}</small>
-                    <small class="text-muted ms-auto">{{ channel_stats.total }} {% trans "total" %}</small>
+                <div class="d-flex flex-wrap gap-1 small">
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-success px-2">{% trans "Active" %}</span></span>
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-success progress-bar-striped px-2">{% trans "Active (no cable)" %}</span></span>
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-warning text-dark px-2">{% trans "Reserved" %}</span></span>
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-warning text-dark progress-bar-striped px-2">{% trans "Reserved (no cable)" %}</span></span>
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-info text-dark px-2">{% trans "Connected" %}</span></span>
+                    <span class="rounded overflow-hidden d-inline-flex" style="height: 18px;"><span class="progress-bar bg-secondary px-2">{% trans "Available" %}</span></span>
+                    <span class="text-muted ms-auto align-self-center">{{ channel_stats.total }} {% trans "total" %}</span>
                 </div>
                 {% else %}
                 <p class="text-muted mb-0">{% trans "No channels configured." %}</p>
