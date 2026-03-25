@@ -38,27 +38,22 @@
             <div class="card-body">
                 {% if channel_stats.total %}
                 <div class="progress mb-2" style="height: 24px;">
-                    {% if channel_stats.lit_pct %}
-                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ channel_stats.lit_pct }}%" title="{{ channel_stats.lit }} Lit">
-                        {{ channel_stats.lit }}
-                    </div>
-                    {% endif %}
-                    {% if channel_stats.reserved_pct %}
-                    <div class="progress-bar bg-warning text-dark" role="progressbar" style="width: {{ channel_stats.reserved_pct }}%" title="{{ channel_stats.reserved }} Reserved">
-                        {{ channel_stats.reserved }}
-                    </div>
-                    {% endif %}
-                    {% if channel_stats.available_pct %}
-                    <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ channel_stats.available_pct }}%" title="{{ channel_stats.available }} Available">
-                        {{ channel_stats.available }}
+                    {% if channel_stats.connected_pct %}
+                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ channel_stats.connected_pct }}%" title="{{ channel_stats.connected }} Connected">
+                        {{ channel_stats.connected }}
                     </div>
                     {% endif %}
                 </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <small><span class="badge bg-primary">{{ channel_stats.connected }}</span> {% trans "Connected" %}</small>
+                    <small><span class="badge bg-secondary">{{ channel_stats.unconnected }}</span> {% trans "Unconnected" %}</small>
+                    <small class="text-muted">{{ channel_stats.total }} {% trans "total" %}</small>
+                </div>
+                <h6 class="text-muted">{% trans "Service Status" %}</h6>
                 <div class="d-flex justify-content-between">
                     <small><span class="badge bg-success">{{ channel_stats.lit }}</span> {% trans "Lit" %}</small>
                     <small><span class="badge bg-warning text-dark">{{ channel_stats.reserved }}</span> {% trans "Reserved" %}</small>
                     <small><span class="badge bg-secondary">{{ channel_stats.available }}</span> {% trans "Available" %}</small>
-                    <small class="text-muted">{{ channel_stats.total }} {% trans "total" %}</small>
                 </div>
                 {% else %}
                 <p class="text-muted mb-0">{% trans "No channels configured." %}</p>

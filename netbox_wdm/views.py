@@ -138,22 +138,34 @@ class WdmNodeView(generic.ObjectView):
     queryset = WdmNode.objects.select_related("device")
 
     def get_extra_context(self, request, instance):
-        channels = instance.channels.all()
-        total = channels.count()
-        lit = channels.filter(status="lit").count()
-        reserved = channels.filter(status="reserved").count()
-        available = channels.filter(status="available").count()
+        channels = list(instance.channels.select_related("mux_front_port", "demux_front_port"))
+        total = len(channels)
+
+        # Utilization from actual cable connectivity, not service status
+        connected = sum(
+            1
+            for ch in channels
+            if (ch.mux_front_port and ch.mux_front_port.cable_id)
+            or (ch.demux_front_port and ch.demux_front_port.cable_id)
+        )
+        unconnected = total - connected
+
+        # Service status counts (informational, not utilization)
+        lit = sum(1 for ch in channels if ch.status == "lit")
+        reserved = sum(1 for ch in channels if ch.status == "reserved")
+        available = sum(1 for ch in channels if ch.status == "available")
+
         return {
             "channel_count": total,
             "trunk_port_count": instance.trunk_ports.count(),
             "channel_stats": {
                 "total": total,
+                "connected": connected,
+                "unconnected": unconnected,
+                "connected_pct": round(connected / total * 100) if total else 0,
                 "lit": lit,
                 "reserved": reserved,
                 "available": available,
-                "lit_pct": round(lit / total * 100) if total else 0,
-                "reserved_pct": round(reserved / total * 100) if total else 0,
-                "available_pct": round(available / total * 100) if total else 0,
             },
         }
 
@@ -374,7 +386,25 @@ class WavelengthServiceTraceView(generic.ObjectView):
         return "netbox_wdm/wavelengthservice_trace_tab.html"
 
     def get_extra_context(self, request, instance):
-        return {"stitched_path": instance.get_stitched_path()}
+        from dcim.models import CablePath
+
+        stitched_path = instance.get_stitched_path()
+
+        # For each hop, trace the actual cable path from the channel's mux_front_port
+        for hop in stitched_path:
+            hop["cable_path"] = None
+            if hop.get("mux_front_port_id"):
+                path = CablePath.objects.filter(
+                    _nodes__contains=[{"type": "dcim.frontport", "id": hop["mux_front_port_id"]}]
+                ).first()
+                if path:
+                    hop["cable_path"] = {
+                        "is_complete": path.is_complete,
+                        "is_active": path.is_active,
+                        "segment_count": len(path.path) if path.path else 0,
+                    }
+
+        return {"stitched_path": stitched_path}
 
 
 @register_model_view(WavelengthService, "edit")

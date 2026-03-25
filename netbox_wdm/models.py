@@ -473,16 +473,25 @@ class WavelengthService(NetBoxModel):
     def get_stitched_path(self):
         """Return the stitched end-to-end path as an ordered list of hop dicts."""
         hops = []
-        for ca in self.channel_assignments.select_related("channel__wdm_node__device").order_by("sequence"):
+        for ca in self.channel_assignments.select_related(
+            "channel__wdm_node__device",
+            "channel__mux_front_port",
+            "channel__demux_front_port",
+        ).order_by("sequence"):
             if ca.channel:
+                ch = ca.channel
                 hops.append(
                     {
                         "type": "wdm_node",
-                        "node_id": ca.channel.wdm_node_id,
-                        "node_name": ca.channel.wdm_node.device.name,
-                        "channel_id": ca.channel_id,
-                        "channel_label": ca.channel.label,
-                        "wavelength_nm": float(ca.channel.wavelength_nm),
+                        "node_id": ch.wdm_node_id,
+                        "node_name": ch.wdm_node.device.name,
+                        "channel_id": ch.pk,
+                        "channel_label": ch.label,
+                        "wavelength_nm": float(ch.wavelength_nm),
+                        "mux_front_port_id": ch.mux_front_port_id,
+                        "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
+                        "demux_front_port_id": ch.demux_front_port_id,
+                        "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
                     }
                 )
         return hops

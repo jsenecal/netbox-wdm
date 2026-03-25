@@ -14,15 +14,20 @@ from .models import (
 
 class WdmDeviceTypeProfileTable(NetBoxTable):
     pk = columns.ToggleColumn()
+    name = tables.Column(verbose_name=_("Profile"), linkify=True, accessor="pk")
     device_type = tables.Column(linkify=True, verbose_name=_("Device Type"))
     node_type = tables.Column(verbose_name=_("Node Type"))
     grid = tables.Column(verbose_name=_("Grid"))
+    fiber_type = tables.Column(verbose_name=_("Fiber Type"))
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
         model = WdmDeviceTypeProfile
-        fields = ("pk", "id", "device_type", "node_type", "grid", "description", "actions")
-        default_columns = ("pk", "device_type", "node_type", "grid", "actions")
+        fields = ("pk", "id", "name", "device_type", "node_type", "grid", "fiber_type", "description", "actions")
+        default_columns = ("pk", "name", "device_type", "node_type", "grid", "fiber_type", "actions")
+
+    def render_name(self, record):
+        return str(record)
 
 
 class WdmChannelTemplateTable(NetBoxTable):
@@ -61,6 +66,7 @@ class WdmChannelTemplateTable(NetBoxTable):
 
 class WdmNodeTable(NetBoxTable):
     pk = columns.ToggleColumn()
+    name = tables.Column(verbose_name=_("Node"), linkify=True, accessor="pk")
     device = tables.Column(linkify=True, verbose_name=_("Device"))
     node_type = tables.Column(verbose_name=_("Node Type"))
     grid = tables.Column(verbose_name=_("Grid"))
@@ -68,8 +74,11 @@ class WdmNodeTable(NetBoxTable):
 
     class Meta(NetBoxTable.Meta):
         model = WdmNode
-        fields = ("pk", "id", "device", "node_type", "grid", "description", "actions")
-        default_columns = ("pk", "device", "node_type", "grid", "actions")
+        fields = ("pk", "id", "name", "device", "node_type", "grid", "description", "actions")
+        default_columns = ("pk", "name", "node_type", "grid", "actions")
+
+    def render_name(self, record):
+        return str(record)
 
 
 class WdmTrunkPortTable(NetBoxTable):
