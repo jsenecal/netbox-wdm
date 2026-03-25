@@ -7,7 +7,7 @@ export interface ChannelData {
   mux_front_port_name: string | null;
   demux_front_port_id: number | null;
   demux_front_port_name: string | null;
-  status: 'available' | 'reserved' | 'lit';
+  status: 'available' | 'reserved' | 'active';
   service_name: string | null;
 }
 

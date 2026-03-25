@@ -61,11 +61,11 @@ class WdmTrunkRoleChoices(ChoiceSet):
 class WavelengthChannelStatusChoices(ChoiceSet):
     AVAILABLE = "available"
     RESERVED = "reserved"
-    LIT = "lit"
+    ACTIVE = "active"
     CHOICES = (
         (AVAILABLE, "Available"),
         (RESERVED, "Reserved"),
-        (LIT, "Lit"),
+        (ACTIVE, "Active"),
     )
 
 

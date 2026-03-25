@@ -227,7 +227,7 @@ class TestValidateChannelMapping:
             grid_position=1,
             wavelength_nm=1560.61,
             label="C21",
-            status=WavelengthChannelStatusChoices.LIT,
+            status=WavelengthChannelStatusChoices.ACTIVE,
         )
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 999, "demux": None}})
         assert len(errors) == 1

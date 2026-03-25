@@ -37,23 +37,46 @@
             <h5 class="card-header">{% trans "Channel Utilization" %}</h5>
             <div class="card-body">
                 {% if channel_stats.total %}
-                <div class="progress mb-2" style="height: 24px;">
-                    {% if channel_stats.connected_pct %}
-                    <div class="progress-bar bg-primary" role="progressbar" style="width: {{ channel_stats.connected_pct }}%" title="{{ channel_stats.connected }} Connected">
-                        {{ channel_stats.connected }}
+                <div class="progress-stacked mb-3" style="height: 24px;">
+                    {% if channel_stats.active_connected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.active_connected_pct }}%" title="{{ channel_stats.active_connected }} Active + Connected">
+                        <div class="progress-bar bg-success">{{ channel_stats.active_connected }}</div>
+                    </div>
+                    {% endif %}
+                    {% if channel_stats.active_disconnected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.active_disconnected_pct }}%" title="{{ channel_stats.active_disconnected }} Active + Disconnected">
+                        <div class="progress-bar bg-success progress-bar-striped">{{ channel_stats.active_disconnected }}</div>
+                    </div>
+                    {% endif %}
+                    {% if channel_stats.reserved_connected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.reserved_connected_pct }}%" title="{{ channel_stats.reserved_connected }} Reserved + Connected">
+                        <div class="progress-bar bg-warning text-dark">{{ channel_stats.reserved_connected }}</div>
+                    </div>
+                    {% endif %}
+                    {% if channel_stats.reserved_disconnected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.reserved_disconnected_pct }}%" title="{{ channel_stats.reserved_disconnected }} Reserved + Disconnected">
+                        <div class="progress-bar bg-warning text-dark progress-bar-striped">{{ channel_stats.reserved_disconnected }}</div>
+                    </div>
+                    {% endif %}
+                    {% if channel_stats.available_connected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.available_connected_pct }}%" title="{{ channel_stats.available_connected }} Available + Connected">
+                        <div class="progress-bar bg-info text-dark">{{ channel_stats.available_connected }}</div>
+                    </div>
+                    {% endif %}
+                    {% if channel_stats.available_disconnected_pct %}
+                    <div class="progress" role="progressbar" style="width: {{ channel_stats.available_disconnected_pct }}%" title="{{ channel_stats.available_disconnected }} Available + Disconnected">
+                        <div class="progress-bar bg-secondary bg-opacity-25 text-muted">{{ channel_stats.available_disconnected }}</div>
                     </div>
                     {% endif %}
                 </div>
-                <div class="d-flex justify-content-between mb-3">
-                    <small><span class="badge bg-primary">{{ channel_stats.connected }}</span> {% trans "Connected" %}</small>
-                    <small><span class="badge bg-secondary">{{ channel_stats.unconnected }}</span> {% trans "Unconnected" %}</small>
-                    <small class="text-muted">{{ channel_stats.total }} {% trans "total" %}</small>
-                </div>
-                <h6 class="text-muted">{% trans "Service Status" %}</h6>
-                <div class="d-flex justify-content-between">
-                    <small><span class="badge bg-success">{{ channel_stats.lit }}</span> {% trans "Lit" %}</small>
-                    <small><span class="badge bg-warning text-dark">{{ channel_stats.reserved }}</span> {% trans "Reserved" %}</small>
-                    <small><span class="badge bg-secondary">{{ channel_stats.available }}</span> {% trans "Available" %}</small>
+                <div class="d-flex flex-wrap gap-3">
+                    <small><span class="badge bg-success">{{ channel_stats.active_connected }}</span> {% trans "Active" %}</small>
+                    {% if channel_stats.active_disconnected %}
+                    <small><span class="badge bg-success bg-opacity-50">{{ channel_stats.active_disconnected }}</span> {% trans "Active (no cable)" %}</small>
+                    {% endif %}
+                    <small><span class="badge bg-warning text-dark">{{ channel_stats.reserved_connected|add:channel_stats.reserved_disconnected }}</span> {% trans "Reserved" %}</small>
+                    <small><span class="badge bg-secondary">{{ channel_stats.available_connected|add:channel_stats.available_disconnected }}</span> {% trans "Available" %}</small>
+                    <small class="text-muted ms-auto">{{ channel_stats.total }} {% trans "total" %}</small>
                 </div>
                 {% else %}
                 <p class="text-muted mb-0">{% trans "No channels configured." %}</p>

@@ -141,31 +141,53 @@ class WdmNodeView(generic.ObjectView):
         channels = list(instance.channels.select_related("mux_front_port", "demux_front_port"))
         total = len(channels)
 
-        # Utilization from actual cable connectivity, not service status
-        connected = sum(
-            1
-            for ch in channels
-            if (ch.mux_front_port and ch.mux_front_port.cable_id)
-            or (ch.demux_front_port and ch.demux_front_port.cable_id)
-        )
-        unconnected = total - connected
+        # Compute combined cable + status counts for stacked bar
+        active_connected = 0
+        active_disconnected = 0
+        reserved_connected = 0
+        reserved_disconnected = 0
+        available_connected = 0
+        available_disconnected = 0
 
-        # Service status counts (informational, not utilization)
-        lit = sum(1 for ch in channels if ch.status == "lit")
-        reserved = sum(1 for ch in channels if ch.status == "reserved")
-        available = sum(1 for ch in channels if ch.status == "available")
+        for ch in channels:
+            has_cable = (ch.mux_front_port and ch.mux_front_port.cable_id) or (
+                ch.demux_front_port and ch.demux_front_port.cable_id
+            )
+            if ch.status == "active":
+                if has_cable:
+                    active_connected += 1
+                else:
+                    active_disconnected += 1
+            elif ch.status == "reserved":
+                if has_cable:
+                    reserved_connected += 1
+                else:
+                    reserved_disconnected += 1
+            else:
+                if has_cable:
+                    available_connected += 1
+                else:
+                    available_disconnected += 1
+
+        pct = lambda n: round(n / total * 100) if total else 0  # noqa: E731
 
         return {
             "channel_count": total,
             "trunk_port_count": instance.trunk_ports.count(),
             "channel_stats": {
                 "total": total,
-                "connected": connected,
-                "unconnected": unconnected,
-                "connected_pct": round(connected / total * 100) if total else 0,
-                "lit": lit,
-                "reserved": reserved,
-                "available": available,
+                "active_connected": active_connected,
+                "active_connected_pct": pct(active_connected),
+                "active_disconnected": active_disconnected,
+                "active_disconnected_pct": pct(active_disconnected),
+                "reserved_connected": reserved_connected,
+                "reserved_connected_pct": pct(reserved_connected),
+                "reserved_disconnected": reserved_disconnected,
+                "reserved_disconnected_pct": pct(reserved_disconnected),
+                "available_connected": available_connected,
+                "available_connected_pct": pct(available_connected),
+                "available_disconnected": available_disconnected,
+                "available_disconnected_pct": pct(available_disconnected),
             },
         }
 

@@ -166,7 +166,7 @@ class WdmNode(NetBoxModel):
         errors = []
         channels = {ch.pk: ch for ch in self.channels.all()}
 
-        protected_statuses = {WavelengthChannelStatusChoices.LIT, WavelengthChannelStatusChoices.RESERVED}
+        protected_statuses = {WavelengthChannelStatusChoices.ACTIVE, WavelengthChannelStatusChoices.RESERVED}
         for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             if ch is None:

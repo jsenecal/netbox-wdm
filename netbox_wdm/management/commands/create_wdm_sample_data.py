@@ -875,7 +875,7 @@ class Command(BaseCommand):
             #   CH3 (1310nm) -> staged service  -> reserved (provisioned, not active)
             #   CH4+         -> no service      -> available
             if len(channels) >= 3:
-                channels[0].status = "lit"
+                channels[0].status = "active"
                 channels[2].status = "reserved"
                 WavelengthChannel.objects.bulk_update([channels[0], channels[2]], ["status"])
                 self.stdout.write(f"  Channel status on {dev.name}: 1 lit, 1 reserved, {len(channels) - 2} available")
@@ -993,7 +993,7 @@ class Command(BaseCommand):
         self.stdout.write("\n--- Channel Status Breakdown ---")
         for node in WdmNode.objects.filter(tags__slug=SAMPLE_TAG).select_related("device"):
             total = node.channels.count()
-            lit = node.channels.filter(status="lit").count()
+            lit = node.channels.filter(status="active").count()
             reserved = node.channels.filter(status="reserved").count()
             available = node.channels.filter(status="available").count()
             self.stdout.write(

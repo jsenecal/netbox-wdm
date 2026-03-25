@@ -319,7 +319,7 @@ class TestApplyMappingAPI:
             grid_position=1,
             wavelength_nm="1560.61",
             label="C21",
-            status=WavelengthChannelStatusChoices.LIT,
+            status=WavelengthChannelStatusChoices.ACTIVE,
         )
         response = api_client.post(
             self._url(wdm_node.pk),

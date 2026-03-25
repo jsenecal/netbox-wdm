@@ -153,9 +153,9 @@ class WavelengthEditor {
 
       const statusTd = document.createElement('td');
       const badge = document.createElement('span');
-      if (ch.status === 'lit') {
-        badge.className = 'wdm-badge wdm-badge--lit';
-        badge.textContent = 'Lit';
+      if (ch.status === 'active') {
+        badge.className = 'wdm-badge wdm-badge--active';
+        badge.textContent = 'Active';
       } else if (ch.status === 'reserved') {
         badge.className = 'wdm-badge wdm-badge--reserved';
         badge.textContent = 'Reserved';
