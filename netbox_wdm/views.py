@@ -284,6 +284,14 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         weight=600,
     )
 
+    def get(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.node_type != WdmNodeTypeChoices.ROADM:
+            from django.http import Http404
+
+            raise Http404
+        return super().get(request, *args, **kwargs)
+
     def get_template_name(self):
         return "netbox_wdm/wdmnode_wavelength_editor.html"
 
