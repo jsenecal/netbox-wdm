@@ -5,8 +5,8 @@ from ..models import (
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 
 
@@ -70,9 +70,9 @@ class WdmNodeSerializer(NetBoxModelSerializer):
         brief_fields = ("id", "url", "display", "node_type", "grid")
 
 
-class WdmTrunkPortSerializer(NetBoxModelSerializer):
+class WdmLinePortSerializer(NetBoxModelSerializer):
     class Meta:
-        model = WdmTrunkPort
+        model = WdmLinePort
         fields = (
             "id",
             "url",

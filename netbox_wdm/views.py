@@ -12,8 +12,8 @@ from .filters import (
     WavelengthServiceFilterSet,
     WdmChannelTemplateFilterSet,
     WdmDeviceTypeProfileFilterSet,
+    WdmLinePortFilterSet,
     WdmNodeFilterSet,
-    WdmTrunkPortFilterSet,
 )
 from .forms import (
     WavelengthChannelBulkEditForm,
@@ -26,10 +26,10 @@ from .forms import (
     WdmDeviceTypeProfileFilterForm,
     WdmDeviceTypeProfileForm,
     WdmDeviceTypeProfileImportForm,
+    WdmLinePortForm,
     WdmNodeFilterForm,
     WdmNodeForm,
     WdmNodeImportForm,
-    WdmTrunkPortForm,
 )
 from .models import (
     WavelengthChannel,
@@ -37,16 +37,16 @@ from .models import (
     WavelengthServiceChannelAssignment,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 from .tables import (
     WavelengthChannelTable,
     WavelengthServiceTable,
     WdmChannelTemplateTable,
     WdmDeviceTypeProfileTable,
+    WdmLinePortTable,
     WdmNodeTable,
-    WdmTrunkPortTable,
 )
 
 # ---- WdmDeviceTypeProfile ----
@@ -118,9 +118,11 @@ class WdmDeviceTypeProfileInstancesView(generic.ObjectChildrenView):
     )
 
     def get_children(self, request, parent):
-        return self.child_model.objects.restrict(request.user, "view").filter(
-            device__device_type=parent.device_type
-        ).select_related("device")
+        return (
+            self.child_model.objects.restrict(request.user, "view")
+            .filter(device__device_type=parent.device_type)
+            .select_related("device")
+        )
 
 
 # ---- WdmChannelTemplate ----
@@ -192,7 +194,7 @@ class WdmNodeView(generic.ObjectView):
 
         return {
             "channel_count": total,
-            "trunk_port_count": instance.trunk_ports.count(),
+            "line_port_count": instance.line_ports.count(),
             "channel_stats": {
                 "total": total,
                 "active_connected": active_connected,
@@ -251,17 +253,17 @@ class WdmNodeChannelsView(generic.ObjectChildrenView):
         return self.child_model.objects.restrict(request.user, "view").filter(wdm_node=parent)
 
 
-@register_model_view(WdmNode, "trunk_ports", path="trunk-ports")
-class WdmNodeTrunkPortsView(generic.ObjectChildrenView):
+@register_model_view(WdmNode, "line_ports", path="line-ports")
+class WdmNodeLinePortsView(generic.ObjectChildrenView):
     queryset = WdmNode.objects.all()
-    child_model = WdmTrunkPort
-    table = WdmTrunkPortTable
-    filterset = WdmTrunkPortFilterSet
+    child_model = WdmLinePort
+    table = WdmLinePortTable
+    filterset = WdmLinePortFilterSet
     actions = (EditObject, DeleteObject, BulkDelete)
     tab = ViewTab(
-        label=_("Trunk Ports"),
-        badge=lambda obj: obj.trunk_ports.count(),
-        permission="netbox_wdm.view_wdmtrunkport",
+        label=_("Line Ports"),
+        badge=lambda obj: obj.line_ports.count(),
+        permission="netbox_wdm.view_wdmlineport",
         weight=510,
     )
 
@@ -341,23 +343,23 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         return {"editor_config_json": json.dumps(config)}
 
 
-# ---- WdmTrunkPort ----
+# ---- WdmLinePort ----
 
 
-@register_model_view(WdmTrunkPort)
-class WdmTrunkPortView(generic.ObjectView):
-    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
+@register_model_view(WdmLinePort)
+class WdmLinePortView(generic.ObjectView):
+    queryset = WdmLinePort.objects.select_related("wdm_node__device", "rear_port")
 
 
-@register_model_view(WdmTrunkPort, "edit")
-class WdmTrunkPortEditView(generic.ObjectEditView):
-    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
-    form = WdmTrunkPortForm
+@register_model_view(WdmLinePort, "edit")
+class WdmLinePortEditView(generic.ObjectEditView):
+    queryset = WdmLinePort.objects.select_related("wdm_node__device", "rear_port")
+    form = WdmLinePortForm
 
 
-@register_model_view(WdmTrunkPort, "delete")
-class WdmTrunkPortDeleteView(generic.ObjectDeleteView):
-    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
+@register_model_view(WdmLinePort, "delete")
+class WdmLinePortDeleteView(generic.ObjectDeleteView):
+    queryset = WdmLinePort.objects.select_related("wdm_node__device", "rear_port")
 
 
 # ---- WavelengthChannel ----

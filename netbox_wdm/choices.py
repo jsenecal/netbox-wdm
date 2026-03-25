@@ -25,7 +25,7 @@ class WdmGridChoices(ChoiceSet):
     )
 
 
-class WdmTrunkDirectionChoices(ChoiceSet):
+class WdmLineDirectionChoices(ChoiceSet):
     COMMON = "common"
     EAST = "east"
     WEST = "west"
@@ -46,7 +46,7 @@ class WdmFiberTypeChoices(ChoiceSet):
     )
 
 
-class WdmTrunkRoleChoices(ChoiceSet):
+class WdmLineRoleChoices(ChoiceSet):
     TX = "tx"
     RX = "rx"
     BIDI = "bidi"

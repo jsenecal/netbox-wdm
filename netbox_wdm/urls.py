@@ -26,8 +26,8 @@ urlpatterns = [
     path("wdm-nodes/import/", views.WdmNodeBulkImportView.as_view(), name="wdmnode_import"),
     path("wdm-nodes/delete/", views.WdmNodeBulkDeleteView.as_view(), name="wdmnode_bulk_delete"),
     path("wdm-nodes/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmnode"))),
-    # WDM Trunk Port
-    path("wdm-trunk-ports/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmtrunkport"))),
+    # WDM Line Port
+    path("wdm-line-ports/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmlineport"))),
     # Wavelength Channel
     path("wavelength-channels/", views.WavelengthChannelListView.as_view(), name="wavelengthchannel_list"),
     path("wavelength-channels/add/", views.WavelengthChannelEditView.as_view(), name="wavelengthchannel_add"),

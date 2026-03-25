@@ -7,8 +7,8 @@ from .models import (
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 
 
@@ -81,7 +81,7 @@ class WdmNodeTable(NetBoxTable):
         return str(record)
 
 
-class WdmTrunkPortTable(NetBoxTable):
+class WdmLinePortTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
     rear_port = tables.Column(linkify=True, verbose_name=_("Rear Port"))
@@ -90,7 +90,7 @@ class WdmTrunkPortTable(NetBoxTable):
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
-        model = WdmTrunkPort
+        model = WdmLinePort
         fields = ("pk", "id", "wdm_node", "rear_port", "direction", "position", "actions")
         default_columns = ("pk", "wdm_node", "rear_port", "direction", "position", "actions")
 

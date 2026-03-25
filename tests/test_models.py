@@ -10,7 +10,7 @@ from netbox_wdm.models import (
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
     WdmNode,
-    WdmTrunkPort,
+    WdmLinePort,
 )
 
 

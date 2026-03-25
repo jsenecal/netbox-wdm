@@ -10,7 +10,7 @@ from netbox_wdm.choices import (
     WavelengthServiceStatusChoices,
     WdmGridChoices,
     WdmNodeTypeChoices,
-    WdmTrunkDirectionChoices,
+    WdmLineDirectionChoices,
 )
 from netbox_wdm.models import (
     WavelengthChannel,
@@ -19,7 +19,7 @@ from netbox_wdm.models import (
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
     WdmNode,
-    WdmTrunkPort,
+    WdmLinePort,
 )
 
 # ---------------------------------------------------------------------------
@@ -396,22 +396,22 @@ class TestApplyMappingAPI:
 
 
 # ---------------------------------------------------------------------------
-# WdmTrunkPort API tests
+# WdmLinePort API tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestWdmTrunkPortAPI:
-    base_url = "/api/plugins/wdm/wdm-trunk-ports/"
+class TestWdmLinePortAPI:
+    base_url = "/api/plugins/wdm/wdm-line-ports/"
 
     def test_list(self, api_client, wdm_node):
         from dcim.models import RearPort
 
         rp = RearPort.objects.create(device=wdm_node.device, name="RP1", positions=1)
-        WdmTrunkPort.objects.create(
+        WdmLinePort.objects.create(
             wdm_node=wdm_node,
             rear_port=rp,
-            direction=WdmTrunkDirectionChoices.WEST,
+            direction=WdmLineDirectionChoices.WEST,
             position=1,
         )
         response = api_client.get(self.base_url)
@@ -422,10 +422,10 @@ class TestWdmTrunkPortAPI:
         from dcim.models import RearPort
 
         rp = RearPort.objects.create(device=wdm_node.device, name="RP2", positions=1)
-        tp = WdmTrunkPort.objects.create(
+        tp = WdmLinePort.objects.create(
             wdm_node=wdm_node,
             rear_port=rp,
-            direction=WdmTrunkDirectionChoices.WEST,
+            direction=WdmLineDirectionChoices.WEST,
             position=1,
         )
         response = api_client.get(f"{self.base_url}{tp.pk}/")
@@ -441,7 +441,7 @@ class TestWdmTrunkPortAPI:
             {
                 "wdm_node": wdm_node.pk,
                 "rear_port": rp.pk,
-                "direction": WdmTrunkDirectionChoices.EAST,
+                "direction": WdmLineDirectionChoices.EAST,
                 "position": 2,
             },
             format="json",
@@ -452,10 +452,10 @@ class TestWdmTrunkPortAPI:
         from dcim.models import RearPort
 
         rp = RearPort.objects.create(device=wdm_node.device, name="RP4", positions=1)
-        tp = WdmTrunkPort.objects.create(
+        tp = WdmLinePort.objects.create(
             wdm_node=wdm_node,
             rear_port=rp,
-            direction=WdmTrunkDirectionChoices.WEST,
+            direction=WdmLineDirectionChoices.WEST,
             position=1,
         )
         response = api_client.delete(f"{self.base_url}{tp.pk}/")

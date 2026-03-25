@@ -6,8 +6,8 @@ from .types import (
     WavelengthServiceType,
     WdmChannelTemplateType,
     WdmDeviceTypeProfileType,
+    WdmLinePortType,
     WdmNodeInstanceType,
-    WdmTrunkPortType,
 )
 
 
@@ -22,8 +22,8 @@ class WdmQuery:
     wdm_node: WdmNodeInstanceType = strawberry_django.field()
     wdm_node_list: list[WdmNodeInstanceType] = strawberry_django.field()
 
-    wdm_trunk_port: WdmTrunkPortType = strawberry_django.field()
-    wdm_trunk_port_list: list[WdmTrunkPortType] = strawberry_django.field()
+    wdm_line_port: WdmLinePortType = strawberry_django.field()
+    wdm_line_port_list: list[WdmLinePortType] = strawberry_django.field()
 
     wavelength_channel: WavelengthChannelType = strawberry_django.field()
     wavelength_channel_list: list[WavelengthChannelType] = strawberry_django.field()

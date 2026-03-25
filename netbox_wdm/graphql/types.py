@@ -9,8 +9,8 @@ from ..models import (
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 
 
@@ -26,12 +26,12 @@ class WdmChannelTemplateType(NetBoxObjectType):
 
 @strawberry_django.type(WdmNode, fields="__all__")
 class WdmNodeInstanceType(NetBoxObjectType):
-    trunk_ports: list[Annotated["WdmTrunkPortType", strawberry.lazy(".types")]]
+    line_ports: list[Annotated["WdmLinePortType", strawberry.lazy(".types")]]
     channels: list[Annotated["WavelengthChannelType", strawberry.lazy(".types")]]
 
 
-@strawberry_django.type(WdmTrunkPort, fields="__all__")
-class WdmTrunkPortType(NetBoxObjectType):
+@strawberry_django.type(WdmLinePort, fields="__all__")
+class WdmLinePortType(NetBoxObjectType):
     pass
 
 

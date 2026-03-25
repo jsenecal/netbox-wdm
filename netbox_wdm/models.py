@@ -11,9 +11,9 @@ from .choices import (
     WavelengthServiceStatusChoices,
     WdmFiberTypeChoices,
     WdmGridChoices,
+    WdmLineDirectionChoices,
+    WdmLineRoleChoices,
     WdmNodeTypeChoices,
-    WdmTrunkDirectionChoices,
-    WdmTrunkRoleChoices,
 )
 
 
@@ -250,13 +250,13 @@ class WdmNode(NetBoxModel):
         WavelengthChannel.objects.bulk_create(channels)
 
 
-class WdmTrunkPort(NetBoxModel):
-    """Maps a RearPort on a WDM node to a directional trunk."""
+class WdmLinePort(NetBoxModel):
+    """Maps a RearPort on a WDM node to a directional line port."""
 
     wdm_node = models.ForeignKey(
         to="netbox_wdm.WdmNode",
         on_delete=models.CASCADE,
-        related_name="trunk_ports",
+        related_name="line_ports",
         verbose_name=_("WDM node"),
     )
     rear_port = models.ForeignKey(
@@ -267,29 +267,29 @@ class WdmTrunkPort(NetBoxModel):
     )
     direction = models.CharField(
         max_length=50,
-        choices=WdmTrunkDirectionChoices,
+        choices=WdmLineDirectionChoices,
         verbose_name=_("direction"),
     )
     role = models.CharField(
         max_length=50,
-        choices=WdmTrunkRoleChoices,
-        default=WdmTrunkRoleChoices.BIDI,
+        choices=WdmLineRoleChoices,
+        default=WdmLineRoleChoices.BIDI,
         verbose_name=_("role"),
     )
     position = models.PositiveIntegerField(verbose_name=_("position"))
 
     class Meta:
         ordering = ("wdm_node", "position")
-        verbose_name = _("WDM trunk port")
-        verbose_name_plural = _("WDM trunk ports")
+        verbose_name = _("WDM line port")
+        verbose_name_plural = _("WDM line ports")
         constraints = [
             models.UniqueConstraint(
                 fields=["wdm_node", "rear_port"],
-                name="unique_trunkport_rear_port",
+                name="unique_lineport_rear_port",
             ),
             models.UniqueConstraint(
                 fields=["wdm_node", "direction", "role"],
-                name="unique_trunkport_direction_role",
+                name="unique_lineport_direction_role",
             ),
         ]
 
@@ -297,7 +297,7 @@ class WdmTrunkPort(NetBoxModel):
         return f"{self.direction}: {self.rear_port}"
 
     def get_absolute_url(self):
-        return reverse("plugins:netbox_wdm:wdmtrunkport", args=[self.pk])
+        return reverse("plugins:netbox_wdm:wdmlineport", args=[self.pk])
 
 
 class WavelengthChannel(NetBoxModel):

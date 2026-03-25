@@ -12,13 +12,13 @@ class TestGraphQLImports:
             WdmChannelTemplateType,
             WdmDeviceTypeProfileType,
             WdmNodeInstanceType,
-            WdmTrunkPortType,
+            WdmLinePortType,
         )
 
         assert WdmDeviceTypeProfileType is not None
         assert WdmChannelTemplateType is not None
         assert WdmNodeInstanceType is not None
-        assert WdmTrunkPortType is not None
+        assert WdmLinePortType is not None
         assert WavelengthChannelType is not None
         assert WavelengthServiceType is not None
 

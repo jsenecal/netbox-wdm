@@ -17,8 +17,8 @@ from .models import (
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 
 # --- WdmDeviceTypeProfile ---
@@ -133,20 +133,20 @@ class WdmNodeImportForm(NetBoxModelImportForm):
         fields = ("device", "node_type", "grid", "description")
 
 
-# --- WdmTrunkPort ---
+# --- WdmLinePort ---
 
 
-class WdmTrunkPortForm(NetBoxModelForm):
+class WdmLinePortForm(NetBoxModelForm):
     wdm_node = DynamicModelChoiceField(queryset=WdmNode.objects.all(), label=_("WDM Node"))
     rear_port = DynamicModelChoiceField(queryset=RearPort.objects.all(), label=_("Rear Port"))
 
     fieldsets = (
-        FieldSet("wdm_node", "rear_port", "direction", "role", "position", name=_("Trunk Port")),
+        FieldSet("wdm_node", "rear_port", "direction", "role", "position", name=_("Line Port")),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
-        model = WdmTrunkPort
+        model = WdmLinePort
         fields = ("wdm_node", "rear_port", "direction", "role", "position", "tags")
 
 

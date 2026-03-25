@@ -11,24 +11,24 @@ from ..filters import (
     WavelengthServiceFilterSet,
     WdmChannelTemplateFilterSet,
     WdmDeviceTypeProfileFilterSet,
+    WdmLinePortFilterSet,
     WdmNodeFilterSet,
-    WdmTrunkPortFilterSet,
 )
 from ..models import (
     WavelengthChannel,
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 from .serializers import (
     WavelengthChannelSerializer,
     WavelengthServiceSerializer,
     WdmChannelTemplateSerializer,
     WdmDeviceTypeProfileSerializer,
+    WdmLinePortSerializer,
     WdmNodeSerializer,
-    WdmTrunkPortSerializer,
 )
 
 
@@ -50,7 +50,7 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
     desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
     """
     channels = {ch.pk: ch for ch in wdm_node.channels.all()}
-    trunk_ports = list(wdm_node.trunk_ports.select_related("rear_port").all())
+    line_ports = list(wdm_node.line_ports.select_related("rear_port").all())
 
     added = removed = changed = 0
     channels_to_update = []
@@ -76,7 +76,7 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
 
         for desired_fp_pk in (desired_mux, desired_demux):
             if desired_fp_pk is not None:
-                for tp in trunk_ports:
+                for tp in line_ports:
                     new_mappings_to_create.append(
                         PortMapping(
                             device=wdm_node.device,
@@ -106,7 +106,7 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
     if old_fp_ids_to_delete:
         delete_q = Q()
         for fp_id, grid_pos in old_fp_ids_to_delete:
-            for tp in trunk_ports:
+            for tp in line_ports:
                 delete_q |= Q(front_port_id=fp_id, rear_port=tp.rear_port, rear_port_position=grid_pos)
         if delete_q:
             PortMapping.objects.filter(delete_q).delete()
@@ -115,17 +115,17 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
         PortMapping.objects.bulk_create(new_mappings_to_create)
 
     if channels_to_update:
-        _retrace_affected_paths(wdm_node, trunk_ports)
+        _retrace_affected_paths(wdm_node, line_ports)
 
     return {"added": added, "removed": removed, "changed": changed}
 
 
-def _retrace_affected_paths(wdm_node, trunk_ports):
-    """Retrace CablePaths that traverse cables connected to the node's trunk ports."""
+def _retrace_affected_paths(wdm_node, line_ports):
+    """Retrace CablePaths that traverse cables connected to the node's line ports."""
     from dcim.models import CablePath, CableTermination
     from django.contrib.contenttypes.models import ContentType
 
-    rp_ids = [tp.rear_port_id for tp in trunk_ports]
+    rp_ids = [tp.rear_port_id for tp in line_ports]
     if not rp_ids:
         return
 
@@ -189,10 +189,10 @@ class WdmNodeViewSet(NetBoxModelViewSet):
         return Response(result)
 
 
-class WdmTrunkPortViewSet(NetBoxModelViewSet):
-    queryset = WdmTrunkPort.objects.select_related("wdm_node", "rear_port").prefetch_related("tags")
-    serializer_class = WdmTrunkPortSerializer
-    filterset_class = WdmTrunkPortFilterSet
+class WdmLinePortViewSet(NetBoxModelViewSet):
+    queryset = WdmLinePort.objects.select_related("wdm_node", "rear_port").prefetch_related("tags")
+    serializer_class = WdmLinePortSerializer
+    filterset_class = WdmLinePortFilterSet
 
 
 class WavelengthChannelViewSet(NetBoxModelViewSet):

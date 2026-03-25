@@ -16,8 +16,8 @@ from .models import (
     WavelengthService,
     WdmChannelTemplate,
     WdmDeviceTypeProfile,
+    WdmLinePort,
     WdmNode,
-    WdmTrunkPort,
 )
 
 
@@ -69,14 +69,14 @@ class WdmNodeFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
         fields = ("id", "node_type", "grid")
 
 
-class WdmTrunkPortFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
+class WdmLinePortFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     wdm_node_id = django_filters.ModelMultipleChoiceFilter(
         queryset=WdmNode.objects.all(), field_name="wdm_node", label=_("WDM Node (ID)")
     )
     search_fields = ("direction__icontains",)
 
     class Meta:
-        model = WdmTrunkPort
+        model = WdmLinePort
         fields = ("id", "wdm_node", "direction", "position")
 
 

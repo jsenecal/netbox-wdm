@@ -5,7 +5,7 @@ PLUGIN_PKG  := netbox_wdm
 
 .DEFAULT_GOAL := help
 
-.PHONY: lint format check test test-fast migrations migrate runserver superuser collectstatic sample-data sample-data-flush verify validate build clean ts-install ts-build ts-typecheck help
+.PHONY: lint format check test test-fast migrations migrate runserver superuser collectstatic sample-data verify validate build clean ts-install ts-build ts-typecheck help
 
 lint:
 	uvx ruff check --fix $(PLUGIN_PKG)/
@@ -36,9 +36,6 @@ superuser:
 	@cd $(NETBOX_DIR) && DJANGO_SETTINGS_MODULE=netbox.settings python -c "import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); print('exists') if User.objects.filter(username='admin').exists() else (User.objects.create_superuser('admin', 'admin@example.com', 'admin'), print('created admin:admin'))"
 
 sample-data: superuser
-	$(MANAGE) create_wdm_sample_data
-
-sample-data-flush: superuser
 	$(MANAGE) create_wdm_sample_data --flush
 
 collectstatic:

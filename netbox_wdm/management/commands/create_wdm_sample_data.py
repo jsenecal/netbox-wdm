@@ -77,8 +77,8 @@ class Command(BaseCommand):
         self._create_device("HUB-PP-01", site_hub, dt_pp, role_pp, tag)
         self._create_device("HUB-PP-02", site_hub, dt_pp, role_pp, tag)
 
-        # -- Trunk ports --
-        self._create_trunk_ports(
+        # -- Line ports --
+        self._create_line_ports(
             tag,
             dev_east_cwdm,
             dev_west_cwdm,
@@ -122,8 +122,8 @@ class Command(BaseCommand):
             WavelengthServiceNode,
             WdmChannelTemplate,
             WdmDeviceTypeProfile,
+            WdmLinePort,
             WdmNode,
-            WdmTrunkPort,
         )
 
         self.stdout.write("Flushing existing sample data...")
@@ -134,19 +134,22 @@ class Command(BaseCommand):
             self.stdout.write("  No sample data tag found, nothing to flush.")
             return
 
-        # Delete in dependency order
+        from dcim.models import Cable, Device, DeviceRole, DeviceType, Manufacturer, Site
+
+        # Delete cables first (they hold termination references to ports)
+        Cable.objects.filter(tags=tag).delete()
+
+        # Then WDM objects in dependency order
         WavelengthServiceNode.objects.filter(service__tags=tag).delete()
         WavelengthServiceChannelAssignment.objects.filter(service__tags=tag).delete()
         WavelengthService.objects.filter(tags=tag).delete()
         WavelengthChannel.objects.filter(wdm_node__tags=tag).delete()
-        WdmTrunkPort.objects.filter(wdm_node__tags=tag).delete()
+        WdmLinePort.objects.filter(wdm_node__tags=tag).delete()
         WdmNode.objects.filter(tags=tag).delete()
         WdmChannelTemplate.objects.filter(profile__tags=tag).delete()
         WdmDeviceTypeProfile.objects.filter(tags=tag).delete()
 
-        from dcim.models import Cable, Device, DeviceRole, DeviceType, Manufacturer, Site
-
-        Cable.objects.filter(tags=tag).delete()
+        # Then DCIM objects
         Device.objects.filter(tags=tag).delete()
         DeviceType.objects.filter(tags=tag).delete()
         DeviceRole.objects.filter(tags=tag).delete()
@@ -709,62 +712,62 @@ class Command(BaseCommand):
         return dev
 
     # ================================================================
-    # Trunk Ports
+    # Line Ports
     # ================================================================
 
-    def _create_trunk_ports(self, tag, dev_east_cwdm, dev_west_cwdm, dev_east_sf, dev_hub_dwdm, dev_hub_roadm):
+    def _create_line_ports(self, tag, dev_east_cwdm, dev_west_cwdm, dev_east_sf, dev_hub_dwdm, dev_hub_roadm):
         from dcim.models import RearPort
 
-        from netbox_wdm.models import WdmTrunkPort
+        from netbox_wdm.models import WdmLinePort
 
-        # Duplex MUX trunk ports: COM-TX (tx) and COM-RX (rx)
+        # Duplex MUX line ports: COM-TX (tx) and COM-RX (rx)
         for dev in [dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm]:
             if not hasattr(dev, "wdm_node"):
                 continue
             for rp_name, role, position in [("COM-TX", "tx", 1), ("COM-RX", "rx", 2)]:
                 rp = RearPort.objects.filter(device=dev, name=rp_name).first()
                 if rp:
-                    tp, created = WdmTrunkPort.objects.get_or_create(
+                    tp, created = WdmLinePort.objects.get_or_create(
                         wdm_node=dev.wdm_node,
                         rear_port=rp,
                         defaults={"direction": "common", "role": role, "position": position},
                     )
                     if created:
                         self._tag(tp, tag)
-                        self.stdout.write(f"  Trunk port: {dev.name} -> {rp_name} (common/{role})")
+                        self.stdout.write(f"  Line port: {dev.name} -> {rp_name} (common/{role})")
 
         # Single fiber MUX: COM (bidi)
         if hasattr(dev_east_sf, "wdm_node"):
             rp = RearPort.objects.filter(device=dev_east_sf, name="COM").first()
             if rp:
-                tp, created = WdmTrunkPort.objects.get_or_create(
+                tp, created = WdmLinePort.objects.get_or_create(
                     wdm_node=dev_east_sf.wdm_node,
                     rear_port=rp,
                     defaults={"direction": "common", "role": "bidi", "position": 1},
                 )
                 if created:
                     self._tag(tp, tag)
-                    self.stdout.write(f"  Trunk port: {dev_east_sf.name} -> COM (common/bidi)")
+                    self.stdout.write(f"  Line port: {dev_east_sf.name} -> COM (common/bidi)")
 
         # ROADM: 4 line ports
         if hasattr(dev_hub_roadm, "wdm_node"):
-            roadm_trunks = [
+            roadm_lines = [
                 ("LINE-EAST-TX", "tx", "east", 1),
                 ("LINE-EAST-RX", "rx", "east", 2),
                 ("LINE-WEST-TX", "tx", "west", 3),
                 ("LINE-WEST-RX", "rx", "west", 4),
             ]
-            for rp_name, role, direction, position in roadm_trunks:
+            for rp_name, role, direction, position in roadm_lines:
                 rp = RearPort.objects.filter(device=dev_hub_roadm, name=rp_name).first()
                 if rp:
-                    tp, created = WdmTrunkPort.objects.get_or_create(
+                    tp, created = WdmLinePort.objects.get_or_create(
                         wdm_node=dev_hub_roadm.wdm_node,
                         rear_port=rp,
                         defaults={"direction": direction, "role": role, "position": position},
                     )
                     if created:
                         self._tag(tp, tag)
-                        self.stdout.write(f"  Trunk port: {dev_hub_roadm.name} -> {rp_name} ({direction}/{role})")
+                        self.stdout.write(f"  Line port: {dev_hub_roadm.name} -> {rp_name} ({direction}/{role})")
 
     # ================================================================
     # Cabling
@@ -822,18 +825,18 @@ class Command(BaseCommand):
                 f"East Router eth{i} to CWDM CH{ch_num}",
             )
 
-        # CWDM MUX COM-TX + COM-RX -> East PP RP-01 + RP-02 (duplex trunk pair)
+        # CWDM MUX COM-TX + COM-RX -> East PP RP-01 + RP-02 (duplex line pair)
         create_cable(
             [get_rear_port(dev_east_cwdm, "COM-TX"), get_rear_port(dev_east_cwdm, "COM-RX")],
             [get_rear_port(dev_east_pp, "RP-01"), get_rear_port(dev_east_pp, "RP-02")],
             "East CWDM COM to PP",
         )
 
-        # === Trunk cable (East PP to West PP) - duplex ===
+        # === Line cable (East PP to West PP) - duplex ===
         create_cable(
             [get_front_port(dev_east_pp, "FP-01"), get_front_port(dev_east_pp, "FP-02")],
             [get_front_port(dev_west_pp, "FP-01"), get_front_port(dev_west_pp, "FP-02")],
-            "East-West Trunk Fiber",
+            "East-West Line Fiber",
         )
 
         # === West side client cables ===
@@ -1028,8 +1031,8 @@ class Command(BaseCommand):
             WavelengthServiceNode,
             WdmChannelTemplate,
             WdmDeviceTypeProfile,
+            WdmLinePort,
             WdmNode,
-            WdmTrunkPort,
         )
 
         self.stdout.write("\n--- Summary ---")
@@ -1040,7 +1043,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  WDM Profiles:       {WdmDeviceTypeProfile.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Channel Templates:  {WdmChannelTemplate.objects.count()}")
         self.stdout.write(f"  WDM Nodes:          {WdmNode.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  Trunk Ports:        {WdmTrunkPort.objects.filter(tags__slug=SAMPLE_TAG).count()}")
+        self.stdout.write(f"  Line Ports:        {WdmLinePort.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Channels:           {WavelengthChannel.objects.count()}")
         self.stdout.write(f"  Services:           {WavelengthService.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Channel Assigns:    {WavelengthServiceChannelAssignment.objects.count()}")
