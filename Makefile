@@ -35,10 +35,10 @@ runserver:
 superuser:
 	@cd $(NETBOX_DIR) && DJANGO_SETTINGS_MODULE=netbox.settings python -c "import django; django.setup(); from django.contrib.auth import get_user_model; User = get_user_model(); print('exists') if User.objects.filter(username='admin').exists() else (User.objects.create_superuser('admin', 'admin@example.com', 'admin'), print('created admin:admin'))"
 
-sample-data:
+sample-data: superuser
 	$(MANAGE) create_wdm_sample_data
 
-sample-data-flush:
+sample-data-flush: superuser
 	$(MANAGE) create_wdm_sample_data --flush
 
 collectstatic:
