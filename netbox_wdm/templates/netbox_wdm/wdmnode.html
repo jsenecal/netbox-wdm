@@ -37,35 +37,35 @@
             <h5 class="card-header">{% trans "Channel Utilization" %}</h5>
             <div class="card-body">
                 {% if channel_stats.total %}
-                <div class="progress-stacked mb-3" style="height: 24px;">
+                <div class="progress mb-3" style="height: 24px;">
                     {% if channel_stats.active_connected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.active_connected_pct }}%" title="{{ channel_stats.active_connected }} Active + Connected">
-                        <div class="progress-bar bg-success">{{ channel_stats.active_connected }}</div>
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ channel_stats.active_connected_pct }}%" title="{{ channel_stats.active_connected }} Active + Connected">
+                        {{ channel_stats.active_connected }}
                     </div>
                     {% endif %}
                     {% if channel_stats.active_disconnected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.active_disconnected_pct }}%" title="{{ channel_stats.active_disconnected }} Active + Disconnected">
-                        <div class="progress-bar bg-success progress-bar-striped">{{ channel_stats.active_disconnected }}</div>
+                    <div class="progress-bar bg-success progress-bar-striped" role="progressbar" style="width: {{ channel_stats.active_disconnected_pct }}%" title="{{ channel_stats.active_disconnected }} Active + Disconnected">
+                        {{ channel_stats.active_disconnected }}
                     </div>
                     {% endif %}
                     {% if channel_stats.reserved_connected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.reserved_connected_pct }}%" title="{{ channel_stats.reserved_connected }} Reserved + Connected">
-                        <div class="progress-bar bg-warning text-dark">{{ channel_stats.reserved_connected }}</div>
+                    <div class="progress-bar bg-warning text-dark" role="progressbar" style="width: {{ channel_stats.reserved_connected_pct }}%" title="{{ channel_stats.reserved_connected }} Reserved + Connected">
+                        {{ channel_stats.reserved_connected }}
                     </div>
                     {% endif %}
                     {% if channel_stats.reserved_disconnected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.reserved_disconnected_pct }}%" title="{{ channel_stats.reserved_disconnected }} Reserved + Disconnected">
-                        <div class="progress-bar bg-warning text-dark progress-bar-striped">{{ channel_stats.reserved_disconnected }}</div>
+                    <div class="progress-bar bg-warning text-dark progress-bar-striped" role="progressbar" style="width: {{ channel_stats.reserved_disconnected_pct }}%" title="{{ channel_stats.reserved_disconnected }} Reserved + Disconnected">
+                        {{ channel_stats.reserved_disconnected }}
                     </div>
                     {% endif %}
                     {% if channel_stats.available_connected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.available_connected_pct }}%" title="{{ channel_stats.available_connected }} Available + Connected">
-                        <div class="progress-bar bg-info text-dark">{{ channel_stats.available_connected }}</div>
+                    <div class="progress-bar bg-info text-dark" role="progressbar" style="width: {{ channel_stats.available_connected_pct }}%" title="{{ channel_stats.available_connected }} Available + Connected">
+                        {{ channel_stats.available_connected }}
                     </div>
                     {% endif %}
                     {% if channel_stats.available_disconnected_pct %}
-                    <div class="progress" role="progressbar" style="width: {{ channel_stats.available_disconnected_pct }}%" title="{{ channel_stats.available_disconnected }} Available + Disconnected">
-                        <div class="progress-bar bg-secondary bg-opacity-25 text-muted">{{ channel_stats.available_disconnected }}</div>
+                    <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ channel_stats.available_disconnected_pct }}%" title="{{ channel_stats.available_disconnected }} Available + Disconnected">
+                        {{ channel_stats.available_disconnected }}
                     </div>
                     {% endif %}
                 </div>
