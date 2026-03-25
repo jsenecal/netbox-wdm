@@ -40,7 +40,7 @@ npm run typecheck    # TypeScript type checking
 ## Making Changes
 
 1. Fork the repo and create a branch from `main`.
-2. Make your changes. Follow existing code style — ruff enforces it.
+2. Make your changes. Follow existing code style  - ruff enforces it.
 3. Add or update tests for any new functionality.
 4. Run the full test suite and linter before submitting.
 5. Open a pull request against `main`.

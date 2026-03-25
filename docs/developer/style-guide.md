@@ -1,8 +1,8 @@
-# WDM Visual Component Library — Style Guide
+# WDM Visual Component Library  - Style Guide
 
 ## 1. Overview
 
-The WDM component library provides shared UI primitives for WDM visualization views: wavelength editors, channel planners, and service path traces. It is **not** a full design system — it covers the specific patterns that appear across WDM canvases and panels.
+The WDM component library provides shared UI primitives for WDM visualization views: wavelength editors, channel planners, and service path traces. It is **not** a full design system  - it covers the specific patterns that appear across WDM canvases and panels.
 
 **Files:**
 - CSS: `netbox_wdm/static/netbox_wdm/css/wdm-components.css`
@@ -28,13 +28,13 @@ Load the stylesheet in your template:
 <link rel="stylesheet" href="{% static 'netbox_wdm/css/wdm-components.css' %}">
 ```
 
-The component root reads `data-bs-theme` from a parent element to switch between dark and light palettes automatically — no extra JS needed.
+The component root reads `data-bs-theme` from a parent element to switch between dark and light palettes automatically  - no extra JS needed.
 
 ---
 
 ## 3. Color Palette
 
-All colors are defined as CSS custom properties on `.wdm-component`. Never use hex values directly — always reference these variables.
+All colors are defined as CSS custom properties on `.wdm-component`. Never use hex values directly  - always reference these variables.
 
 | Variable | Purpose |
 |---|---|
@@ -76,13 +76,13 @@ Use badges to show status inline with text. They are small (9px, uppercase) and 
 <span class="wdm-badge wdm-badge--protected">Protected</span>
 ```
 
-Do not use badges for counts or non-status information — use plain text for those.
+Do not use badges for counts or non-status information  - use plain text for those.
 
 ---
 
 ## 5. Legend (`.wdm-legend`)
 
-The legend is an absolutely-positioned overlay anchored to the **bottom-left** of the canvas container. It collapses **downward** — the bottom edge stays fixed and the content shrinks into a small pill-shaped bar at the bottom corner.
+The legend is an absolutely-positioned overlay anchored to the **bottom-left** of the canvas container. It collapses **downward**  - the bottom edge stays fixed and the content shrinks into a small pill-shaped bar at the bottom corner.
 
 **Rules:**
 - Only include items that are currently visible on the canvas. If a filter hides all reserved channels, remove the "Reserved" entry from the legend. Rebuild on every render.
@@ -211,7 +211,7 @@ A slim (28px) bar pinned to the bottom of the canvas. Surfaces aggregate counts.
 
 **Stat ordering:** Essential counts left (total channels, lit count), secondary/contextual counts right.
 
-Mark the most important stats with `wdm-stat--essential` — these remain visible on mobile when non-essential stats are hidden.
+Mark the most important stats with `wdm-stat--essential`  - these remain visible on mobile when non-essential stats are hidden.
 
 ```html
 <div class="wdm-stats-bar wdm-component">
@@ -234,7 +234,7 @@ Mark the most important stats with `wdm-stat--essential` — these remain visibl
 </div>
 ```
 
-**Messages:** Use `setMessage()` for status updates — they appear on the right side and auto-clear. The left side (counts) is never replaced. Do not use alerts or toasts for minor status updates from canvas actions.
+**Messages:** Use `setMessage()` for status updates  - they appear on the right side and auto-clear. The left side (counts) is never replaced. Do not use alerts or toasts for minor status updates from canvas actions.
 
 ---
 
@@ -327,8 +327,8 @@ Every interactive element must have a visible focus ring. The library provides `
 
 ### Keyboard navigation
 
-- **Escape** — close the open detail panel.
-- **Tab** — move through toolbar controls, close button, and panel rows in DOM order.
+- **Escape**  - close the open detail panel.
+- **Tab**  - move through toolbar controls, close button, and panel rows in DOM order.
 - Pill groups should support **Left/Right arrow** keys to move between pills in the group (implement with a `keydown` handler; the CSS does not do this automatically).
 
 ---
@@ -342,7 +342,7 @@ All components live in `netbox_wdm/static/netbox_wdm/src/`:
 | `wavelength-editor-types.ts` | `ChannelData`, `PortData`, `EditorConfig` | Type definitions for the wavelength editor |
 | `wavelength-editor.ts` | `WavelengthEditor` class | ROADM channel assignment editor |
 
-Future components follow the same pattern — one file per component, types in a separate `-types.ts` file.
+Future components follow the same pattern  - one file per component, types in a separate `-types.ts` file.
 
 Import via the entry point or barrel:
 ```typescript

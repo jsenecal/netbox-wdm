@@ -11,7 +11,7 @@ netbox_wdm = ["templates/**/*", "static/**/*"]
 [project]
 name = "netbox-wdm"
 version = "0.1.0"
-description = "WDM wavelength management for NetBox — ITU channel plans, ROADM editing, and position stack enforcement"
+description = "WDM wavelength management for NetBox - ITU channel plans, ROADM editing, and position stack enforcement"
 readme = "README.md"
 authors = [
     { name = "Jonathan Senecal", email = "contact@jonathansenecal.com" },

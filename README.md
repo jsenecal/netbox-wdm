@@ -14,14 +14,14 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 ## Features
 
-- **Overlay pattern** — `WdmDeviceTypeProfile` overlays `DeviceType` (blueprint), `WdmNode` overlays `Device` (instance)
-- **ITU grid support** — DWDM 100GHz (44ch), DWDM 50GHz (88ch), CWDM (18ch)
-- **Auto-population** — channels automatically created from profile templates when a device is added
-- **ROADM wavelength editor** — TypeScript frontend with undo/redo, dirty state detection, and optimistic concurrency
-- **Wavelength services** — end-to-end service tracking with sequenced channel assignments and PROTECT guards
-- **Full CRUD stack** — list, detail, edit, delete, bulk import/edit/delete views for all models
-- **REST API** — CRUD endpoints plus `apply-mapping` (atomic ROADM editor) and `stitch` (wavelength path)
-- **GraphQL** — strawberry-django types, filters, and schema for all models
+- **Overlay pattern**  - `WdmDeviceTypeProfile` overlays `DeviceType` (blueprint), `WdmNode` overlays `Device` (instance)
+- **ITU grid support**  - DWDM 100GHz (44ch), DWDM 50GHz (88ch), CWDM (18ch)
+- **Auto-population**  - channels automatically created from profile templates when a device is added
+- **ROADM wavelength editor**  - TypeScript frontend with undo/redo, dirty state detection, and optimistic concurrency
+- **Wavelength services**  - end-to-end service tracking with sequenced channel assignments and PROTECT guards
+- **Full CRUD stack**  - list, detail, edit, delete, bulk import/edit/delete views for all models
+- **REST API**  - CRUD endpoints plus `apply-mapping` (atomic ROADM editor) and `stitch` (wavelength path)
+- **GraphQL**  - strawberry-django types, filters, and schema for all models
 
 ## Requirements
 
@@ -70,9 +70,9 @@ npm run build
 
 | Model | Description |
 |-------|-------------|
-| `WdmDeviceTypeProfile` | 1:1 overlay on `dcim.DeviceType` — defines grid type and node type |
+| `WdmDeviceTypeProfile` | 1:1 overlay on `dcim.DeviceType`  - defines grid type and node type |
 | `WdmChannelTemplate` | Channel-to-port blueprint on a profile |
-| `WdmNode` | 1:1 overlay on `dcim.Device` — instance of a WDM device |
+| `WdmNode` | 1:1 overlay on `dcim.Device`  - instance of a WDM device |
 | `WdmTrunkPort` | Identifies trunk RearPorts (east/west/common direction) |
 | `WavelengthChannel` | Per-channel instance on a WDM node |
 | `WavelengthService` | End-to-end wavelength service spanning channels |
@@ -85,4 +85,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ## License
 
-AGPL-3.0-or-later — see [LICENSE](LICENSE) for the full text.
+AGPL-3.0-or-later - see [LICENSE](LICENSE) for the full text.

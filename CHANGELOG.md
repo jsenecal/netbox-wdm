@@ -11,14 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `WdmDeviceTypeProfile` model — 1:1 overlay on `dcim.DeviceType` for WDM blueprints
-- `WdmChannelTemplate` model — channel-to-port blueprint on a profile
-- `WdmNode` model — 1:1 overlay on `dcim.Device` for WDM instances
-- `WdmTrunkPort` model — identifies trunk RearPorts with east/west/common direction
-- `WavelengthChannel` model — per-channel instance on a WDM node
-- `WavelengthService` model — end-to-end wavelength service with lifecycle management
-- `WavelengthServiceChannelAssignment` — sequenced M2M through model
-- `WavelengthServiceNode` — PROTECT guard preventing deletion of in-use channels
+- `WdmDeviceTypeProfile` model  - 1:1 overlay on `dcim.DeviceType` for WDM blueprints
+- `WdmChannelTemplate` model  - channel-to-port blueprint on a profile
+- `WdmNode` model  - 1:1 overlay on `dcim.Device` for WDM instances
+- `WdmTrunkPort` model  - identifies trunk RearPorts with east/west/common direction
+- `WavelengthChannel` model  - per-channel instance on a WDM node
+- `WavelengthService` model  - end-to-end wavelength service with lifecycle management
+- `WavelengthServiceChannelAssignment`  - sequenced M2M through model
+- `WavelengthServiceNode`  - PROTECT guard preventing deletion of in-use channels
 - ITU grid constants: DWDM 100GHz (44ch), DWDM 50GHz (88ch), CWDM (18ch)
 - Auto-population of channels from profile templates on device creation
 - Signal-based auto-creation of `WdmNode` when a profiled `DeviceType` is used
