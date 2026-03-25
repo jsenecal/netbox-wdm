@@ -4,11 +4,11 @@ from . import views
 
 router = NetBoxRouter()
 
-router.register("wdm-profiles", views.WdmDeviceTypeProfileViewSet)
-router.register("wdm-channel-templates", views.WdmChannelTemplateViewSet)
+router.register("wdm-profiles", views.WdmProfileViewSet)
+router.register("wdm-channel-plans", views.WdmChannelPlanViewSet)
 router.register("wdm-nodes", views.WdmNodeViewSet)
 router.register("wdm-line-ports", views.WdmLinePortViewSet)
-router.register("wavelength-channels", views.WavelengthChannelViewSet)
-router.register("wavelength-services", views.WavelengthServiceViewSet)
+router.register("wdm-channels", views.WdmChannelViewSet)
+router.register("wdm-circuits", views.WdmCircuitViewSet)
 
 urlpatterns = router.urls

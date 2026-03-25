@@ -4,22 +4,22 @@ from utilities.urls import get_model_urls
 from . import views
 
 urlpatterns = [
-    # WDM Device Type Profile
-    path("wdm-profiles/", views.WdmDeviceTypeProfileListView.as_view(), name="wdmdevicetypeprofile_list"),
-    path("wdm-profiles/add/", views.WdmDeviceTypeProfileEditView.as_view(), name="wdmdevicetypeprofile_add"),
+    # WDM Profile
+    path("wdm-profiles/", views.WdmProfileListView.as_view(), name="wdmprofile_list"),
+    path("wdm-profiles/add/", views.WdmProfileEditView.as_view(), name="wdmprofile_add"),
     path(
         "wdm-profiles/import/",
-        views.WdmDeviceTypeProfileBulkImportView.as_view(),
-        name="wdmdevicetypeprofile_import",
+        views.WdmProfileBulkImportView.as_view(),
+        name="wdmprofile_import",
     ),
     path(
         "wdm-profiles/delete/",
-        views.WdmDeviceTypeProfileBulkDeleteView.as_view(),
-        name="wdmdevicetypeprofile_bulk_delete",
+        views.WdmProfileBulkDeleteView.as_view(),
+        name="wdmprofile_bulk_delete",
     ),
-    path("wdm-profiles/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmdevicetypeprofile"))),
-    # WDM Channel Template
-    path("wdm-channel-templates/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmchanneltemplate"))),
+    path("wdm-profiles/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmprofile"))),
+    # WDM Channel Plan
+    path("wdm-channel-plans/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmchannelplan"))),
     # WDM Node
     path("wdm-nodes/", views.WdmNodeListView.as_view(), name="wdmnode_list"),
     path("wdm-nodes/add/", views.WdmNodeEditView.as_view(), name="wdmnode_add"),
@@ -28,32 +28,32 @@ urlpatterns = [
     path("wdm-nodes/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmnode"))),
     # WDM Line Port
     path("wdm-line-ports/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmlineport"))),
-    # Wavelength Channel
-    path("wavelength-channels/", views.WavelengthChannelListView.as_view(), name="wavelengthchannel_list"),
-    path("wavelength-channels/add/", views.WavelengthChannelEditView.as_view(), name="wavelengthchannel_add"),
+    # WDM Channel
+    path("wdm-channels/", views.WdmChannelListView.as_view(), name="wdmchannel_list"),
+    path("wdm-channels/add/", views.WdmChannelEditView.as_view(), name="wdmchannel_add"),
     path(
-        "wavelength-channels/edit/",
-        views.WavelengthChannelBulkEditView.as_view(),
-        name="wavelengthchannel_bulk_edit",
+        "wdm-channels/edit/",
+        views.WdmChannelBulkEditView.as_view(),
+        name="wdmchannel_bulk_edit",
     ),
     path(
-        "wavelength-channels/delete/",
-        views.WavelengthChannelBulkDeleteView.as_view(),
-        name="wavelengthchannel_bulk_delete",
+        "wdm-channels/delete/",
+        views.WdmChannelBulkDeleteView.as_view(),
+        name="wdmchannel_bulk_delete",
     ),
-    path("wavelength-channels/<int:pk>/", include(get_model_urls("netbox_wdm", "wavelengthchannel"))),
-    # Wavelength Service
-    path("wavelength-services/", views.WavelengthServiceListView.as_view(), name="wavelengthservice_list"),
-    path("wavelength-services/add/", views.WavelengthServiceEditView.as_view(), name="wavelengthservice_add"),
+    path("wdm-channels/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmchannel"))),
+    # WDM Circuit
+    path("wdm-circuits/", views.WdmCircuitListView.as_view(), name="wdmcircuit_list"),
+    path("wdm-circuits/add/", views.WdmCircuitEditView.as_view(), name="wdmcircuit_add"),
     path(
-        "wavelength-services/import/",
-        views.WavelengthServiceBulkImportView.as_view(),
-        name="wavelengthservice_import",
+        "wdm-circuits/import/",
+        views.WdmCircuitBulkImportView.as_view(),
+        name="wdmcircuit_import",
     ),
     path(
-        "wavelength-services/delete/",
-        views.WavelengthServiceBulkDeleteView.as_view(),
-        name="wavelengthservice_bulk_delete",
+        "wdm-circuits/delete/",
+        views.WdmCircuitBulkDeleteView.as_view(),
+        name="wdmcircuit_bulk_delete",
     ),
-    path("wavelength-services/<int:pk>/", include(get_model_urls("netbox_wdm", "wavelengthservice"))),
+    path("wdm-circuits/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmcircuit"))),
 ]

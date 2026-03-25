@@ -58,7 +58,7 @@ class WdmLineRoleChoices(ChoiceSet):
     )
 
 
-class WavelengthChannelStatusChoices(ChoiceSet):
+class WdmChannelStatusChoices(ChoiceSet):
     AVAILABLE = "available"
     RESERVED = "reserved"
     ACTIVE = "active"
@@ -69,7 +69,7 @@ class WavelengthChannelStatusChoices(ChoiceSet):
     )
 
 
-class WavelengthServiceStatusChoices(ChoiceSet):
+class WdmCircuitStatusChoices(ChoiceSet):
     PLANNED = "planned"
     STAGED = "staged"
     ACTIVE = "active"

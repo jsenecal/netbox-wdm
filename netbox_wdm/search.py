@@ -1,6 +1,6 @@
 from netbox.search import SearchIndex, register_search
 
-from .models import WavelengthChannel, WavelengthService, WdmNode
+from .models import WdmChannel, WdmCircuit, WdmNode
 
 
 @register_search
@@ -11,15 +11,15 @@ class WdmNodeIndex(SearchIndex):
 
 
 @register_search
-class WavelengthChannelIndex(SearchIndex):
-    model = WavelengthChannel
+class WdmChannelIndex(SearchIndex):
+    model = WdmChannel
     fields = (("label", 100),)
     display_attrs = ("wdm_node", "wavelength_nm", "status")
 
 
 @register_search
-class WavelengthServiceIndex(SearchIndex):
-    model = WavelengthService
+class WdmCircuitIndex(SearchIndex):
+    model = WdmCircuit
     fields = (
         ("name", 100),
         ("description", 500),

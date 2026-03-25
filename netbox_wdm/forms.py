@@ -7,24 +7,24 @@ from utilities.forms.fields import CommentField, DynamicModelChoiceField, Dynami
 from utilities.forms.rendering import FieldSet
 
 from .choices import (
-    WavelengthChannelStatusChoices,
-    WavelengthServiceStatusChoices,
+    WdmChannelStatusChoices,
+    WdmCircuitStatusChoices,
     WdmGridChoices,
     WdmNodeTypeChoices,
 )
 from .models import (
-    WavelengthChannel,
-    WavelengthService,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
     WdmLinePort,
     WdmNode,
+    WdmProfile,
 )
 
-# --- WdmDeviceTypeProfile ---
+# --- WdmProfile ---
 
 
-class WdmDeviceTypeProfileForm(NetBoxModelForm):
+class WdmProfileForm(NetBoxModelForm):
     device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all(), label=_("Device Type"))
 
     fieldsets = (
@@ -33,12 +33,12 @@ class WdmDeviceTypeProfileForm(NetBoxModelForm):
     )
 
     class Meta:
-        model = WdmDeviceTypeProfile
+        model = WdmProfile
         fields = ("device_type", "node_type", "grid", "fiber_type", "description", "tags")
 
 
-class WdmDeviceTypeProfileFilterForm(NetBoxModelFilterSetForm):
-    model = WdmDeviceTypeProfile
+class WdmProfileFilterForm(NetBoxModelFilterSetForm):
+    model = WdmProfile
     node_type = forms.MultipleChoiceField(choices=WdmNodeTypeChoices, required=False)
     grid = forms.MultipleChoiceField(choices=WdmGridChoices, required=False)
 
@@ -48,21 +48,21 @@ class WdmDeviceTypeProfileFilterForm(NetBoxModelFilterSetForm):
     )
 
 
-class WdmDeviceTypeProfileImportForm(NetBoxModelImportForm):
+class WdmProfileImportForm(NetBoxModelImportForm):
     device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all())
     node_type = forms.ChoiceField(choices=WdmNodeTypeChoices)
     grid = forms.ChoiceField(choices=WdmGridChoices)
 
     class Meta:
-        model = WdmDeviceTypeProfile
+        model = WdmProfile
         fields = ("device_type", "node_type", "grid", "fiber_type", "description")
 
 
-# --- WdmChannelTemplate ---
+# --- WdmChannelPlan ---
 
 
-class WdmChannelTemplateForm(NetBoxModelForm):
-    profile = DynamicModelChoiceField(queryset=WdmDeviceTypeProfile.objects.all(), label=_("Profile"))
+class WdmChannelPlanForm(NetBoxModelForm):
+    profile = DynamicModelChoiceField(queryset=WdmProfile.objects.all(), label=_("Profile"))
     mux_front_port_template = DynamicModelChoiceField(
         queryset=FrontPortTemplate.objects.all(), required=False, label=_("MUX Front Port Template")
     )
@@ -78,13 +78,13 @@ class WdmChannelTemplateForm(NetBoxModelForm):
             "label",
             "mux_front_port_template",
             "demux_front_port_template",
-            name=_("Channel Template"),
+            name=_("Channel Plan"),
         ),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
-        model = WdmChannelTemplate
+        model = WdmChannelPlan
         fields = (
             "profile",
             "grid_position",
@@ -150,10 +150,10 @@ class WdmLinePortForm(NetBoxModelForm):
         fields = ("wdm_node", "rear_port", "direction", "role", "tags")
 
 
-# --- WavelengthChannel ---
+# --- WdmChannel ---
 
 
-class WavelengthChannelForm(NetBoxModelForm):
+class WdmChannelForm(NetBoxModelForm):
     wdm_node = DynamicModelChoiceField(queryset=WdmNode.objects.all(), label=_("WDM Node"))
     mux_front_port = DynamicModelChoiceField(
         queryset=FrontPort.objects.all(), required=False, label=_("MUX Front Port")
@@ -177,7 +177,7 @@ class WavelengthChannelForm(NetBoxModelForm):
     )
 
     class Meta:
-        model = WavelengthChannel
+        model = WdmChannel
         fields = (
             "wdm_node",
             "grid_position",
@@ -190,16 +190,16 @@ class WavelengthChannelForm(NetBoxModelForm):
         )
 
 
-class WavelengthChannelBulkEditForm(NetBoxModelBulkEditForm):
-    model = WavelengthChannel
-    status = forms.ChoiceField(choices=WavelengthChannelStatusChoices, required=False)
+class WdmChannelBulkEditForm(NetBoxModelBulkEditForm):
+    model = WdmChannel
+    status = forms.ChoiceField(choices=WdmChannelStatusChoices, required=False)
     fieldsets = (FieldSet("status"),)
     nullable_fields = ()
 
 
-class WavelengthChannelFilterForm(NetBoxModelFilterSetForm):
-    model = WavelengthChannel
-    status = forms.MultipleChoiceField(choices=WavelengthChannelStatusChoices, required=False)
+class WdmChannelFilterForm(NetBoxModelFilterSetForm):
+    model = WdmChannel
+    status = forms.MultipleChoiceField(choices=WdmChannelStatusChoices, required=False)
     wdm_node_id = DynamicModelMultipleChoiceField(queryset=WdmNode.objects.all(), required=False, label=_("WDM Node"))
 
     fieldsets = (
@@ -208,26 +208,26 @@ class WavelengthChannelFilterForm(NetBoxModelFilterSetForm):
     )
 
 
-# --- WavelengthService ---
+# --- WdmCircuit ---
 
 
-class WavelengthServiceForm(NetBoxModelForm):
+class WdmCircuitForm(NetBoxModelForm):
     tenant = DynamicModelChoiceField(queryset=Tenant.objects.all(), required=False)
     comments = CommentField()
 
     fieldsets = (
-        FieldSet("name", "status", "wavelength_nm", "tenant", name=_("Service")),
+        FieldSet("name", "status", "wavelength_nm", "tenant", name=_("Circuit")),
         FieldSet("description", "comments", "tags", name=_("Additional")),
     )
 
     class Meta:
-        model = WavelengthService
+        model = WdmCircuit
         fields = ("name", "status", "wavelength_nm", "tenant", "description", "comments", "tags")
 
 
-class WavelengthServiceFilterForm(NetBoxModelFilterSetForm):
-    model = WavelengthService
-    status = forms.MultipleChoiceField(choices=WavelengthServiceStatusChoices, required=False)
+class WdmCircuitFilterForm(NetBoxModelFilterSetForm):
+    model = WdmCircuit
+    status = forms.MultipleChoiceField(choices=WdmCircuitStatusChoices, required=False)
     tenant_id = DynamicModelMultipleChoiceField(queryset=Tenant.objects.all(), required=False, label=_("Tenant"))
 
     fieldsets = (
@@ -236,9 +236,9 @@ class WavelengthServiceFilterForm(NetBoxModelFilterSetForm):
     )
 
 
-class WavelengthServiceImportForm(NetBoxModelImportForm):
-    status = forms.ChoiceField(choices=WavelengthServiceStatusChoices)
+class WdmCircuitImportForm(NetBoxModelImportForm):
+    status = forms.ChoiceField(choices=WdmCircuitStatusChoices)
 
     class Meta:
-        model = WavelengthService
+        model = WdmCircuit
         fields = ("name", "status", "wavelength_nm", "description", "comments")

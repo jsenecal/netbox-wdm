@@ -7,33 +7,33 @@ import pytest
 class TestGraphQLImports:
     def test_types_import(self):
         from netbox_wdm.graphql.types import (
-            WavelengthChannelType,
-            WavelengthServiceType,
-            WdmChannelTemplateType,
-            WdmDeviceTypeProfileType,
-            WdmNodeInstanceType,
+            WdmChannelPlanType,
+            WdmChannelType,
+            WdmCircuitType,
             WdmLinePortType,
+            WdmNodeInstanceType,
+            WdmProfileType,
         )
 
-        assert WdmDeviceTypeProfileType is not None
-        assert WdmChannelTemplateType is not None
+        assert WdmProfileType is not None
+        assert WdmChannelPlanType is not None
         assert WdmNodeInstanceType is not None
         assert WdmLinePortType is not None
-        assert WavelengthChannelType is not None
-        assert WavelengthServiceType is not None
+        assert WdmChannelType is not None
+        assert WdmCircuitType is not None
 
     def test_filters_import(self):
         from netbox_wdm.graphql.filters import (
-            WavelengthChannelFilter,
-            WavelengthServiceFilter,
-            WdmDeviceTypeProfileFilter,
+            WdmChannelFilter,
+            WdmCircuitFilter,
             WdmNodeFilter,
+            WdmProfileFilter,
         )
 
-        assert WdmDeviceTypeProfileFilter is not None
+        assert WdmProfileFilter is not None
         assert WdmNodeFilter is not None
-        assert WavelengthChannelFilter is not None
-        assert WavelengthServiceFilter is not None
+        assert WdmChannelFilter is not None
+        assert WdmCircuitFilter is not None
 
     def test_schema_import(self):
         from netbox_wdm.graphql.schema import schema

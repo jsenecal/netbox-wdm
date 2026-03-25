@@ -7,8 +7,8 @@ from django.utils.translation import gettext_lazy as _
 from netbox.models import NetBoxModel
 
 from .choices import (
-    WavelengthChannelStatusChoices,
-    WavelengthServiceStatusChoices,
+    WdmChannelStatusChoices,
+    WdmCircuitStatusChoices,
     WdmFiberTypeChoices,
     WdmGridChoices,
     WdmLineDirectionChoices,
@@ -17,7 +17,7 @@ from .choices import (
 )
 
 
-class WdmDeviceTypeProfile(NetBoxModel):
+class WdmProfile(NetBoxModel):
     """WDM capability profile attached to a DeviceType."""
 
     prerequisite_models = ("dcim.DeviceType",)
@@ -50,23 +50,23 @@ class WdmDeviceTypeProfile(NetBoxModel):
 
     class Meta:
         ordering = ("device_type",)
-        verbose_name = _("WDM device type profile")
-        verbose_name_plural = _("WDM device type profiles")
+        verbose_name = _("WDM profile")
+        verbose_name_plural = _("WDM profiles")
 
     def __str__(self):
         return f"WDM Profile: {self.device_type}"
 
     def get_absolute_url(self):
-        return reverse("plugins:netbox_wdm:wdmdevicetypeprofile", args=[self.pk])
+        return reverse("plugins:netbox_wdm:wdmprofile", args=[self.pk])
 
 
-class WdmChannelTemplate(NetBoxModel):
-    """Channel slot template on a WdmDeviceTypeProfile."""
+class WdmChannelPlan(NetBoxModel):
+    """Channel slot template on a WdmProfile."""
 
     profile = models.ForeignKey(
-        to="netbox_wdm.WdmDeviceTypeProfile",
+        to="netbox_wdm.WdmProfile",
         on_delete=models.CASCADE,
-        related_name="channel_templates",
+        related_name="channel_plans",
         verbose_name=_("profile"),
     )
     grid_position = models.PositiveIntegerField(verbose_name=_("grid position"))
@@ -95,8 +95,8 @@ class WdmChannelTemplate(NetBoxModel):
 
     class Meta:
         ordering = ("profile", "grid_position")
-        verbose_name = _("WDM channel template")
-        verbose_name_plural = _("WDM channel templates")
+        verbose_name = _("WDM channel plan")
+        verbose_name_plural = _("WDM channel plans")
         constraints = [
             models.UniqueConstraint(
                 fields=["profile", "wavelength_nm"],
@@ -122,7 +122,7 @@ class WdmChannelTemplate(NetBoxModel):
         return f"{self.label} ({self.wavelength_nm}nm)"
 
     def get_absolute_url(self):
-        return reverse("plugins:netbox_wdm:wdmchanneltemplate", args=[self.pk])
+        return reverse("plugins:netbox_wdm:wdmchannelplan", args=[self.pk])
 
 
 class WdmNode(NetBoxModel):
@@ -178,7 +178,7 @@ class WdmNode(NetBoxModel):
         errors = []
         channels = {ch.pk: ch for ch in self.channels.all()}
 
-        protected_statuses = {WavelengthChannelStatusChoices.ACTIVE, WavelengthChannelStatusChoices.RESERVED}
+        protected_statuses = {WdmChannelStatusChoices.ACTIVE, WdmChannelStatusChoices.RESERVED}
         for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             if ch is None:
@@ -225,41 +225,39 @@ class WdmNode(NetBoxModel):
                 self._auto_populate_channels()
 
     def _auto_populate_channels(self):
-        """Create WavelengthChannel rows from the device type's WDM profile templates."""
+        """Create WdmChannel rows from the device type's WDM profile channel plans."""
         from dcim.models import FrontPort
 
         try:
             profile = self.device.device_type.wdm_profile
-        except WdmDeviceTypeProfile.DoesNotExist:
+        except WdmProfile.DoesNotExist:
             return
 
-        templates = list(
-            profile.channel_templates.select_related("mux_front_port_template", "demux_front_port_template").all()
-        )
-        if not templates:
+        plans = list(profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").all())
+        if not plans:
             return
 
         fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device)}
 
         channels = []
-        for ct in templates:
+        for cp in plans:
             mux_front_port = None
-            if ct.mux_front_port_template:
-                mux_front_port = fp_by_name.get(ct.mux_front_port_template.name)
+            if cp.mux_front_port_template:
+                mux_front_port = fp_by_name.get(cp.mux_front_port_template.name)
             demux_front_port = None
-            if ct.demux_front_port_template:
-                demux_front_port = fp_by_name.get(ct.demux_front_port_template.name)
+            if cp.demux_front_port_template:
+                demux_front_port = fp_by_name.get(cp.demux_front_port_template.name)
             channels.append(
-                WavelengthChannel(
+                WdmChannel(
                     wdm_node=self,
-                    grid_position=ct.grid_position,
-                    wavelength_nm=ct.wavelength_nm,
-                    label=ct.label,
+                    grid_position=cp.grid_position,
+                    wavelength_nm=cp.wavelength_nm,
+                    label=cp.label,
                     mux_front_port=mux_front_port,
                     demux_front_port=demux_front_port,
                 )
             )
-        WavelengthChannel.objects.bulk_create(channels)
+        WdmChannel.objects.bulk_create(channels)
 
 
 class WdmLinePort(NetBoxModel):
@@ -320,9 +318,7 @@ class WdmLinePort(NetBoxModel):
         for field in self.FIXED_FIELDS:
             attr = f"{field}_id" if field == "rear_port" else field
             if getattr(self, attr) != getattr(db_obj, attr):
-                raise ValidationError(
-                    _("Cannot modify %(field)s on a fixed WDM node.") % {"field": field}
-                )
+                raise ValidationError(_("Cannot modify %(field)s on a fixed WDM node.") % {"field": field})
 
     def clean(self):
         """On fixed nodes, line port configuration cannot be changed after creation."""
@@ -339,7 +335,7 @@ class WdmLinePort(NetBoxModel):
         super().save(*args, **kwargs)
 
 
-class WavelengthChannel(NetBoxModel):
+class WdmChannel(NetBoxModel):
     """A wavelength channel instance on a WDM node."""
 
     prerequisite_models = ("netbox_wdm.WdmNode",)
@@ -375,16 +371,16 @@ class WavelengthChannel(NetBoxModel):
     )
     status = models.CharField(
         max_length=50,
-        choices=WavelengthChannelStatusChoices,
-        default=WavelengthChannelStatusChoices.AVAILABLE,
+        choices=WdmChannelStatusChoices,
+        default=WdmChannelStatusChoices.AVAILABLE,
         db_index=True,
         verbose_name=_("status"),
     )
 
     class Meta:
         ordering = ("wdm_node", "grid_position")
-        verbose_name = _("wavelength channel")
-        verbose_name_plural = _("wavelength channels")
+        verbose_name = _("WDM channel")
+        verbose_name_plural = _("WDM channels")
         constraints = [
             models.UniqueConstraint(
                 fields=["wdm_node", "wavelength_nm"],
@@ -412,19 +408,18 @@ class WavelengthChannel(NetBoxModel):
         return f"{self.label} ({self.wavelength_nm}nm)"
 
     def get_absolute_url(self):
-        return reverse("plugins:netbox_wdm:wavelengthchannel", args=[self.pk])
+        return reverse("plugins:netbox_wdm:wdmchannel", args=[self.pk])
 
     def _check_fixed_fields(self):
         """Check that fixed fields haven't changed on a fixed node."""
         if not self.pk or not self.wdm_node.is_fixed:
             return
-        db_obj = WavelengthChannel.objects.get(pk=self.pk)
+        db_obj = WdmChannel.objects.get(pk=self.pk)
         for field in self.FIXED_FIELDS:
             attr = f"{field}_id" if field.endswith("_port") else field
             if getattr(self, attr) != getattr(db_obj, attr):
                 raise ValidationError(
-                    _("Cannot modify %(field)s on a fixed WDM node. Only status can be changed.")
-                    % {"field": field}
+                    _("Cannot modify %(field)s on a fixed WDM node. Only status can be changed.") % {"field": field}
                 )
 
     def clean(self):
@@ -438,16 +433,16 @@ class WavelengthChannel(NetBoxModel):
         super().save(*args, **kwargs)
 
 
-class WavelengthService(NetBoxModel):
-    """An end-to-end wavelength service spanning WDM channels."""
+class WdmCircuit(NetBoxModel):
+    """An end-to-end WDM circuit spanning WDM channels."""
 
     prerequisite_models = ("netbox_wdm.WdmNode",)
 
     name = models.CharField(max_length=200, verbose_name=_("name"))
     status = models.CharField(
         max_length=50,
-        choices=WavelengthServiceStatusChoices,
-        default=WavelengthServiceStatusChoices.PLANNED,
+        choices=WdmCircuitStatusChoices,
+        default=WdmCircuitStatusChoices.PLANNED,
         db_index=True,
         verbose_name=_("status"),
     )
@@ -461,7 +456,7 @@ class WavelengthService(NetBoxModel):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-        related_name="wavelength_services",
+        related_name="wdm_circuits",
         verbose_name=_("tenant"),
     )
     description = models.TextField(blank=True, verbose_name=_("description"))
@@ -471,14 +466,14 @@ class WavelengthService(NetBoxModel):
 
     class Meta:
         ordering = ("name",)
-        verbose_name = _("wavelength service")
-        verbose_name_plural = _("wavelength services")
+        verbose_name = _("WDM circuit")
+        verbose_name_plural = _("WDM circuits")
 
     def __str__(self):
         return self.name
 
     def get_absolute_url(self):
-        return reverse("plugins:netbox_wdm:wavelengthservice", args=[self.pk])
+        return reverse("plugins:netbox_wdm:wdmcircuit", args=[self.pk])
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -491,34 +486,32 @@ class WavelengthService(NetBoxModel):
         if not self.pk:
             return
 
-        cas = list(self.channel_assignments.select_related("channel__wdm_node"))
-        if not cas:
+        segments = list(self.path_segments.select_related("channel__wdm_node"))
+        if not segments:
             return
 
         grids = set()
         svc_wl = Decimal(str(self.wavelength_nm))
-        for ca in cas:
-            if ca.channel:
-                grids.add(ca.channel.wdm_node.grid)
+        for seg in segments:
+            grids.add(seg.channel.wdm_node.grid)
 
         if len(grids) > 1:
             raise ValidationError(
-                _("All WDM nodes in a wavelength service must use the same grid. Found: %(grids)s")
+                _("All WDM nodes in a circuit must use the same grid. Found: %(grids)s")
                 % {"grids": ", ".join(sorted(grids))}
             )
 
-        for ca in cas:
-            if ca.channel:
-                ch_wl = Decimal(str(ca.channel.wavelength_nm))
-                if abs(ch_wl - svc_wl) > Decimal("0.01"):
-                    raise ValidationError(
-                        _("Channel %(label)s has wavelength %(ch_wl)s nm but service wavelength is %(svc_wl)s nm.")
-                        % {
-                            "label": ca.channel.label,
-                            "ch_wl": ca.channel.wavelength_nm,
-                            "svc_wl": self.wavelength_nm,
-                        }
-                    )
+        for seg in segments:
+            ch_wl = Decimal(str(seg.channel.wavelength_nm))
+            if abs(ch_wl - svc_wl) > Decimal("0.01"):
+                raise ValidationError(
+                    _("Channel %(label)s has wavelength %(ch_wl)s nm but circuit wavelength is %(svc_wl)s nm.")
+                    % {
+                        "label": seg.channel.label,
+                        "ch_wl": seg.channel.wavelength_nm,
+                        "svc_wl": self.wavelength_nm,
+                    }
+                )
 
     def save(self, *args, **kwargs):
         """Save and handle lifecycle transitions."""
@@ -529,113 +522,67 @@ class WavelengthService(NetBoxModel):
         self._original_status = self.status
 
         if not is_new and old_status != self.status:
-            if self.status == WavelengthServiceStatusChoices.DECOMMISSIONED:
-                self.nodes.all().delete()
-                channel_ids = self.channel_assignments.values_list("channel_id", flat=True)
-                WavelengthChannel.objects.filter(pk__in=channel_ids).update(
-                    status=WavelengthChannelStatusChoices.AVAILABLE
-                )
-            elif old_status == WavelengthServiceStatusChoices.DECOMMISSIONED:
-                self.rebuild_nodes()
+            if self.status == WdmCircuitStatusChoices.DECOMMISSIONED:
+                channel_ids = self.path_segments.values_list("channel_id", flat=True)
+                self.path_segments.all().delete()
+                WdmChannel.objects.filter(pk__in=channel_ids).update(status=WdmChannelStatusChoices.AVAILABLE)
 
     def get_stitched_path(self):
         """Return the stitched end-to-end path as an ordered list of hop dicts."""
         hops = []
-        for ca in self.channel_assignments.select_related(
+        for seg in self.path_segments.select_related(
             "channel__wdm_node__device",
             "channel__mux_front_port",
             "channel__demux_front_port",
         ).order_by("sequence"):
-            if ca.channel:
-                ch = ca.channel
-                hops.append(
-                    {
-                        "type": "wdm_node",
-                        "node_id": ch.wdm_node_id,
-                        "node_name": ch.wdm_node.device.name,
-                        "channel_id": ch.pk,
-                        "channel_label": ch.label,
-                        "wavelength_nm": float(ch.wavelength_nm),
-                        "mux_front_port_id": ch.mux_front_port_id,
-                        "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
-                        "demux_front_port_id": ch.demux_front_port_id,
-                        "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
-                    }
-                )
+            ch = seg.channel
+            hops.append(
+                {
+                    "type": "wdm_node",
+                    "node_id": ch.wdm_node_id,
+                    "node_name": ch.wdm_node.device.name,
+                    "channel_id": ch.pk,
+                    "channel_label": ch.label,
+                    "wavelength_nm": float(ch.wavelength_nm),
+                    "mux_front_port_id": ch.mux_front_port_id,
+                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
+                    "demux_front_port_id": ch.demux_front_port_id,
+                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
+                }
+            )
         return hops
 
-    def rebuild_nodes(self):
-        """Delete existing service nodes and recreate from channel assignments."""
-        self.nodes.all().delete()
-        nodes = []
-        for ca in self.channel_assignments.all():
-            if ca.channel_id:
-                nodes.append(WavelengthServiceNode(service=self, channel=ca.channel))
-        if nodes:
-            WavelengthServiceNode.objects.bulk_create(nodes)
 
+class WdmCircuitPath(models.Model):
+    """Links a WDM circuit to channels in sequence. PROTECT prevents channel deletion."""
 
-class WavelengthServiceChannelAssignment(models.Model):
-    """Through-model linking a WavelengthService to WavelengthChannels in sequence."""
-
-    service = models.ForeignKey(
-        to="netbox_wdm.WavelengthService",
+    circuit = models.ForeignKey(
+        to="netbox_wdm.WdmCircuit",
         on_delete=models.CASCADE,
-        related_name="channel_assignments",
-        verbose_name=_("service"),
+        related_name="path_segments",
+        verbose_name=_("circuit"),
     )
     channel = models.ForeignKey(
-        to="netbox_wdm.WavelengthChannel",
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
+        to="netbox_wdm.WdmChannel",
+        on_delete=models.PROTECT,
         verbose_name=_("channel"),
     )
     sequence = models.PositiveIntegerField(verbose_name=_("sequence"))
 
     class Meta:
-        ordering = ("service", "sequence")
-        verbose_name = _("wavelength service channel assignment")
-        verbose_name_plural = _("wavelength service channel assignments")
+        ordering = ("circuit", "sequence")
+        verbose_name = _("WDM circuit path")
+        verbose_name_plural = _("WDM circuit paths")
         constraints = [
             models.UniqueConstraint(
-                fields=["service", "channel"],
-                name="unique_wsca_service_channel",
+                fields=["circuit", "channel"],
+                name="unique_circuit_channel",
             ),
             models.UniqueConstraint(
-                fields=["service", "sequence"],
-                name="unique_wsca_service_sequence",
+                fields=["circuit", "sequence"],
+                name="unique_circuit_sequence",
             ),
         ]
 
     def __str__(self):
-        return f"{self.service} #{self.sequence}: {self.channel}"
-
-
-class WavelengthServiceNode(models.Model):
-    """PROTECT guard preventing deletion of WavelengthChannels in active services."""
-
-    service = models.ForeignKey(
-        to="netbox_wdm.WavelengthService",
-        on_delete=models.CASCADE,
-        related_name="nodes",
-        verbose_name=_("service"),
-    )
-    channel = models.ForeignKey(
-        to="netbox_wdm.WavelengthChannel",
-        on_delete=models.PROTECT,
-        verbose_name=_("channel"),
-    )
-
-    class Meta:
-        verbose_name = _("wavelength service node")
-        verbose_name_plural = _("wavelength service nodes")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["service", "channel"],
-                name="unique_wsn_channel",
-            ),
-        ]
-
-    def __str__(self):
-        return f"channel: {self.channel}"
+        return f"{self.circuit} #{self.sequence}: {self.channel}"

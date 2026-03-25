@@ -6,20 +6,20 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from netbox_wdm.choices import (
-    WavelengthChannelStatusChoices,
-    WavelengthServiceStatusChoices,
+    WdmChannelStatusChoices,
+    WdmCircuitStatusChoices,
     WdmGridChoices,
-    WdmNodeTypeChoices,
     WdmLineDirectionChoices,
+    WdmNodeTypeChoices,
 )
 from netbox_wdm.models import (
-    WavelengthChannel,
-    WavelengthService,
-    WavelengthServiceChannelAssignment,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
-    WdmNode,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
+    WdmCircuitPath,
     WdmLinePort,
+    WdmNode,
+    WdmProfile,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ def device(site, device_type, device_role):
 
 @pytest.fixture
 def profile(device_type):
-    return WdmDeviceTypeProfile.objects.create(
+    return WdmProfile.objects.create(
         device_type=device_type,
         node_type=WdmNodeTypeChoices.TERMINAL_MUX,
         grid=WdmGridChoices.DWDM_100GHZ,
@@ -92,7 +92,7 @@ def wdm_node(device):
 
 @pytest.fixture
 def channel(wdm_node):
-    return WavelengthChannel.objects.create(
+    return WdmChannel.objects.create(
         wdm_node=wdm_node,
         grid_position=1,
         wavelength_nm="1560.61",
@@ -101,21 +101,21 @@ def channel(wdm_node):
 
 
 @pytest.fixture
-def service():
-    return WavelengthService.objects.create(
-        name="Test Service",
-        status=WavelengthServiceStatusChoices.PLANNED,
+def circuit():
+    return WdmCircuit.objects.create(
+        name="Test Circuit",
+        status=WdmCircuitStatusChoices.PLANNED,
         wavelength_nm="1560.61",
     )
 
 
 # ---------------------------------------------------------------------------
-# WdmDeviceTypeProfile API tests
+# WdmProfile API tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestWdmDeviceTypeProfileAPI:
+class TestWdmProfileAPI:
     base_url = "/api/plugins/wdm/wdm-profiles/"
 
     def test_list(self, api_client, profile):
@@ -163,34 +163,34 @@ class TestWdmDeviceTypeProfileAPI:
             model="Delete Target",
             slug="delete-target",
         )
-        target = WdmDeviceTypeProfile.objects.create(
+        target = WdmProfile.objects.create(
             device_type=other_dt,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
         response = api_client.delete(f"{self.base_url}{target.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
-        assert not WdmDeviceTypeProfile.objects.filter(pk=target.pk).exists()
+        assert not WdmProfile.objects.filter(pk=target.pk).exists()
 
 
 # ---------------------------------------------------------------------------
-# WdmChannelTemplate API tests
+# WdmChannelPlan API tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestWdmChannelTemplateAPI:
-    base_url = "/api/plugins/wdm/wdm-channel-templates/"
+class TestWdmChannelPlanAPI:
+    base_url = "/api/plugins/wdm/wdm-channel-plans/"
 
     def test_list(self, api_client, profile):
-        WdmChannelTemplate.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
+        WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
         response = api_client.get(self.base_url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] >= 1
 
     def test_retrieve(self, api_client, profile):
-        ct = WdmChannelTemplate.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
-        response = api_client.get(f"{self.base_url}{ct.pk}/")
+        cp = WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
+        response = api_client.get(f"{self.base_url}{cp.pk}/")
         assert response.status_code == status.HTTP_200_OK
         assert response.data["label"] == "C21"
 
@@ -209,9 +209,9 @@ class TestWdmChannelTemplateAPI:
         assert response.data["label"] == "C25"
 
     def test_update(self, api_client, profile):
-        ct = WdmChannelTemplate.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
+        cp = WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
         response = api_client.patch(
-            f"{self.base_url}{ct.pk}/",
+            f"{self.base_url}{cp.pk}/",
             {"label": "C21-updated"},
             format="json",
         )
@@ -219,8 +219,8 @@ class TestWdmChannelTemplateAPI:
         assert response.data["label"] == "C21-updated"
 
     def test_delete(self, api_client, profile):
-        ct = WdmChannelTemplate.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
-        response = api_client.delete(f"{self.base_url}{ct.pk}/")
+        cp = WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm="1560.61", label="C21")
+        response = api_client.delete(f"{self.base_url}{cp.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
@@ -297,7 +297,7 @@ class TestApplyMappingAPI:
         return f"/api/plugins/wdm/wdm-nodes/{node_pk}/apply-mapping/"
 
     def test_valid_mapping(self, api_client, wdm_node):
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
             wavelength_nm="1560.61",
@@ -314,12 +314,12 @@ class TestApplyMappingAPI:
         assert "changed" in response.data
 
     def test_reject_lit_channel_remap(self, api_client, wdm_node):
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
             wavelength_nm="1560.61",
             label="C21",
-            status=WavelengthChannelStatusChoices.ACTIVE,
+            status=WdmChannelStatusChoices.ACTIVE,
         )
         response = api_client.post(
             self._url(wdm_node.pk),
@@ -331,12 +331,12 @@ class TestApplyMappingAPI:
         assert len(response.data["errors"]) >= 1
 
     def test_reject_reserved_channel_remap(self, api_client, wdm_node):
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
             wavelength_nm="1560.61",
             label="C21",
-            status=WavelengthChannelStatusChoices.RESERVED,
+            status=WdmChannelStatusChoices.RESERVED,
         )
         response = api_client.post(
             self._url(wdm_node.pk),
@@ -347,8 +347,8 @@ class TestApplyMappingAPI:
         assert "errors" in response.data
 
     def test_reject_port_conflict(self, api_client, wdm_node):
-        ch1 = WavelengthChannel.objects.create(wdm_node=wdm_node, grid_position=1, wavelength_nm="1560.61", label="C21")
-        ch2 = WavelengthChannel.objects.create(wdm_node=wdm_node, grid_position=2, wavelength_nm="1559.79", label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=1, wavelength_nm="1560.61", label="C21")
+        ch2 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=2, wavelength_nm="1559.79", label="C22")
         response = api_client.post(
             self._url(wdm_node.pk),
             {"mapping": {str(ch1.pk): 100, str(ch2.pk): 100}},
@@ -459,13 +459,13 @@ class TestWdmLinePortAPI:
 
 
 # ---------------------------------------------------------------------------
-# WavelengthChannel API tests
+# WdmChannel API tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestWavelengthChannelAPI:
-    base_url = "/api/plugins/wdm/wavelength-channels/"
+class TestWdmChannelAPI:
+    base_url = "/api/plugins/wdm/wdm-channels/"
 
     def test_list(self, api_client, channel):
         response = api_client.get(self.base_url)
@@ -476,7 +476,7 @@ class TestWavelengthChannelAPI:
         response = api_client.get(f"{self.base_url}{channel.pk}/")
         assert response.status_code == status.HTTP_200_OK
         assert response.data["label"] == "C21"
-        assert response.data["status"] == WavelengthChannelStatusChoices.AVAILABLE
+        assert response.data["status"] == WdmChannelStatusChoices.AVAILABLE
 
     def test_create(self, api_client, wdm_node):
         response = api_client.post(
@@ -495,14 +495,14 @@ class TestWavelengthChannelAPI:
     def test_update_status(self, api_client, channel):
         response = api_client.patch(
             f"{self.base_url}{channel.pk}/",
-            {"status": WavelengthChannelStatusChoices.RESERVED},
+            {"status": WdmChannelStatusChoices.RESERVED},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["status"] == WavelengthChannelStatusChoices.RESERVED
+        assert response.data["status"] == WdmChannelStatusChoices.RESERVED
 
     def test_delete(self, api_client, wdm_node):
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=10,
             wavelength_nm="1550.12",
@@ -518,64 +518,64 @@ class TestWavelengthChannelAPI:
         assert channel.pk in ids
 
     def test_filter_by_status(self, api_client, channel):
-        response = api_client.get(self.base_url, {"status": WavelengthChannelStatusChoices.AVAILABLE})
+        response = api_client.get(self.base_url, {"status": WdmChannelStatusChoices.AVAILABLE})
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] >= 1
 
 
 # ---------------------------------------------------------------------------
-# WavelengthService API tests
+# WdmCircuit API tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-class TestWavelengthServiceAPI:
-    base_url = "/api/plugins/wdm/wavelength-services/"
+class TestWdmCircuitAPI:
+    base_url = "/api/plugins/wdm/wdm-circuits/"
 
-    def test_list(self, api_client, service):
+    def test_list(self, api_client, circuit):
         response = api_client.get(self.base_url)
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] >= 1
 
-    def test_retrieve(self, api_client, service):
-        response = api_client.get(f"{self.base_url}{service.pk}/")
+    def test_retrieve(self, api_client, circuit):
+        response = api_client.get(f"{self.base_url}{circuit.pk}/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["name"] == "Test Service"
-        assert response.data["status"] == WavelengthServiceStatusChoices.PLANNED
+        assert response.data["name"] == "Test Circuit"
+        assert response.data["status"] == WdmCircuitStatusChoices.PLANNED
 
     def test_create(self, api_client):
         response = api_client.post(
             self.base_url,
             {
-                "name": "New Wavelength Service",
-                "status": WavelengthServiceStatusChoices.PLANNED,
+                "name": "New WDM Circuit",
+                "status": WdmCircuitStatusChoices.PLANNED,
                 "wavelength_nm": "1559.79",
             },
             format="json",
         )
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.data["name"] == "New Wavelength Service"
+        assert response.data["name"] == "New WDM Circuit"
 
-    def test_update(self, api_client, service):
+    def test_update(self, api_client, circuit):
         response = api_client.patch(
-            f"{self.base_url}{service.pk}/",
-            {"description": "Updated service description"},
+            f"{self.base_url}{circuit.pk}/",
+            {"description": "Updated circuit description"},
             format="json",
         )
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["description"] == "Updated service description"
+        assert response.data["description"] == "Updated circuit description"
 
     def test_delete(self, api_client):
-        svc = WavelengthService.objects.create(
+        ckt = WdmCircuit.objects.create(
             name="Delete Me",
-            status=WavelengthServiceStatusChoices.PLANNED,
+            status=WdmCircuitStatusChoices.PLANNED,
             wavelength_nm="1558.17",
         )
-        response = api_client.delete(f"{self.base_url}{svc.pk}/")
+        response = api_client.delete(f"{self.base_url}{ckt.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
-    def test_filter_by_status(self, api_client, service):
-        response = api_client.get(self.base_url, {"status": WavelengthServiceStatusChoices.PLANNED})
+    def test_filter_by_status(self, api_client, circuit):
+        response = api_client.get(self.base_url, {"status": WdmCircuitStatusChoices.PLANNED})
         assert response.status_code == status.HTTP_200_OK
         assert response.data["count"] >= 1
 
@@ -587,26 +587,26 @@ class TestWavelengthServiceAPI:
 
 @pytest.mark.django_db
 class TestStitchAPI:
-    def _url(self, service_pk):
-        return f"/api/plugins/wdm/wavelength-services/{service_pk}/stitch/"
+    def _url(self, circuit_pk):
+        return f"/api/plugins/wdm/wdm-circuits/{circuit_pk}/stitch/"
 
-    def test_stitch_empty_service(self, api_client, service):
-        """A service with no channel assignments returns is_complete=False."""
-        response = api_client.get(self._url(service.pk))
+    def test_stitch_empty_circuit(self, api_client, circuit):
+        """A circuit with no path segments returns is_complete=False."""
+        response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["service_id"] == service.pk
-        assert response.data["service_name"] == "Test Service"
+        assert response.data["service_id"] == circuit.pk
+        assert response.data["service_name"] == "Test Circuit"
         assert response.data["is_complete"] is False
         assert response.data["hops"] == []
 
-    def test_stitch_with_channels(self, api_client, service, channel, wdm_node):
-        """A service with channel assignments returns hops in sequence order."""
-        WavelengthServiceChannelAssignment.objects.create(
-            service=service,
+    def test_stitch_with_channels(self, api_client, circuit, channel, wdm_node):
+        """A circuit with path segments returns hops in sequence order."""
+        WdmCircuitPath.objects.create(
+            circuit=circuit,
             channel=channel,
             sequence=1,
         )
-        response = api_client.get(self._url(service.pk))
+        response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["is_complete"] is True
         assert len(response.data["hops"]) == 1
@@ -615,14 +615,14 @@ class TestStitchAPI:
         assert hop["channel_label"] == channel.label
         assert hop["node_id"] == wdm_node.pk
 
-    def test_stitch_response_shape(self, api_client, service):
+    def test_stitch_response_shape(self, api_client, circuit):
         """Verify top-level keys are always present."""
-        response = api_client.get(self._url(service.pk))
+        response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
         for key in ("service_id", "service_name", "wavelength_nm", "status", "is_complete", "hops"):
             assert key in response.data
 
-    def test_stitch_wavelength_value(self, api_client, service):
-        response = api_client.get(self._url(service.pk))
+    def test_stitch_wavelength_value(self, api_client, circuit):
+        response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
         assert abs(response.data["wavelength_nm"] - 1560.61) < 0.01

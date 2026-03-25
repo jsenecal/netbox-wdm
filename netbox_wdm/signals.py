@@ -7,11 +7,11 @@ def _device_post_save(sender, instance, created, **kwargs):
     if not created:
         return
 
-    from .models import WdmDeviceTypeProfile, WdmNode
+    from .models import WdmNode, WdmProfile
 
     try:
-        profile = WdmDeviceTypeProfile.objects.get(device_type=instance.device_type)
-    except WdmDeviceTypeProfile.DoesNotExist:
+        profile = WdmProfile.objects.get(device_type=instance.device_type)
+    except WdmProfile.DoesNotExist:
         return
 
     def _create_node():

@@ -3,16 +3,16 @@ from django.utils.translation import gettext_lazy as _
 from netbox.tables import NetBoxTable, columns
 
 from .models import (
-    WavelengthChannel,
-    WavelengthService,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
     WdmLinePort,
     WdmNode,
+    WdmProfile,
 )
 
 
-class WdmDeviceTypeProfileTable(NetBoxTable):
+class WdmProfileTable(NetBoxTable):
     pk = columns.ToggleColumn()
     name = tables.Column(verbose_name=_("Profile"), linkify=True, accessor="pk")
     device_type = tables.Column(linkify=True, verbose_name=_("Device Type"))
@@ -22,7 +22,7 @@ class WdmDeviceTypeProfileTable(NetBoxTable):
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
-        model = WdmDeviceTypeProfile
+        model = WdmProfile
         fields = ("pk", "id", "name", "device_type", "node_type", "grid", "fiber_type", "description", "actions")
         default_columns = ("pk", "name", "device_type", "node_type", "grid", "fiber_type", "actions")
 
@@ -30,7 +30,7 @@ class WdmDeviceTypeProfileTable(NetBoxTable):
         return str(record)
 
 
-class WdmChannelTemplateTable(NetBoxTable):
+class WdmChannelPlanTable(NetBoxTable):
     pk = columns.ToggleColumn()
     profile = tables.Column(linkify=True, verbose_name=_("Profile"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
@@ -41,7 +41,7 @@ class WdmChannelTemplateTable(NetBoxTable):
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
-        model = WdmChannelTemplate
+        model = WdmChannelPlan
         fields = (
             "pk",
             "id",
@@ -96,19 +96,19 @@ class WdmLinePortTable(NetBoxTable):
 
 
 CHANNEL_TRACE_BUTTONS = (
-    '{% if record.mux_front_port and record.mux_front_port.cable %}'
-    '<a href="{% url \'dcim:frontport_trace\' pk=record.mux_front_port.pk %}" '
+    "{% if record.mux_front_port and record.mux_front_port.cable %}"
+    "<a href=\"{% url 'dcim:frontport_trace' pk=record.mux_front_port.pk %}\" "
     'class="btn btn-primary btn-sm" title="Trace">'
     '<i class="mdi mdi-transit-connection-variant"></i></a> '
-    '{% elif record.demux_front_port and record.demux_front_port.cable %}'
-    '<a href="{% url \'dcim:frontport_trace\' pk=record.demux_front_port.pk %}" '
+    "{% elif record.demux_front_port and record.demux_front_port.cable %}"
+    "<a href=\"{% url 'dcim:frontport_trace' pk=record.demux_front_port.pk %}\" "
     'class="btn btn-primary btn-sm" title="Trace">'
     '<i class="mdi mdi-transit-connection-variant"></i></a> '
-    '{% endif %}'
+    "{% endif %}"
 )
 
 
-class WavelengthChannelTable(NetBoxTable):
+class WdmChannelTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
@@ -120,7 +120,7 @@ class WavelengthChannelTable(NetBoxTable):
     actions = columns.ActionsColumn(extra_buttons=CHANNEL_TRACE_BUTTONS)
 
     class Meta(NetBoxTable.Meta):
-        model = WavelengthChannel
+        model = WdmChannel
         fields = (
             "pk",
             "id",
@@ -136,7 +136,7 @@ class WavelengthChannelTable(NetBoxTable):
         default_columns = ("pk", "label", "grid_position", "wavelength_nm", "mux_front_port", "status", "actions")
 
 
-class WavelengthServiceTable(NetBoxTable):
+class WdmCircuitTable(NetBoxTable):
     pk = columns.ToggleColumn()
     name = tables.Column(linkify=True, verbose_name=_("Name"))
     status = tables.Column(verbose_name=_("Status"))
@@ -145,6 +145,6 @@ class WavelengthServiceTable(NetBoxTable):
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
-        model = WavelengthService
+        model = WdmCircuit
         fields = ("pk", "id", "name", "status", "wavelength_nm", "tenant", "description", "actions")
         default_columns = ("pk", "name", "status", "wavelength_nm", "tenant", "actions")

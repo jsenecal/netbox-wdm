@@ -7,15 +7,15 @@ menu = PluginMenu(
             "WDM",
             (
                 PluginMenuItem(
-                    link="plugins:netbox_wdm:wdmdevicetypeprofile_list",
+                    link="plugins:netbox_wdm:wdmprofile_list",
                     link_text="WDM Profiles",
-                    permissions=["netbox_wdm.view_wdmdevicetypeprofile"],
+                    permissions=["netbox_wdm.view_wdmprofile"],
                     buttons=(
                         PluginMenuButton(
-                            link="plugins:netbox_wdm:wdmdevicetypeprofile_add",
+                            link="plugins:netbox_wdm:wdmprofile_add",
                             title="Add",
                             icon_class="mdi mdi-plus-thick",
-                            permissions=["netbox_wdm.add_wdmdevicetypeprofile"],
+                            permissions=["netbox_wdm.add_wdmprofile"],
                         ),
                     ),
                 ),
@@ -33,20 +33,20 @@ menu = PluginMenu(
                     ),
                 ),
                 PluginMenuItem(
-                    link="plugins:netbox_wdm:wavelengthchannel_list",
-                    link_text="Wavelength Channels",
-                    permissions=["netbox_wdm.view_wavelengthchannel"],
+                    link="plugins:netbox_wdm:wdmchannel_list",
+                    link_text="WDM Channels",
+                    permissions=["netbox_wdm.view_wdmchannel"],
                 ),
                 PluginMenuItem(
-                    link="plugins:netbox_wdm:wavelengthservice_list",
-                    link_text="Wavelength Services",
-                    permissions=["netbox_wdm.view_wavelengthservice"],
+                    link="plugins:netbox_wdm:wdmcircuit_list",
+                    link_text="WDM Circuits",
+                    permissions=["netbox_wdm.view_wdmcircuit"],
                     buttons=(
                         PluginMenuButton(
-                            link="plugins:netbox_wdm:wavelengthservice_add",
+                            link="plugins:netbox_wdm:wdmcircuit_add",
                             title="Add",
                             icon_class="mdi mdi-plus-thick",
-                            permissions=["netbox_wdm.add_wavelengthservice"],
+                            permissions=["netbox_wdm.add_wdmcircuit"],
                         ),
                     ),
                 ),

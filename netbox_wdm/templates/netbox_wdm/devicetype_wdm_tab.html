@@ -22,8 +22,8 @@
                     <td>{{ profile.get_fiber_type_display }}</td>
                 </tr>
                 <tr>
-                    <th scope="row">{% trans "Channel Templates" %}</th>
-                    <td>{{ channel_templates|length }}</td>
+                    <th scope="row">{% trans "Channel Plans" %}</th>
+                    <td>{{ channel_plans|length }}</td>
                 </tr>
             </table>
         </div>
@@ -41,11 +41,11 @@
         </div>
     </div>
 </div>
-{% if channel_templates %}
+{% if channel_plans %}
 <div class="row">
     <div class="col">
         <div class="card">
-            <h5 class="card-header">{% trans "Channel Templates" %}</h5>
+            <h5 class="card-header">{% trans "Channel Plans" %}</h5>
             <table class="table table-hover">
                 <thead>
                     <tr>
@@ -57,13 +57,13 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {% for ct in channel_templates %}
+                    {% for cp in channel_plans %}
                     <tr>
-                        <td>{{ ct.grid_position }}</td>
-                        <td>{{ ct.label }}</td>
-                        <td>{{ ct.wavelength_nm }}</td>
-                        <td>{{ ct.mux_front_port_template|default:"" }}</td>
-                        <td>{{ ct.demux_front_port_template|default:"" }}</td>
+                        <td>{{ cp.grid_position }}</td>
+                        <td>{{ cp.label }}</td>
+                        <td>{{ cp.wavelength_nm }}</td>
+                        <td>{{ cp.mux_front_port_template|default:"" }}</td>
+                        <td>{{ cp.demux_front_port_template|default:"" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

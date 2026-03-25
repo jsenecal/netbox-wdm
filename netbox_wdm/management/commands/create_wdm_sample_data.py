@@ -7,7 +7,7 @@ Demonstrates realistic WDM hardware topologies with full end-to-end cabling:
   - ROADM 2-degree with add/drop ports
   - Fiber patch panels (pure DCIM, no WDM profile)
   - End-to-end cabling from router through mux, patch panel, trunk, and back
-  - Wavelength services in various lifecycle states
+  - WDM circuits in various lifecycle states
 
 Usage:
     cd /opt/netbox/netbox
@@ -58,8 +58,8 @@ class Command(BaseCommand):
         # -- WDM Profiles on DeviceTypes (not on Fiber-PP-24 or Router) --
         self._create_profiles(tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_edfa, dt_roadm)
 
-        # -- Channel templates --
-        self._create_channel_templates(tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_roadm)
+        # -- Channel plans --
+        self._create_channel_plans(tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_roadm)
 
         # -- Devices --
         dev_east_cwdm = self._create_device("EAST-CWDM-MUX-01", site_east, dt_cwdm_dx, role_mux, tag)
@@ -102,8 +102,8 @@ class Command(BaseCommand):
         # -- Channel configuration --
         self._configure_channels(dev_east_cwdm, dev_west_cwdm)
 
-        # -- Wavelength services --
-        self._create_services(tag, dev_east_cwdm, dev_west_cwdm)
+        # -- WDM circuits --
+        self._create_circuits(tag, dev_east_cwdm, dev_west_cwdm)
 
         self.stdout.write(self.style.SUCCESS("\nSample data created successfully."))
         self._print_summary()
@@ -116,14 +116,13 @@ class Command(BaseCommand):
         from extras.models import Tag
 
         from netbox_wdm.models import (
-            WavelengthChannel,
-            WavelengthService,
-            WavelengthServiceChannelAssignment,
-            WavelengthServiceNode,
-            WdmChannelTemplate,
-            WdmDeviceTypeProfile,
+            WdmChannel,
+            WdmChannelPlan,
+            WdmCircuit,
+            WdmCircuitPath,
             WdmLinePort,
             WdmNode,
+            WdmProfile,
         )
 
         self.stdout.write("Flushing existing sample data...")
@@ -140,14 +139,13 @@ class Command(BaseCommand):
         Cable.objects.filter(tags=tag).delete()
 
         # Then WDM objects in dependency order
-        WavelengthServiceNode.objects.filter(service__tags=tag).delete()
-        WavelengthServiceChannelAssignment.objects.filter(service__tags=tag).delete()
-        WavelengthService.objects.filter(tags=tag).delete()
-        WavelengthChannel.objects.filter(wdm_node__tags=tag).delete()
+        WdmCircuitPath.objects.filter(circuit__tags=tag).delete()
+        WdmCircuit.objects.filter(tags=tag).delete()
+        WdmChannel.objects.filter(wdm_node__tags=tag).delete()
         WdmLinePort.objects.filter(wdm_node__tags=tag).delete()
         WdmNode.objects.filter(tags=tag).delete()
-        WdmChannelTemplate.objects.filter(profile__tags=tag).delete()
-        WdmDeviceTypeProfile.objects.filter(tags=tag).delete()
+        WdmChannelPlan.objects.filter(profile__tags=tag).delete()
+        WdmProfile.objects.filter(tags=tag).delete()
 
         # Then DCIM objects
         Device.objects.filter(tags=tag).delete()
@@ -464,7 +462,6 @@ class Command(BaseCommand):
             drop_fps.append(fp_drop)
 
         # PortTemplateMappings: ADD -> LINE-EAST-TX, DROP -> LINE-EAST-RX
-        # (simplified: only mapping to east direction for the first 20 channels)
         for pos_idx, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True), start=1):
             PortTemplateMapping.objects.get_or_create(
                 device_type=dt,
@@ -532,7 +529,7 @@ class Command(BaseCommand):
     # ================================================================
 
     def _create_profiles(self, tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_edfa, dt_roadm):
-        from netbox_wdm.models import WdmDeviceTypeProfile
+        from netbox_wdm.models import WdmProfile
 
         profiles = [
             (dt_cwdm_dx, "terminal_mux", "cwdm", "duplex"),
@@ -542,7 +539,7 @@ class Command(BaseCommand):
             (dt_roadm, "roadm", "dwdm_100ghz", "duplex"),
         ]
         for dt, node_type, grid, fiber_type in profiles:
-            p, _ = WdmDeviceTypeProfile.objects.get_or_create(
+            p, _ = WdmProfile.objects.get_or_create(
                 device_type=dt,
                 defaults={"node_type": node_type, "grid": grid, "fiber_type": fiber_type},
             )
@@ -550,36 +547,36 @@ class Command(BaseCommand):
             self.stdout.write(f"  Profile: {dt.model} -> {node_type}/{grid}/{fiber_type}")
 
     # ================================================================
-    # Channel Templates
+    # Channel Plans
     # ================================================================
 
-    def _create_channel_templates(self, tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_roadm):
+    def _create_channel_plans(self, tag, dt_cwdm_dx, dt_cwdm_sf, dt_dwdm_44, dt_roadm):
 
         # CWDM-MUX-8-DX: first 8 CWDM channels, duplex
-        self._create_cwdm_dx_templates(dt_cwdm_dx)
+        self._create_cwdm_dx_plans(dt_cwdm_dx)
 
         # CWDM-MUX-8-SF: first 8 CWDM channels, single fiber
-        self._create_cwdm_sf_templates(dt_cwdm_sf)
+        self._create_cwdm_sf_plans(dt_cwdm_sf)
 
         # DWDM-MUX-44-DX: all 44 DWDM 100GHz channels
-        self._create_dwdm_44_templates(dt_dwdm_44)
+        self._create_dwdm_44_plans(dt_dwdm_44)
 
         # ROADM-2D: first 20 DWDM 100GHz channels
-        self._create_roadm_templates(dt_roadm)
+        self._create_roadm_plans(dt_roadm)
 
-    def _create_cwdm_dx_templates(self, dt):
+    def _create_cwdm_dx_plans(self, dt):
         from dcim.models import FrontPortTemplate
 
-        from netbox_wdm.models import WdmChannelTemplate, WdmDeviceTypeProfile
+        from netbox_wdm.models import WdmChannelPlan, WdmProfile
 
-        profile = WdmDeviceTypeProfile.objects.get(device_type=dt)
+        profile = WdmProfile.objects.get(device_type=dt)
         fp_templates = {fp.name: fp for fp in FrontPortTemplate.objects.filter(device_type=dt)}
 
         created = 0
         for pos, label, wavelength in CWDM_CHANNELS[:8]:
             mux_fpt = fp_templates.get(f"CH{pos}-MUX")
             demux_fpt = fp_templates.get(f"CH{pos}-DEMUX")
-            _, was_created = WdmChannelTemplate.objects.get_or_create(
+            _, was_created = WdmChannelPlan.objects.get_or_create(
                 profile=profile,
                 grid_position=pos,
                 defaults={
@@ -592,20 +589,20 @@ class Command(BaseCommand):
             if was_created:
                 created += 1
 
-        self.stdout.write(f"  Channel templates: CWDM-MUX-8-DX - {created} channels (duplex)")
+        self.stdout.write(f"  Channel plans: CWDM-MUX-8-DX - {created} channels (duplex)")
 
-    def _create_cwdm_sf_templates(self, dt):
+    def _create_cwdm_sf_plans(self, dt):
         from dcim.models import FrontPortTemplate
 
-        from netbox_wdm.models import WdmChannelTemplate, WdmDeviceTypeProfile
+        from netbox_wdm.models import WdmChannelPlan, WdmProfile
 
-        profile = WdmDeviceTypeProfile.objects.get(device_type=dt)
+        profile = WdmProfile.objects.get(device_type=dt)
         fp_templates = {fp.name: fp for fp in FrontPortTemplate.objects.filter(device_type=dt)}
 
         created = 0
         for pos, label, wavelength in CWDM_CHANNELS[:8]:
             mux_fpt = fp_templates.get(f"CH{pos}")
-            _, was_created = WdmChannelTemplate.objects.get_or_create(
+            _, was_created = WdmChannelPlan.objects.get_or_create(
                 profile=profile,
                 grid_position=pos,
                 defaults={
@@ -618,21 +615,21 @@ class Command(BaseCommand):
             if was_created:
                 created += 1
 
-        self.stdout.write(f"  Channel templates: CWDM-MUX-8-SF - {created} channels (single fiber)")
+        self.stdout.write(f"  Channel plans: CWDM-MUX-8-SF - {created} channels (single fiber)")
 
-    def _create_dwdm_44_templates(self, dt):
+    def _create_dwdm_44_plans(self, dt):
         from dcim.models import FrontPortTemplate
 
-        from netbox_wdm.models import WdmChannelTemplate, WdmDeviceTypeProfile
+        from netbox_wdm.models import WdmChannelPlan, WdmProfile
 
-        profile = WdmDeviceTypeProfile.objects.get(device_type=dt)
+        profile = WdmProfile.objects.get(device_type=dt)
         fp_templates = {fp.name: fp for fp in FrontPortTemplate.objects.filter(device_type=dt)}
 
         created = 0
         for pos, label, wavelength in DWDM_100GHZ_CHANNELS:
             mux_fpt = fp_templates.get(f"{label}-MUX")
             demux_fpt = fp_templates.get(f"{label}-DEMUX")
-            _, was_created = WdmChannelTemplate.objects.get_or_create(
+            _, was_created = WdmChannelPlan.objects.get_or_create(
                 profile=profile,
                 grid_position=pos,
                 defaults={
@@ -645,21 +642,21 @@ class Command(BaseCommand):
             if was_created:
                 created += 1
 
-        self.stdout.write(f"  Channel templates: DWDM-MUX-44-DX - {created} channels (duplex)")
+        self.stdout.write(f"  Channel plans: DWDM-MUX-44-DX - {created} channels (duplex)")
 
-    def _create_roadm_templates(self, dt):
+    def _create_roadm_plans(self, dt):
         from dcim.models import FrontPortTemplate
 
-        from netbox_wdm.models import WdmChannelTemplate, WdmDeviceTypeProfile
+        from netbox_wdm.models import WdmChannelPlan, WdmProfile
 
-        profile = WdmDeviceTypeProfile.objects.get(device_type=dt)
+        profile = WdmProfile.objects.get(device_type=dt)
         fp_templates = {fp.name: fp for fp in FrontPortTemplate.objects.filter(device_type=dt)}
 
         created = 0
         for pos, label, wavelength in DWDM_100GHZ_CHANNELS[:20]:
             mux_fpt = fp_templates.get(f"ADD-{pos:02d}")
             demux_fpt = fp_templates.get(f"DROP-{pos:02d}")
-            _, was_created = WdmChannelTemplate.objects.get_or_create(
+            _, was_created = WdmChannelPlan.objects.get_or_create(
                 profile=profile,
                 grid_position=pos,
                 defaults={
@@ -672,7 +669,7 @@ class Command(BaseCommand):
             if was_created:
                 created += 1
 
-        self.stdout.write(f"  Channel templates: ROADM-2D - {created} channels")
+        self.stdout.write(f"  Channel plans: ROADM-2D - {created} channels")
 
     # ================================================================
     # Devices
@@ -681,7 +678,7 @@ class Command(BaseCommand):
     def _create_device(self, name, site, device_type, role, tag):
         from dcim.models import Device
 
-        from netbox_wdm.models import WdmDeviceTypeProfile, WdmNode
+        from netbox_wdm.models import WdmNode, WdmProfile
 
         dev, created = Device.objects.get_or_create(
             name=name,
@@ -693,7 +690,7 @@ class Command(BaseCommand):
         # Explicitly create WdmNode (signal uses on_commit which won't fire inside atomic block)
         if not hasattr(dev, "wdm_node"):
             try:
-                profile = WdmDeviceTypeProfile.objects.get(device_type=device_type)
+                profile = WdmProfile.objects.get(device_type=device_type)
                 node = WdmNode.objects.create(
                     device=dev,
                     node_type=profile.node_type,
@@ -701,7 +698,7 @@ class Command(BaseCommand):
                 )
                 self._tag(node, tag)
                 dev.refresh_from_db()
-            except WdmDeviceTypeProfile.DoesNotExist:
+            except WdmProfile.DoesNotExist:
                 pass
         else:
             self._tag(dev.wdm_node, tag)
@@ -814,7 +811,6 @@ class Command(BaseCommand):
             return cable
 
         # === East side client cables ===
-        # Cable CH1-CH3 and CH6 to router interfaces (CH4-5, CH7-8 left disconnected)
         for i, ch_num in enumerate([1, 2, 3, 6]):
             create_cable(
                 get_interface(dev_east_router, f"eth{i}"),
@@ -840,7 +836,6 @@ class Command(BaseCommand):
         )
 
         # === West side client cables ===
-        # Mirror East: cable CH1-CH3 and CH6
         create_cable(
             [get_rear_port(dev_west_pp, "RP-01"), get_rear_port(dev_west_pp, "RP-02")],
             [get_rear_port(dev_west_cwdm, "COM-TX"), get_rear_port(dev_west_cwdm, "COM-RX")],
@@ -858,7 +853,6 @@ class Command(BaseCommand):
             )
 
         # === EXP daisy-chain demo ===
-        # EAST-CWDM-MUX-01 EXP-MUX + EXP-DEMUX -> EAST-CWDM-SF-01 COM (duplex to single-fiber)
         create_cable(
             [get_front_port(dev_east_cwdm, "EXP-MUX"), get_front_port(dev_east_cwdm, "EXP-DEMUX")],
             get_rear_port(dev_east_sf, "COM"),
@@ -870,21 +864,8 @@ class Command(BaseCommand):
     # ================================================================
 
     def _configure_channels(self, dev_east_cwdm, dev_west_cwdm):
-        """Set channel statuses to demonstrate all combined cable+status states.
-
-        Combined states across 8 channels per MUX:
-          CH1: Active   + Connected  (fully operational)
-          CH2: Active   + Connected  (fully operational)
-          CH3: Reserved + Connected  (wired, held for future use)
-          CH4: Active   + Disconnected (problem - service active but no cable!)
-          CH5: Reserved + Disconnected (planned, not yet cabled)
-          CH6: Available + Connected  (cabled but no service)
-          CH7: Available + Disconnected (empty slot)
-          CH8: Available + Disconnected (empty slot)
-
-        Cables: CH1,CH2,CH3,CH6 are cabled to router. CH4,CH5,CH7,CH8 are not.
-        """
-        from netbox_wdm.models import WavelengthChannel
+        """Set channel statuses to demonstrate all combined cable+status states."""
+        from netbox_wdm.models import WdmChannel
 
         for dev in [dev_east_cwdm, dev_west_cwdm]:
             if not hasattr(dev, "wdm_node"):
@@ -899,11 +880,8 @@ class Command(BaseCommand):
             channels[2].status = "reserved"  # CH3: reserved + connected
             channels[3].status = "active"  # CH4: active + disconnected (problem!)
             channels[4].status = "reserved"  # CH5: reserved + disconnected
-            # CH6: available + connected (default status, has cable)
-            # CH7: available + disconnected (default)
-            # CH8: available + disconnected (default)
 
-            WavelengthChannel.objects.bulk_update(channels[:5], ["status"])
+            WdmChannel.objects.bulk_update(channels[:5], ["status"])
             self.stdout.write(
                 f"  Channel status on {dev.name}: "
                 f"2 active+connected, 1 reserved+connected, "
@@ -912,11 +890,11 @@ class Command(BaseCommand):
             )
 
     # ================================================================
-    # Wavelength Services
+    # WDM Circuits
     # ================================================================
 
-    def _create_services(self, tag, dev_east_cwdm, dev_west_cwdm):
-        from netbox_wdm.models import WavelengthService
+    def _create_circuits(self, tag, dev_east_cwdm, dev_west_cwdm):
+        from netbox_wdm.models import WdmCircuit
 
         east_channels = (
             list(dev_east_cwdm.wdm_node.channels.order_by("grid_position"))
@@ -930,91 +908,87 @@ class Command(BaseCommand):
         )
 
         if not east_channels or not west_channels:
-            self.stdout.write(self.style.WARNING("  Skipping services: missing channels"))
+            self.stdout.write(self.style.WARNING("  Skipping circuits: missing channels"))
             return
 
-        # Service 1: ACTIVE East-West on CH1 (1270nm) - active+connected on both ends
-        svc1, created = WavelengthService.objects.get_or_create(
+        # Circuit 1: ACTIVE East-West on CH1 (1270nm)
+        ckt1, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1270-EastWest",
             defaults={
                 "status": "active",
                 "wavelength_nm": east_channels[0].wavelength_nm,
-                "description": "Active CWDM service, fully cabled East to West.",
+                "description": "Active CWDM circuit, fully cabled East to West.",
             },
         )
         if created:
-            self._tag(svc1, tag)
-            self._assign_channels(svc1, [east_channels[0], west_channels[0]])
-            self.stdout.write(f"  Service: {svc1.name} (ACTIVE, 2-hop, {svc1.wavelength_nm}nm)")
+            self._tag(ckt1, tag)
+            self._assign_channels(ckt1, [east_channels[0], west_channels[0]])
+            self.stdout.write(f"  Circuit: {ckt1.name} (ACTIVE, 2-hop, {ckt1.wavelength_nm}nm)")
 
-        # Service 2: ACTIVE East-West on CH2 (1290nm) - active+connected
-        svc2, created = WavelengthService.objects.get_or_create(
+        # Circuit 2: ACTIVE East-West on CH2 (1290nm)
+        ckt2, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1290-EastWest",
             defaults={
                 "status": "active",
                 "wavelength_nm": east_channels[1].wavelength_nm,
-                "description": "Active CWDM service, fully cabled East to West.",
+                "description": "Active CWDM circuit, fully cabled East to West.",
             },
         )
         if created:
-            self._tag(svc2, tag)
-            self._assign_channels(svc2, [east_channels[1], west_channels[1]])
-            self.stdout.write(f"  Service: {svc2.name} (ACTIVE, 2-hop, {svc2.wavelength_nm}nm)")
+            self._tag(ckt2, tag)
+            self._assign_channels(ckt2, [east_channels[1], west_channels[1]])
+            self.stdout.write(f"  Circuit: {ckt2.name} (ACTIVE, 2-hop, {ckt2.wavelength_nm}nm)")
 
-        # Service 3: STAGED East-West on CH3 (1310nm) - reserved+connected
-        svc3, created = WavelengthService.objects.get_or_create(
+        # Circuit 3: STAGED East-West on CH3 (1310nm)
+        ckt3, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1310-Staged",
             defaults={
                 "status": "staged",
                 "wavelength_nm": east_channels[2].wavelength_nm,
-                "description": "Staged service, cabled and reserved, awaiting activation.",
+                "description": "Staged circuit, cabled and reserved, awaiting activation.",
             },
         )
         if created:
-            self._tag(svc3, tag)
-            self._assign_channels(svc3, [east_channels[2], west_channels[2]])
-            self.stdout.write(f"  Service: {svc3.name} (STAGED, 2-hop, {svc3.wavelength_nm}nm)")
+            self._tag(ckt3, tag)
+            self._assign_channels(ckt3, [east_channels[2], west_channels[2]])
+            self.stdout.write(f"  Circuit: {ckt3.name} (STAGED, 2-hop, {ckt3.wavelength_nm}nm)")
 
-        # Service 4: ACTIVE East-only on CH4 (1330nm) - active+DISCONNECTED (problem state!)
-        svc4, created = WavelengthService.objects.get_or_create(
+        # Circuit 4: ACTIVE East-only on CH4 (1330nm) - active+DISCONNECTED
+        ckt4, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1330-Fault",
             defaults={
                 "status": "active",
                 "wavelength_nm": east_channels[3].wavelength_nm,
-                "description": "Active service on disconnected channel - cable fault or missing patch.",
+                "description": "Active circuit on disconnected channel - cable fault or missing patch.",
             },
         )
         if created:
-            self._tag(svc4, tag)
-            self._assign_channels(svc4, [east_channels[3]])
-            self.stdout.write(f"  Service: {svc4.name} (ACTIVE but DISCONNECTED, 1-hop, {svc4.wavelength_nm}nm)")
+            self._tag(ckt4, tag)
+            self._assign_channels(ckt4, [east_channels[3]])
+            self.stdout.write(f"  Circuit: {ckt4.name} (ACTIVE but DISCONNECTED, 1-hop, {ckt4.wavelength_nm}nm)")
 
-        # Service 5: PLANNED East-only on CH5 (1350nm) - reserved+disconnected
-        svc5, created = WavelengthService.objects.get_or_create(
+        # Circuit 5: PLANNED East-only on CH5 (1350nm)
+        ckt5, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1350-Planned",
             defaults={
                 "status": "planned",
                 "wavelength_nm": east_channels[4].wavelength_nm,
-                "description": "Planned service, channel reserved but not yet cabled.",
+                "description": "Planned circuit, channel reserved but not yet cabled.",
             },
         )
         if created:
-            self._tag(svc5, tag)
-            self._assign_channels(svc5, [east_channels[4]])
-            self.stdout.write(f"  Service: {svc5.name} (PLANNED, 1-hop, {svc5.wavelength_nm}nm)")
+            self._tag(ckt5, tag)
+            self._assign_channels(ckt5, [east_channels[4]])
+            self.stdout.write(f"  Circuit: {ckt5.name} (PLANNED, 1-hop, {ckt5.wavelength_nm}nm)")
 
-    def _assign_channels(self, service, channels):
-        from netbox_wdm.models import WavelengthServiceChannelAssignment, WavelengthServiceNode
+    def _assign_channels(self, circuit, channels):
+        from netbox_wdm.models import WdmCircuitPath
 
         for seq, ch in enumerate(channels, start=1):
-            WavelengthServiceChannelAssignment.objects.get_or_create(
-                service=service,
+            WdmCircuitPath.objects.get_or_create(
+                circuit=circuit,
                 channel=ch,
                 defaults={"sequence": seq},
-            )
-            WavelengthServiceNode.objects.get_or_create(
-                service=service,
-                channel=ch,
             )
 
     # ================================================================
@@ -1025,14 +999,13 @@ class Command(BaseCommand):
         from dcim.models import Cable, Device, DeviceType, Site
 
         from netbox_wdm.models import (
-            WavelengthChannel,
-            WavelengthService,
-            WavelengthServiceChannelAssignment,
-            WavelengthServiceNode,
-            WdmChannelTemplate,
-            WdmDeviceTypeProfile,
+            WdmChannel,
+            WdmChannelPlan,
+            WdmCircuit,
+            WdmCircuitPath,
             WdmLinePort,
             WdmNode,
+            WdmProfile,
         )
 
         self.stdout.write("\n--- Summary ---")
@@ -1040,14 +1013,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  DeviceTypes:        {DeviceType.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Devices:            {Device.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Cables:             {Cable.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  WDM Profiles:       {WdmDeviceTypeProfile.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  Channel Templates:  {WdmChannelTemplate.objects.count()}")
+        self.stdout.write(f"  WDM Profiles:       {WdmProfile.objects.filter(tags__slug=SAMPLE_TAG).count()}")
+        self.stdout.write(f"  Channel Plans:      {WdmChannelPlan.objects.count()}")
         self.stdout.write(f"  WDM Nodes:          {WdmNode.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Line Ports:        {WdmLinePort.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  Channels:           {WavelengthChannel.objects.count()}")
-        self.stdout.write(f"  Services:           {WavelengthService.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  Channel Assigns:    {WavelengthServiceChannelAssignment.objects.count()}")
-        self.stdout.write(f"  Service Nodes:      {WavelengthServiceNode.objects.count()}")
+        self.stdout.write(f"  Channels:           {WdmChannel.objects.count()}")
+        self.stdout.write(f"  Circuits:           {WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG).count()}")
+        self.stdout.write(f"  Circuit Paths:      {WdmCircuitPath.objects.count()}")
 
         self.stdout.write("\n--- Channel Status Breakdown ---")
         for node in WdmNode.objects.filter(tags__slug=SAMPLE_TAG).select_related("device"):
@@ -1059,10 +1031,10 @@ class Command(BaseCommand):
                 f"  {node.device.name}: {total} total ({active} active, {reserved} reserved, {available} available)"
             )
 
-        self.stdout.write("\n--- Services ---")
-        for svc in WavelengthService.objects.filter(tags__slug=SAMPLE_TAG):
-            hops = svc.channel_assignments.count()
-            self.stdout.write(f"  {svc.name}: {svc.status} ({hops} hops, {svc.wavelength_nm}nm)")
+        self.stdout.write("\n--- Circuits ---")
+        for ckt in WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG):
+            hops = ckt.path_segments.count()
+            self.stdout.write(f"  {ckt.name}: {ckt.status} ({hops} hops, {ckt.wavelength_nm}nm)")
 
         self.stdout.write("\n--- Cables ---")
         for cable in Cable.objects.filter(tags__slug=SAMPLE_TAG):

@@ -9,95 +9,95 @@ from utilities.views import ViewTab, register_model_view
 
 from .choices import WdmNodeTypeChoices
 from .filters import (
-    WavelengthChannelFilterSet,
-    WavelengthServiceFilterSet,
-    WdmChannelTemplateFilterSet,
-    WdmDeviceTypeProfileFilterSet,
+    WdmChannelFilterSet,
+    WdmChannelPlanFilterSet,
+    WdmCircuitFilterSet,
     WdmLinePortFilterSet,
     WdmNodeFilterSet,
+    WdmProfileFilterSet,
 )
 from .forms import (
-    WavelengthChannelBulkEditForm,
-    WavelengthChannelFilterForm,
-    WavelengthChannelForm,
-    WavelengthServiceFilterForm,
-    WavelengthServiceForm,
-    WavelengthServiceImportForm,
-    WdmChannelTemplateForm,
-    WdmDeviceTypeProfileFilterForm,
-    WdmDeviceTypeProfileForm,
-    WdmDeviceTypeProfileImportForm,
+    WdmChannelBulkEditForm,
+    WdmChannelFilterForm,
+    WdmChannelForm,
+    WdmChannelPlanForm,
+    WdmCircuitFilterForm,
+    WdmCircuitForm,
+    WdmCircuitImportForm,
     WdmLinePortForm,
     WdmNodeFilterForm,
     WdmNodeForm,
     WdmNodeImportForm,
+    WdmProfileFilterForm,
+    WdmProfileForm,
+    WdmProfileImportForm,
 )
 from .models import (
-    WavelengthChannel,
-    WavelengthService,
-    WavelengthServiceChannelAssignment,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
+    WdmCircuitPath,
     WdmLinePort,
     WdmNode,
+    WdmProfile,
 )
 from .tables import (
-    WavelengthChannelTable,
-    WavelengthServiceTable,
-    WdmChannelTemplateTable,
-    WdmDeviceTypeProfileTable,
+    WdmChannelPlanTable,
+    WdmChannelTable,
+    WdmCircuitTable,
     WdmLinePortTable,
     WdmNodeTable,
+    WdmProfileTable,
 )
 
-# ---- WdmDeviceTypeProfile ----
+# ---- WdmProfile ----
 
 
-class WdmDeviceTypeProfileListView(generic.ObjectListView):
-    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
-    table = WdmDeviceTypeProfileTable
-    filterset = WdmDeviceTypeProfileFilterSet
-    filterset_form = WdmDeviceTypeProfileFilterForm
+class WdmProfileListView(generic.ObjectListView):
+    queryset = WdmProfile.objects.select_related("device_type")
+    table = WdmProfileTable
+    filterset = WdmProfileFilterSet
+    filterset_form = WdmProfileFilterForm
 
 
-@register_model_view(WdmDeviceTypeProfile)
-class WdmDeviceTypeProfileView(generic.ObjectView):
-    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
+@register_model_view(WdmProfile)
+class WdmProfileView(generic.ObjectView):
+    queryset = WdmProfile.objects.select_related("device_type")
 
 
-@register_model_view(WdmDeviceTypeProfile, "edit")
-class WdmDeviceTypeProfileEditView(generic.ObjectEditView):
-    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
-    form = WdmDeviceTypeProfileForm
+@register_model_view(WdmProfile, "edit")
+class WdmProfileEditView(generic.ObjectEditView):
+    queryset = WdmProfile.objects.select_related("device_type")
+    form = WdmProfileForm
 
 
-@register_model_view(WdmDeviceTypeProfile, "delete")
-class WdmDeviceTypeProfileDeleteView(generic.ObjectDeleteView):
-    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
+@register_model_view(WdmProfile, "delete")
+class WdmProfileDeleteView(generic.ObjectDeleteView):
+    queryset = WdmProfile.objects.select_related("device_type")
 
 
-class WdmDeviceTypeProfileBulkImportView(generic.BulkImportView):
-    queryset = WdmDeviceTypeProfile.objects.all()
-    model_form = WdmDeviceTypeProfileImportForm
+class WdmProfileBulkImportView(generic.BulkImportView):
+    queryset = WdmProfile.objects.all()
+    model_form = WdmProfileImportForm
 
 
-class WdmDeviceTypeProfileBulkDeleteView(generic.BulkDeleteView):
-    queryset = WdmDeviceTypeProfile.objects.all()
-    filterset = WdmDeviceTypeProfileFilterSet
-    table = WdmDeviceTypeProfileTable
+class WdmProfileBulkDeleteView(generic.BulkDeleteView):
+    queryset = WdmProfile.objects.all()
+    filterset = WdmProfileFilterSet
+    table = WdmProfileTable
 
 
-@register_model_view(WdmDeviceTypeProfile, "channel_templates", path="channel-templates")
-class WdmDeviceTypeProfileChannelTemplatesView(generic.ObjectChildrenView):
-    queryset = WdmDeviceTypeProfile.objects.all()
-    child_model = WdmChannelTemplate
-    table = WdmChannelTemplateTable
-    filterset = WdmChannelTemplateFilterSet
+@register_model_view(WdmProfile, "channel_plans", path="channel-plans")
+class WdmProfileChannelPlansView(generic.ObjectChildrenView):
+    queryset = WdmProfile.objects.all()
+    child_model = WdmChannelPlan
+    table = WdmChannelPlanTable
+    filterset = WdmChannelPlanFilterSet
     actions = (EditObject, DeleteObject, BulkDelete)
     tab = ViewTab(
-        label=_("Channel Templates"),
-        badge=lambda obj: obj.channel_templates.count(),
-        permission="netbox_wdm.view_wdmchanneltemplate",
+        label=_("Channel Plans"),
+        badge=lambda obj: obj.channel_plans.count(),
+        permission="netbox_wdm.view_wdmchannelplan",
         weight=500,
     )
 
@@ -105,9 +105,9 @@ class WdmDeviceTypeProfileChannelTemplatesView(generic.ObjectChildrenView):
         return self.child_model.objects.restrict(request.user, "view").filter(profile=parent)
 
 
-@register_model_view(WdmDeviceTypeProfile, "instances", path="instances")
-class WdmDeviceTypeProfileInstancesView(generic.ObjectChildrenView):
-    queryset = WdmDeviceTypeProfile.objects.all()
+@register_model_view(WdmProfile, "instances", path="instances")
+class WdmProfileInstancesView(generic.ObjectChildrenView):
+    queryset = WdmProfile.objects.all()
     child_model = WdmNode
     table = WdmNodeTable
     actions = ()
@@ -126,23 +126,23 @@ class WdmDeviceTypeProfileInstancesView(generic.ObjectChildrenView):
         )
 
 
-# ---- WdmChannelTemplate ----
+# ---- WdmChannelPlan ----
 
 
-@register_model_view(WdmChannelTemplate)
-class WdmChannelTemplateView(generic.ObjectView):
-    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
+@register_model_view(WdmChannelPlan)
+class WdmChannelPlanView(generic.ObjectView):
+    queryset = WdmChannelPlan.objects.select_related("profile__device_type")
 
 
-@register_model_view(WdmChannelTemplate, "edit")
-class WdmChannelTemplateEditView(generic.ObjectEditView):
-    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
-    form = WdmChannelTemplateForm
+@register_model_view(WdmChannelPlan, "edit")
+class WdmChannelPlanEditView(generic.ObjectEditView):
+    queryset = WdmChannelPlan.objects.select_related("profile__device_type")
+    form = WdmChannelPlanForm
 
 
-@register_model_view(WdmChannelTemplate, "delete")
-class WdmChannelTemplateDeleteView(generic.ObjectDeleteView):
-    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
+@register_model_view(WdmChannelPlan, "delete")
+class WdmChannelPlanDeleteView(generic.ObjectDeleteView):
+    queryset = WdmChannelPlan.objects.select_related("profile__device_type")
 
 
 # ---- WdmNode ----
@@ -239,14 +239,14 @@ class WdmNodeBulkDeleteView(generic.BulkDeleteView):
 @register_model_view(WdmNode, "channels", path="channels")
 class WdmNodeChannelsView(generic.ObjectChildrenView):
     queryset = WdmNode.objects.all()
-    child_model = WavelengthChannel
-    table = WavelengthChannelTable
-    filterset = WavelengthChannelFilterSet
+    child_model = WdmChannel
+    table = WdmChannelTable
+    filterset = WdmChannelFilterSet
     actions = (EditObject, DeleteObject, BulkDelete)
     tab = ViewTab(
         label=_("Channels"),
         badge=lambda obj: obj.channels.count(),
-        permission="netbox_wdm.view_wavelengthchannel",
+        permission="netbox_wdm.view_wdmchannel",
         weight=500,
     )
 
@@ -283,7 +283,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
     queryset = WdmNode.objects.select_related("device")
     tab = ViewTab(
         label=_("Wavelength Editor"),
-        permission="netbox_wdm.change_wavelengthchannel",
+        permission="netbox_wdm.change_wdmchannel",
         visible=lambda obj: obj.node_type == WdmNodeTypeChoices.ROADM,
         weight=600,
     )
@@ -313,10 +313,8 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
 
         channel_ids = [ch.pk for ch in channels]
         svc_by_channel = {}
-        for sa in WavelengthServiceChannelAssignment.objects.filter(channel_id__in=channel_ids).select_related(
-            "service"
-        ):
-            svc_by_channel[sa.channel_id] = sa.service.name
+        for seg in WdmCircuitPath.objects.filter(channel_id__in=channel_ids).select_related("circuit"):
+            svc_by_channel[seg.channel_id] = seg.circuit.name
 
         channel_data = []
         for ch in channels:
@@ -342,7 +340,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         try:
             profile = instance.device.device_type.wdm_profile
             fiber_type = profile.fiber_type
-        except WdmDeviceTypeProfile.DoesNotExist:
+        except WdmProfile.DoesNotExist:
             pass
 
         config = {
@@ -376,71 +374,71 @@ class WdmLinePortDeleteView(generic.ObjectDeleteView):
     queryset = WdmLinePort.objects.select_related("wdm_node__device", "rear_port")
 
 
-# ---- WavelengthChannel ----
+# ---- WdmChannel ----
 
 
-class WavelengthChannelListView(generic.ObjectListView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node", "mux_front_port", "demux_front_port")
-    table = WavelengthChannelTable
-    filterset = WavelengthChannelFilterSet
-    filterset_form = WavelengthChannelFilterForm
+class WdmChannelListView(generic.ObjectListView):
+    queryset = WdmChannel.objects.select_related("wdm_node", "mux_front_port", "demux_front_port")
+    table = WdmChannelTable
+    filterset = WdmChannelFilterSet
+    filterset_form = WdmChannelFilterForm
 
 
-@register_model_view(WavelengthChannel)
-class WavelengthChannelView(generic.ObjectView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
+@register_model_view(WdmChannel)
+class WdmChannelView(generic.ObjectView):
+    queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
 
 
-@register_model_view(WavelengthChannel, "edit")
-class WavelengthChannelEditView(generic.ObjectEditView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
-    form = WavelengthChannelForm
+@register_model_view(WdmChannel, "edit")
+class WdmChannelEditView(generic.ObjectEditView):
+    queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
+    form = WdmChannelForm
 
 
-@register_model_view(WavelengthChannel, "delete")
-class WavelengthChannelDeleteView(generic.ObjectDeleteView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
+@register_model_view(WdmChannel, "delete")
+class WdmChannelDeleteView(generic.ObjectDeleteView):
+    queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
 
 
-class WavelengthChannelBulkEditView(generic.BulkEditView):
-    queryset = WavelengthChannel.objects.all()
-    filterset = WavelengthChannelFilterSet
-    table = WavelengthChannelTable
-    form = WavelengthChannelBulkEditForm
+class WdmChannelBulkEditView(generic.BulkEditView):
+    queryset = WdmChannel.objects.all()
+    filterset = WdmChannelFilterSet
+    table = WdmChannelTable
+    form = WdmChannelBulkEditForm
 
 
-class WavelengthChannelBulkDeleteView(generic.BulkDeleteView):
-    queryset = WavelengthChannel.objects.all()
-    filterset = WavelengthChannelFilterSet
-    table = WavelengthChannelTable
+class WdmChannelBulkDeleteView(generic.BulkDeleteView):
+    queryset = WdmChannel.objects.all()
+    filterset = WdmChannelFilterSet
+    table = WdmChannelTable
 
 
-# ---- WavelengthService ----
+# ---- WdmCircuit ----
 
 
-class WavelengthServiceListView(generic.ObjectListView):
-    queryset = WavelengthService.objects.select_related("tenant")
-    table = WavelengthServiceTable
-    filterset = WavelengthServiceFilterSet
-    filterset_form = WavelengthServiceFilterForm
+class WdmCircuitListView(generic.ObjectListView):
+    queryset = WdmCircuit.objects.select_related("tenant")
+    table = WdmCircuitTable
+    filterset = WdmCircuitFilterSet
+    filterset_form = WdmCircuitFilterForm
 
 
-@register_model_view(WavelengthService)
-class WavelengthServiceView(generic.ObjectView):
-    queryset = WavelengthService.objects.select_related("tenant")
+@register_model_view(WdmCircuit)
+class WdmCircuitView(generic.ObjectView):
+    queryset = WdmCircuit.objects.select_related("tenant")
 
 
-@register_model_view(WavelengthService, "trace", path="trace")
-class WavelengthServiceTraceView(generic.ObjectView):
-    queryset = WavelengthService.objects.select_related("tenant")
+@register_model_view(WdmCircuit, "trace", path="trace")
+class WdmCircuitTraceView(generic.ObjectView):
+    queryset = WdmCircuit.objects.select_related("tenant")
     tab = ViewTab(
         label=_("Trace"),
-        permission="netbox_wdm.view_wavelengthservice",
+        permission="netbox_wdm.view_wdmcircuit",
         weight=500,
     )
 
     def get_template_name(self):
-        return "netbox_wdm/wavelengthservice_trace_tab.html"
+        return "netbox_wdm/wdmcircuit_trace_tab.html"
 
     def get_extra_context(self, request, instance):
         from dcim.models import CablePath
@@ -464,26 +462,26 @@ class WavelengthServiceTraceView(generic.ObjectView):
         return {"stitched_path": stitched_path}
 
 
-@register_model_view(WavelengthService, "edit")
-class WavelengthServiceEditView(generic.ObjectEditView):
-    queryset = WavelengthService.objects.select_related("tenant")
-    form = WavelengthServiceForm
+@register_model_view(WdmCircuit, "edit")
+class WdmCircuitEditView(generic.ObjectEditView):
+    queryset = WdmCircuit.objects.select_related("tenant")
+    form = WdmCircuitForm
 
 
-@register_model_view(WavelengthService, "delete")
-class WavelengthServiceDeleteView(generic.ObjectDeleteView):
-    queryset = WavelengthService.objects.select_related("tenant")
+@register_model_view(WdmCircuit, "delete")
+class WdmCircuitDeleteView(generic.ObjectDeleteView):
+    queryset = WdmCircuit.objects.select_related("tenant")
 
 
-class WavelengthServiceBulkImportView(generic.BulkImportView):
-    queryset = WavelengthService.objects.all()
-    model_form = WavelengthServiceImportForm
+class WdmCircuitBulkImportView(generic.BulkImportView):
+    queryset = WdmCircuit.objects.all()
+    model_form = WdmCircuitImportForm
 
 
-class WavelengthServiceBulkDeleteView(generic.BulkDeleteView):
-    queryset = WavelengthService.objects.all()
-    filterset = WavelengthServiceFilterSet
-    table = WavelengthServiceTable
+class WdmCircuitBulkDeleteView(generic.BulkDeleteView):
+    queryset = WdmCircuit.objects.all()
+    filterset = WdmCircuitFilterSet
+    table = WdmCircuitTable
 
 
 # ---- DeviceType WDM Profile Tab ----
@@ -494,8 +492,8 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
     queryset = DeviceType.objects.all()
     tab = ViewTab(
         label=_("WDM Profile"),
-        badge=lambda obj: WdmDeviceTypeProfile.objects.filter(device_type=obj).exists(),
-        permission="netbox_wdm.view_wdmdevicetypeprofile",
+        badge=lambda obj: WdmProfile.objects.filter(device_type=obj).exists(),
+        permission="netbox_wdm.view_wdmprofile",
         weight=1100,
     )
 
@@ -503,12 +501,12 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
         return "netbox_wdm/devicetype_wdm_tab.html"
 
     def get_extra_context(self, request, instance):
-        profile = WdmDeviceTypeProfile.objects.filter(device_type=instance).first()
-        channel_templates = []
+        profile = WdmProfile.objects.filter(device_type=instance).first()
+        channel_plans = []
         if profile:
-            channel_templates = list(
-                profile.channel_templates.select_related(
-                    "mux_front_port_template", "demux_front_port_template"
-                ).order_by("grid_position")
+            channel_plans = list(
+                profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
+                    "grid_position"
+                )
             )
-        return {"profile": profile, "channel_templates": channel_templates}
+        return {"profile": profile, "channel_plans": channel_plans}

@@ -1,18 +1,18 @@
 from netbox.api.serializers import NetBoxModelSerializer
 
 from ..models import (
-    WavelengthChannel,
-    WavelengthService,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
     WdmLinePort,
     WdmNode,
+    WdmProfile,
 )
 
 
-class WdmDeviceTypeProfileSerializer(NetBoxModelSerializer):
+class WdmProfileSerializer(NetBoxModelSerializer):
     class Meta:
-        model = WdmDeviceTypeProfile
+        model = WdmProfile
         fields = (
             "id",
             "url",
@@ -30,9 +30,9 @@ class WdmDeviceTypeProfileSerializer(NetBoxModelSerializer):
         brief_fields = ("id", "url", "display", "node_type", "grid")
 
 
-class WdmChannelTemplateSerializer(NetBoxModelSerializer):
+class WdmChannelPlanSerializer(NetBoxModelSerializer):
     class Meta:
-        model = WdmChannelTemplate
+        model = WdmChannelPlan
         fields = (
             "id",
             "url",
@@ -89,9 +89,9 @@ class WdmLinePortSerializer(NetBoxModelSerializer):
         brief_fields = ("id", "url", "display", "direction", "role")
 
 
-class WavelengthChannelSerializer(NetBoxModelSerializer):
+class WdmChannelSerializer(NetBoxModelSerializer):
     class Meta:
-        model = WavelengthChannel
+        model = WdmChannel
         fields = (
             "id",
             "url",
@@ -111,9 +111,9 @@ class WavelengthChannelSerializer(NetBoxModelSerializer):
         brief_fields = ("id", "url", "display", "label", "wavelength_nm", "status")
 
 
-class WavelengthServiceSerializer(NetBoxModelSerializer):
+class WdmCircuitSerializer(NetBoxModelSerializer):
     class Meta:
-        model = WavelengthService
+        model = WdmCircuit
         fields = (
             "id",
             "url",

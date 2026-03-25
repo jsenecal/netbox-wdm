@@ -1,7 +1,7 @@
 from django.contrib.contenttypes.models import ContentType
 from netbox.plugins import PluginTemplateExtension
 
-from .models import WavelengthServiceChannelAssignment, WdmNode
+from .models import WdmCircuitPath, WdmNode
 
 
 class DeviceWdmNodePanel(PluginTemplateExtension):
@@ -18,12 +18,12 @@ class DeviceWdmNodePanel(PluginTemplateExtension):
         return ""
 
 
-class CableWdmServicesPanel(PluginTemplateExtension):
-    """Show wavelength services traversing a cable.
+class CableWdmCircuitsPanel(PluginTemplateExtension):
+    """Show WDM circuits traversing a cable.
 
     Finds all FrontPorts and RearPorts terminated by this cable, looks up
-    which WavelengthChannels use those ports (mux or demux), then returns
-    the distinct services assigned to those channels.
+    which WdmChannels use those ports (mux or demux), then returns
+    the distinct circuits assigned to those channels.
     """
 
     models = ["dcim.cable"]
@@ -39,12 +39,8 @@ class CableWdmServicesPanel(PluginTemplateExtension):
         fp_ct = ContentType.objects.get_for_model(FrontPort)
         rp_ct = ContentType.objects.get_for_model(RearPort)
 
-        fp_ids = set(
-            terminations.filter(termination_type=fp_ct).values_list("termination_id", flat=True)
-        )
-        rp_ids = set(
-            terminations.filter(termination_type=rp_ct).values_list("termination_id", flat=True)
-        )
+        fp_ids = set(terminations.filter(termination_type=fp_ct).values_list("termination_id", flat=True))
+        rp_ids = set(terminations.filter(termination_type=rp_ct).values_list("termination_id", flat=True))
 
         if not fp_ids and not rp_ids:
             return ""
@@ -52,7 +48,7 @@ class CableWdmServicesPanel(PluginTemplateExtension):
         # Find channels whose mux/demux front ports are terminated by this cable
         from django.db.models import Q
 
-        from .models import WavelengthChannel
+        from .models import WdmChannel
 
         channel_q = Q()
         if fp_ids:
@@ -62,36 +58,34 @@ class CableWdmServicesPanel(PluginTemplateExtension):
         if rp_ids:
             from .models import WdmLinePort
 
-            line_port_node_ids = WdmLinePort.objects.filter(
-                rear_port_id__in=rp_ids
-            ).values_list("wdm_node_id", flat=True)
+            line_port_node_ids = WdmLinePort.objects.filter(rear_port_id__in=rp_ids).values_list(
+                "wdm_node_id", flat=True
+            )
             if line_port_node_ids:
                 channel_q |= Q(wdm_node_id__in=line_port_node_ids)
 
         if not channel_q:
             return ""
 
-        channel_ids = WavelengthChannel.objects.filter(channel_q).values_list("pk", flat=True)
+        channel_ids = WdmChannel.objects.filter(channel_q).values_list("pk", flat=True)
         if not channel_ids:
             return ""
 
-        # Find services using these channels
-        service_ids = (
-            WavelengthServiceChannelAssignment.objects.filter(channel_id__in=channel_ids)
-            .values_list("service_id", flat=True)
-            .distinct()
+        # Find circuits using these channels
+        circuit_ids = (
+            WdmCircuitPath.objects.filter(channel_id__in=channel_ids).values_list("circuit_id", flat=True).distinct()
         )
 
-        from .models import WavelengthService
+        from .models import WdmCircuit
 
-        services = list(WavelengthService.objects.filter(pk__in=service_ids).order_by("name"))
-        if not services:
+        circuits = list(WdmCircuit.objects.filter(pk__in=circuit_ids).order_by("name"))
+        if not circuits:
             return ""
 
         return self.render(
             "netbox_wdm/inc/cable_wdm_services_panel.html",
-            extra_context={"wdm_services": services},
+            extra_context={"wdm_services": circuits},
         )
 
 
-template_extensions = [DeviceWdmNodePanel, CableWdmServicesPanel]
+template_extensions = [DeviceWdmNodePanel, CableWdmCircuitsPanel]

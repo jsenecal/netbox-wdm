@@ -4,13 +4,13 @@ import pytest
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from django.db import IntegrityError
 
-from netbox_wdm.choices import WavelengthChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
+from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
 from netbox_wdm.models import (
-    WavelengthChannel,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
-    WdmNode,
+    WdmChannel,
+    WdmChannelPlan,
     WdmLinePort,
+    WdmNode,
+    WdmProfile,
 )
 
 
@@ -50,7 +50,7 @@ def device(site, device_type, device_role):
 
 @pytest.fixture
 def profile(device_type):
-    return WdmDeviceTypeProfile.objects.create(
+    return WdmProfile.objects.create(
         device_type=device_type,
         node_type=WdmNodeTypeChoices.TERMINAL_MUX,
         grid=WdmGridChoices.DWDM_100GHZ,
@@ -58,7 +58,7 @@ def profile(device_type):
 
 
 @pytest.mark.django_db
-class TestWdmDeviceTypeProfile:
+class TestWdmProfile:
     def test_create(self, profile, device_type):
         assert profile.pk is not None
         assert profile.device_type == device_type
@@ -76,8 +76,8 @@ class TestWdmDeviceTypeProfile:
 
     def test_fiber_type_single_fiber(self, device_type):
         # Delete existing profile first (from fixture)
-        WdmDeviceTypeProfile.objects.filter(device_type=device_type).delete()
-        p = WdmDeviceTypeProfile.objects.create(
+        WdmProfile.objects.filter(device_type=device_type).delete()
+        p = WdmProfile.objects.create(
             device_type=device_type,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
@@ -87,7 +87,7 @@ class TestWdmDeviceTypeProfile:
 
     def test_unique_device_type(self, profile, device_type):
         with pytest.raises(IntegrityError):
-            WdmDeviceTypeProfile.objects.create(
+            WdmProfile.objects.create(
                 device_type=device_type,
                 node_type=WdmNodeTypeChoices.ROADM,
                 grid=WdmGridChoices.CWDM,
@@ -95,32 +95,32 @@ class TestWdmDeviceTypeProfile:
 
 
 @pytest.mark.django_db
-class TestWdmChannelTemplate:
+class TestWdmChannelPlan:
     def test_create(self, profile):
-        ct = WdmChannelTemplate.objects.create(
+        cp = WdmChannelPlan.objects.create(
             profile=profile,
             grid_position=1,
             wavelength_nm=1560.61,
             label="C21",
         )
-        assert ct.pk is not None
+        assert cp.pk is not None
 
     def test_str(self, profile):
-        ct = WdmChannelTemplate.objects.create(
+        cp = WdmChannelPlan.objects.create(
             profile=profile,
             grid_position=1,
             wavelength_nm=1560.61,
             label="C21",
         )
-        assert "C21" in str(ct)
-        assert "1560.61" in str(ct)
+        assert "C21" in str(cp)
+        assert "1560.61" in str(cp)
 
     def test_unique_position(self, profile):
-        WdmChannelTemplate.objects.create(
+        WdmChannelPlan.objects.create(
             profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
         with pytest.raises(IntegrityError):
-            WdmChannelTemplate.objects.create(
+            WdmChannelPlan.objects.create(
                 profile=profile, grid_position=1, wavelength_nm=1559.79, label="C22"
             )
 
@@ -144,10 +144,10 @@ class TestWdmNode:
         assert "WDM:" in str(node)
 
     def test_auto_populate_channels_from_profile(self, device, profile):
-        WdmChannelTemplate.objects.create(
+        WdmChannelPlan.objects.create(
             profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
-        WdmChannelTemplate.objects.create(
+        WdmChannelPlan.objects.create(
             profile=profile, grid_position=2, wavelength_nm=1559.79, label="C22"
         )
         node = WdmNode.objects.create(
@@ -158,7 +158,7 @@ class TestWdmNode:
         assert node.channels.count() == 2
 
     def test_amplifier_no_auto_populate(self, device, profile):
-        WdmChannelTemplate.objects.create(
+        WdmChannelPlan.objects.create(
             profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
         node = WdmNode.objects.create(
@@ -183,21 +183,21 @@ class TestWdmNode:
 
 
 @pytest.mark.django_db
-class TestWavelengthChannel:
+class TestWdmChannel:
     def test_create(self, device):
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
             wavelength_nm=1560.61,
             label="C21",
         )
         assert ch.pk is not None
-        assert ch.status == WavelengthChannelStatusChoices.AVAILABLE
+        assert ch.status == WdmChannelStatusChoices.AVAILABLE
 
     def test_str(self, device):
         node = WdmNode.objects.create(
@@ -205,7 +205,7 @@ class TestWavelengthChannel:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
             wavelength_nm=1560.61,
@@ -222,12 +222,12 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
             wavelength_nm=1560.61,
             label="C21",
-            status=WavelengthChannelStatusChoices.ACTIVE,
+            status=WdmChannelStatusChoices.ACTIVE,
         )
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 999, "demux": None}})
         assert len(errors) == 1
@@ -239,10 +239,10 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WavelengthChannel.objects.create(
+        ch1 = WdmChannel.objects.create(
             wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
-        ch2 = WavelengthChannel.objects.create(
+        ch2 = WdmChannel.objects.create(
             wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
         )
         errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": 100, "demux": None}, ch2.pk: {"mux": 100, "demux": None}})
@@ -256,10 +256,10 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WavelengthChannel.objects.create(
+        ch1 = WdmChannel.objects.create(
             wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
-        ch2 = WavelengthChannel.objects.create(
+        ch2 = WdmChannel.objects.create(
             wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
         )
         errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": None, "demux": 200}, ch2.pk: {"mux": None, "demux": 200}})
@@ -273,7 +273,7 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WavelengthChannel.objects.create(
+        ch = WdmChannel.objects.create(
             wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})

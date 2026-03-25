@@ -1,10 +1,10 @@
 import strawberry_django
 
-from ..models import WavelengthChannel, WavelengthService, WdmDeviceTypeProfile, WdmNode
+from ..models import WdmChannel, WdmCircuit, WdmNode, WdmProfile
 
 
-@strawberry_django.filters.filter_type(WdmDeviceTypeProfile)
-class WdmDeviceTypeProfileFilter:
+@strawberry_django.filters.filter_type(WdmProfile)
+class WdmProfileFilter:
     id: int | None
     node_type: str | None
     grid: str | None
@@ -18,16 +18,16 @@ class WdmNodeFilter:
     device_id: int | None
 
 
-@strawberry_django.filters.filter_type(WavelengthChannel)
-class WavelengthChannelFilter:
+@strawberry_django.filters.filter_type(WdmChannel)
+class WdmChannelFilter:
     id: int | None
     wdm_node_id: int | None
     status: str | None
     grid_position: int | None
 
 
-@strawberry_django.filters.filter_type(WavelengthService)
-class WavelengthServiceFilter:
+@strawberry_django.filters.filter_type(WdmCircuit)
+class WdmCircuitFilter:
     id: int | None
     name: str | None
     status: str | None

@@ -7,41 +7,41 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from ..filters import (
-    WavelengthChannelFilterSet,
-    WavelengthServiceFilterSet,
-    WdmChannelTemplateFilterSet,
-    WdmDeviceTypeProfileFilterSet,
+    WdmChannelFilterSet,
+    WdmChannelPlanFilterSet,
+    WdmCircuitFilterSet,
     WdmLinePortFilterSet,
     WdmNodeFilterSet,
+    WdmProfileFilterSet,
 )
 from ..models import (
-    WavelengthChannel,
-    WavelengthService,
-    WdmChannelTemplate,
-    WdmDeviceTypeProfile,
+    WdmChannel,
+    WdmChannelPlan,
+    WdmCircuit,
     WdmLinePort,
     WdmNode,
+    WdmProfile,
 )
 from .serializers import (
-    WavelengthChannelSerializer,
-    WavelengthServiceSerializer,
-    WdmChannelTemplateSerializer,
-    WdmDeviceTypeProfileSerializer,
+    WdmChannelPlanSerializer,
+    WdmChannelSerializer,
+    WdmCircuitSerializer,
     WdmLinePortSerializer,
     WdmNodeSerializer,
+    WdmProfileSerializer,
 )
 
 
-class WdmDeviceTypeProfileViewSet(NetBoxModelViewSet):
-    queryset = WdmDeviceTypeProfile.objects.select_related("device_type").prefetch_related("tags")
-    serializer_class = WdmDeviceTypeProfileSerializer
-    filterset_class = WdmDeviceTypeProfileFilterSet
+class WdmProfileViewSet(NetBoxModelViewSet):
+    queryset = WdmProfile.objects.select_related("device_type").prefetch_related("tags")
+    serializer_class = WdmProfileSerializer
+    filterset_class = WdmProfileFilterSet
 
 
-class WdmChannelTemplateViewSet(NetBoxModelViewSet):
-    queryset = WdmChannelTemplate.objects.select_related("profile").prefetch_related("tags")
-    serializer_class = WdmChannelTemplateSerializer
-    filterset_class = WdmChannelTemplateFilterSet
+class WdmChannelPlanViewSet(NetBoxModelViewSet):
+    queryset = WdmChannelPlan.objects.select_related("profile").prefetch_related("tags")
+    serializer_class = WdmChannelPlanSerializer
+    filterset_class = WdmChannelPlanFilterSet
 
 
 def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) -> dict:
@@ -101,7 +101,7 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
             changed += 1
 
     if channels_to_update:
-        WavelengthChannel.objects.bulk_update(channels_to_update, ["mux_front_port_id", "demux_front_port_id"])
+        WdmChannel.objects.bulk_update(channels_to_update, ["mux_front_port_id", "demux_front_port_id"])
 
     if old_fp_ids_to_delete:
         delete_q = Q()
@@ -195,28 +195,28 @@ class WdmLinePortViewSet(NetBoxModelViewSet):
     filterset_class = WdmLinePortFilterSet
 
 
-class WavelengthChannelViewSet(NetBoxModelViewSet):
-    queryset = WavelengthChannel.objects.select_related("wdm_node").prefetch_related("tags")
-    serializer_class = WavelengthChannelSerializer
-    filterset_class = WavelengthChannelFilterSet
+class WdmChannelViewSet(NetBoxModelViewSet):
+    queryset = WdmChannel.objects.select_related("wdm_node").prefetch_related("tags")
+    serializer_class = WdmChannelSerializer
+    filterset_class = WdmChannelFilterSet
 
 
-class WavelengthServiceViewSet(NetBoxModelViewSet):
-    queryset = WavelengthService.objects.select_related("tenant").prefetch_related("tags")
-    serializer_class = WavelengthServiceSerializer
-    filterset_class = WavelengthServiceFilterSet
+class WdmCircuitViewSet(NetBoxModelViewSet):
+    queryset = WdmCircuit.objects.select_related("tenant").prefetch_related("tags")
+    serializer_class = WdmCircuitSerializer
+    filterset_class = WdmCircuitFilterSet
 
     @action(detail=True, methods=["get"], url_path="stitch")
     def stitch(self, request, pk=None):
         """Return the stitched end-to-end wavelength path."""
-        service = self.get_object()
-        path = service.get_stitched_path()
+        circuit = self.get_object()
+        path = circuit.get_stitched_path()
         return Response(
             {
-                "service_id": service.pk,
-                "service_name": service.name,
-                "wavelength_nm": float(service.wavelength_nm),
-                "status": service.status,
+                "service_id": circuit.pk,
+                "service_name": circuit.name,
+                "wavelength_nm": float(circuit.wavelength_nm),
+                "status": circuit.status,
                 "is_complete": len(path) > 0,
                 "hops": path,
             }
