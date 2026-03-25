@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `WdmChannelTemplate` now has `mux_front_port_template` and `demux_front_port_template` (replaces single `front_port_template`)
+- `WavelengthChannel` now has `mux_front_port` and `demux_front_port` (replaces single `front_port`)
+- `WdmTrunkPort` unique constraint changed from `(wdm_node, direction)` to `(wdm_node, direction, role)`
+- `validate_channel_mapping()` accepts `{ch_pk: {"mux": id, "demux": id}}` format
+- Wavelength editor conditionally shows MUX/DEMUX columns based on fiber type
+- Sample data rebuilt with realistic WDM port topologies and end-to-end cabling
+
+### Added
+
+- `WdmDeviceTypeProfile.fiber_type` field (duplex / single_fiber)
+- `WdmTrunkPort.role` field (tx / rx / bidi) for duplex trunk port pairs
+- WDM Profile tab on DeviceType detail pages via `@register_model_view`
+- EXP (express/upgrade) and 1310 pass-through ports in sample data
+- Fiber patch panels and profiled trunk cables in sample data
+- EDFA amplifier modeled as FrontPort+RearPort pass-through for CablePath tracing
+- Daisy-chain topology demo (EXP port to second MUX COM port)
+
 ## [0.1.0] - 2025-03-25
 
 ### Added
