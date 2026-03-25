@@ -8,7 +8,7 @@ menu = PluginMenu(
             (
                 PluginMenuItem(
                     link="plugins:netbox_wdm:wdmprofile_list",
-                    link_text="WDM Profiles",
+                    link_text="Profiles",
                     permissions=["netbox_wdm.view_wdmprofile"],
                     buttons=(
                         PluginMenuButton(
@@ -21,7 +21,7 @@ menu = PluginMenu(
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_wdm:wdmnode_list",
-                    link_text="WDM Nodes",
+                    link_text="Nodes",
                     permissions=["netbox_wdm.view_wdmnode"],
                     buttons=(
                         PluginMenuButton(
@@ -34,12 +34,12 @@ menu = PluginMenu(
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_wdm:wdmchannel_list",
-                    link_text="WDM Channels",
+                    link_text="Channels",
                     permissions=["netbox_wdm.view_wdmchannel"],
                 ),
                 PluginMenuItem(
                     link="plugins:netbox_wdm:wdmcircuit_list",
-                    link_text="WDM Circuits",
+                    link_text="Circuits",
                     permissions=["netbox_wdm.view_wdmcircuit"],
                     buttons=(
                         PluginMenuButton(
