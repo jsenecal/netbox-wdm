@@ -869,14 +869,16 @@ class Command(BaseCommand):
 
             channels = list(dev.wdm_node.channels.order_by("grid_position")[:4])
             # Channels auto-populated with mux/demux ports from templates, so they should already be set.
-            # Set statuses: first 2 lit, 1 reserved, 1 available
-            if len(channels) >= 4:
+            # Set statuses to match service lifecycle:
+            #   CH1 (1270nm) -> active service  -> lit
+            #   CH2 (1290nm) -> planned service -> available (not yet provisioned)
+            #   CH3 (1310nm) -> staged service  -> reserved (provisioned, not active)
+            #   CH4+         -> no service      -> available
+            if len(channels) >= 3:
                 channels[0].status = "lit"
-                channels[1].status = "lit"
                 channels[2].status = "reserved"
-                # channels[3] stays available
-                WavelengthChannel.objects.bulk_update(channels[:3], ["status"])
-                self.stdout.write(f"  Channel status on {dev.name}: 2 lit, 1 reserved, {len(channels) - 3} available")
+                WavelengthChannel.objects.bulk_update([channels[0], channels[2]], ["status"])
+                self.stdout.write(f"  Channel status on {dev.name}: 1 lit, 1 reserved, {len(channels) - 2} available")
 
     # ================================================================
     # Wavelength Services
