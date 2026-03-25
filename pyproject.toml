@@ -40,6 +40,8 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/jsenecal/netbox-wdm"
 Source = "https://github.com/jsenecal/netbox-wdm"
+Changelog = "https://github.com/jsenecal/netbox-wdm/blob/main/CHANGELOG.md"
+Issues = "https://github.com/jsenecal/netbox-wdm/issues"
 
 [tool.ruff]
 line-length = 120

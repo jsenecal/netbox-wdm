@@ -1,8 +1,16 @@
 # netbox-wdm
 
+[![CI](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml/badge.svg)](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml)
+![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
+![NetBox: 4.5+](https://img.shields.io/badge/netbox-4.5%2B-blue)
+![Python: 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)
+
 A [NetBox](https://github.com/netbox-community/netbox) 4.5+ plugin for WDM (Wavelength Division Multiplexing) device management.
 
 Manages ITU channel plans, channel-to-port assignments, trunk port identification, ROADM live editing, and wavelength service tracking.
+
+> **Alpha software.** The API and data model may change between releases. Use in production at your own risk.
 
 ## Features
 
@@ -71,6 +79,10 @@ npm run build
 | `WavelengthServiceChannelAssignment` | Sequenced M2M through model |
 | `WavelengthServiceNode` | PROTECT guard preventing deletion of in-use channels |
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
 ## License
 
-AGPL-3.0-or-later
+AGPL-3.0-or-later — see [LICENSE](LICENSE) for the full text.
