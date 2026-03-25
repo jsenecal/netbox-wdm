@@ -64,11 +64,13 @@ class WdmDeviceTypeProfileView(generic.ObjectView):
     queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
 
 
+@register_model_view(WdmDeviceTypeProfile, "edit")
 class WdmDeviceTypeProfileEditView(generic.ObjectEditView):
     queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
     form = WdmDeviceTypeProfileForm
 
 
+@register_model_view(WdmDeviceTypeProfile, "delete")
 class WdmDeviceTypeProfileDeleteView(generic.ObjectDeleteView):
     queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
 
@@ -110,11 +112,13 @@ class WdmChannelTemplateView(generic.ObjectView):
     queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
 
 
+@register_model_view(WdmChannelTemplate, "edit")
 class WdmChannelTemplateEditView(generic.ObjectEditView):
     queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
     form = WdmChannelTemplateForm
 
 
+@register_model_view(WdmChannelTemplate, "delete")
 class WdmChannelTemplateDeleteView(generic.ObjectDeleteView):
     queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
 
@@ -154,11 +158,13 @@ class WdmNodeView(generic.ObjectView):
         }
 
 
+@register_model_view(WdmNode, "edit")
 class WdmNodeEditView(generic.ObjectEditView):
     queryset = WdmNode.objects.select_related("device")
     form = WdmNodeForm
 
 
+@register_model_view(WdmNode, "delete")
 class WdmNodeDeleteView(generic.ObjectDeleteView):
     queryset = WdmNode.objects.select_related("device")
 
@@ -272,11 +278,13 @@ class WdmTrunkPortView(generic.ObjectView):
     queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
 
 
+@register_model_view(WdmTrunkPort, "edit")
 class WdmTrunkPortEditView(generic.ObjectEditView):
     queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
     form = WdmTrunkPortForm
 
 
+@register_model_view(WdmTrunkPort, "delete")
 class WdmTrunkPortDeleteView(generic.ObjectDeleteView):
     queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
 
@@ -296,11 +304,13 @@ class WavelengthChannelView(generic.ObjectView):
     queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
 
 
+@register_model_view(WavelengthChannel, "edit")
 class WavelengthChannelEditView(generic.ObjectEditView):
     queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
     form = WavelengthChannelForm
 
 
+@register_model_view(WavelengthChannel, "delete")
 class WavelengthChannelDeleteView(generic.ObjectDeleteView):
     queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
 
@@ -349,11 +359,13 @@ class WavelengthServiceTraceView(generic.ObjectView):
         return {"stitched_path": instance.get_stitched_path()}
 
 
+@register_model_view(WavelengthService, "edit")
 class WavelengthServiceEditView(generic.ObjectEditView):
     queryset = WavelengthService.objects.select_related("tenant")
     form = WavelengthServiceForm
 
 
+@register_model_view(WavelengthService, "delete")
 class WavelengthServiceDeleteView(generic.ObjectDeleteView):
     queryset = WavelengthService.objects.select_related("tenant")
 
