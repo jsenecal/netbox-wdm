@@ -792,60 +792,65 @@ class Command(BaseCommand):
         def get_rear_port(device, name):
             return RearPort.objects.get(device=device, name=name)
 
-        def create_cable(a_term, b_term, label, cable_type="smf-os2"):
+        def create_cable(a_terms, b_terms, label, cable_type="smf-os2"):
+            """Create a cable. a_terms and b_terms can be single objects or lists."""
+            if not isinstance(a_terms, list):
+                a_terms = [a_terms]
+            if not isinstance(b_terms, list):
+                b_terms = [b_terms]
             cable = Cable(
                 type=cable_type,
                 status="connected",
                 label=label,
-                a_terminations=[a_term],
-                b_terminations=[b_term],
+                a_terminations=a_terms,
+                b_terminations=b_terms,
             )
             cable.save()
             self._tag(cable, tag)
             self.stdout.write(f"  Cable: {label}")
             return cable
 
-        # === East side patch cables ===
-        # Router eth0 -> CWDM MUX CH1-MUX
+        # === East side ===
+        # Router eth0 -> CWDM MUX CH1-MUX + CH1-DEMUX (duplex: one cable, two front ports)
         create_cable(
             get_interface(dev_east_router, "eth0"),
-            get_front_port(dev_east_cwdm, "CH1-MUX"),
-            "East Router eth0 to CWDM CH1-MUX",
+            [get_front_port(dev_east_cwdm, "CH1-MUX"), get_front_port(dev_east_cwdm, "CH1-DEMUX")],
+            "East Router eth0 to CWDM CH1",
         )
 
-        # CWDM MUX COM-TX -> East PP RP-01
+        # CWDM MUX COM-TX + COM-RX -> East PP RP-01 + RP-02 (duplex trunk pair)
         create_cable(
-            get_rear_port(dev_east_cwdm, "COM-TX"),
-            get_rear_port(dev_east_pp, "RP-01"),
-            "East CWDM COM-TX to PP RP-01",
+            [get_rear_port(dev_east_cwdm, "COM-TX"), get_rear_port(dev_east_cwdm, "COM-RX")],
+            [get_rear_port(dev_east_pp, "RP-01"), get_rear_port(dev_east_pp, "RP-02")],
+            "East CWDM COM to PP",
         )
 
-        # === Trunk cable (East PP to West PP) ===
+        # === Trunk cable (East PP to West PP) - duplex ===
         create_cable(
-            get_front_port(dev_east_pp, "FP-01"),
-            get_front_port(dev_west_pp, "FP-01"),
-            "East-West Trunk Fiber 1",
+            [get_front_port(dev_east_pp, "FP-01"), get_front_port(dev_east_pp, "FP-02")],
+            [get_front_port(dev_west_pp, "FP-01"), get_front_port(dev_west_pp, "FP-02")],
+            "East-West Trunk Fiber",
         )
 
-        # === West side patch cables ===
-        # West PP RP-01 -> CWDM MUX COM-RX
+        # === West side ===
+        # West PP RP-01 + RP-02 -> CWDM MUX COM-TX + COM-RX
         create_cable(
-            get_rear_port(dev_west_pp, "RP-01"),
-            get_rear_port(dev_west_cwdm, "COM-RX"),
-            "West PP RP-01 to CWDM COM-RX",
+            [get_rear_port(dev_west_pp, "RP-01"), get_rear_port(dev_west_pp, "RP-02")],
+            [get_rear_port(dev_west_cwdm, "COM-TX"), get_rear_port(dev_west_cwdm, "COM-RX")],
+            "West PP to CWDM COM",
         )
 
-        # CWDM MUX CH1-DEMUX -> Router eth0
+        # CWDM MUX CH1-MUX + CH1-DEMUX -> Router eth0 (duplex)
         create_cable(
-            get_front_port(dev_west_cwdm, "CH1-DEMUX"),
+            [get_front_port(dev_west_cwdm, "CH1-MUX"), get_front_port(dev_west_cwdm, "CH1-DEMUX")],
             get_interface(dev_west_router, "eth0"),
-            "West CWDM CH1-DEMUX to Router eth0",
+            "West CWDM CH1 to Router eth0",
         )
 
         # === EXP daisy-chain demo ===
-        # EAST-CWDM-MUX-01 EXP-MUX -> EAST-CWDM-SF-01 COM
+        # EAST-CWDM-MUX-01 EXP-MUX + EXP-DEMUX -> EAST-CWDM-SF-01 COM (duplex to single-fiber)
         create_cable(
-            get_front_port(dev_east_cwdm, "EXP-MUX"),
+            [get_front_port(dev_east_cwdm, "EXP-MUX"), get_front_port(dev_east_cwdm, "EXP-DEMUX")],
             get_rear_port(dev_east_sf, "COM"),
             "East CWDM DX EXP to SF COM (upgrade chain)",
         )
