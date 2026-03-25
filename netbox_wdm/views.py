@@ -104,6 +104,25 @@ class WdmDeviceTypeProfileChannelTemplatesView(generic.ObjectChildrenView):
         return self.child_model.objects.restrict(request.user, "view").filter(profile=parent)
 
 
+@register_model_view(WdmDeviceTypeProfile, "instances", path="instances")
+class WdmDeviceTypeProfileInstancesView(generic.ObjectChildrenView):
+    queryset = WdmDeviceTypeProfile.objects.all()
+    child_model = WdmNode
+    table = WdmNodeTable
+    actions = ()
+    tab = ViewTab(
+        label=_("Instances"),
+        badge=lambda obj: WdmNode.objects.filter(device__device_type=obj.device_type).count(),
+        permission="netbox_wdm.view_wdmnode",
+        weight=510,
+    )
+
+    def get_children(self, request, parent):
+        return self.child_model.objects.restrict(request.user, "view").filter(
+            device__device_type=parent.device_type
+        ).select_related("device")
+
+
 # ---- WdmChannelTemplate ----
 
 
