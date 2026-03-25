@@ -34,6 +34,8 @@ REDIS = {
 
 SECRET_KEY = "IN1nA18P6zgAWu6QaZcfoujJoHt7u6h_55WJssbf2J2mPfrJGmogaiqmmGlXjh03mZXYHomFgpZuYZwvDHC74w"
 
+DEBUG = True
+
 DEVELOPER = True
 
 API_TOKEN_PEPPERS = {1: "test-pepper-for-development-only-not-for-production"}

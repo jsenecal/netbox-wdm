@@ -48,4 +48,16 @@ fi
 # Re-install netbox-wdm in case source changed
 uv pip install --no-cache-dir -e /opt/netbox-wdm
 
+# Run migrations and create admin superuser if needed
+cd /opt/netbox/netbox
+DJANGO_SETTINGS_MODULE=netbox.settings python manage.py migrate --no-input 2>/dev/null
+DJANGO_SETTINGS_MODULE=netbox.settings python -c "
+import django; django.setup()
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(username='admin').exists():
+    User.objects.create_superuser('admin', 'admin@example.com', 'admin')
+    print('Created superuser admin:admin')
+" 2>/dev/null
+
 exec "$@"
