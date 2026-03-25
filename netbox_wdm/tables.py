@@ -95,6 +95,19 @@ class WdmLinePortTable(NetBoxTable):
         default_columns = ("pk", "wdm_node", "rear_port", "direction", "role", "actions")
 
 
+CHANNEL_TRACE_BUTTONS = (
+    '{% if record.mux_front_port and record.mux_front_port.cable %}'
+    '<a href="{% url \'dcim:frontport_trace\' pk=record.mux_front_port.pk %}" '
+    'class="btn btn-primary btn-sm" title="Trace">'
+    '<i class="mdi mdi-transit-connection-variant"></i></a> '
+    '{% elif record.demux_front_port and record.demux_front_port.cable %}'
+    '<a href="{% url \'dcim:frontport_trace\' pk=record.demux_front_port.pk %}" '
+    'class="btn btn-primary btn-sm" title="Trace">'
+    '<i class="mdi mdi-transit-connection-variant"></i></a> '
+    '{% endif %}'
+)
+
+
 class WavelengthChannelTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
@@ -104,7 +117,7 @@ class WavelengthChannelTable(NetBoxTable):
     mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
     demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
     status = tables.Column(verbose_name=_("Status"))
-    actions = columns.ActionsColumn()
+    actions = columns.ActionsColumn(extra_buttons=CHANNEL_TRACE_BUTTONS)
 
     class Meta(NetBoxTable.Meta):
         model = WavelengthChannel

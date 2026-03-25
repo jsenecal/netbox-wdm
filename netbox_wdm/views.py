@@ -251,7 +251,11 @@ class WdmNodeChannelsView(generic.ObjectChildrenView):
     )
 
     def get_children(self, request, parent):
-        return self.child_model.objects.restrict(request.user, "view").filter(wdm_node=parent)
+        return (
+            self.child_model.objects.restrict(request.user, "view")
+            .filter(wdm_node=parent)
+            .select_related("mux_front_port", "demux_front_port")
+        )
 
 
 @register_model_view(WdmNode, "line_ports", path="line-ports")

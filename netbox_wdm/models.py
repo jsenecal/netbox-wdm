@@ -20,6 +20,8 @@ from .choices import (
 class WdmDeviceTypeProfile(NetBoxModel):
     """WDM capability profile attached to a DeviceType."""
 
+    prerequisite_models = ("dcim.DeviceType",)
+
     device_type = models.OneToOneField(
         to="dcim.DeviceType",
         on_delete=models.CASCADE,
@@ -126,6 +128,8 @@ class WdmChannelTemplate(NetBoxModel):
 class WdmNode(NetBoxModel):
     """WDM node instance attached to a Device."""
 
+    prerequisite_models = ("dcim.Device",)
+
     device = models.OneToOneField(
         to="dcim.Device",
         on_delete=models.CASCADE,
@@ -156,6 +160,14 @@ class WdmNode(NetBoxModel):
 
     def get_absolute_url(self):
         return reverse("plugins:netbox_wdm:wdmnode", args=[self.pk])
+
+    @property
+    def is_fixed(self):
+        """Fixed nodes have hardware-determined channel and port assignments.
+
+        Only ROADM nodes allow runtime changes to channels and line ports.
+        """
+        return self.node_type != WdmNodeTypeChoices.ROADM
 
     def validate_channel_mapping(self, desired_mapping: dict[int, dict[str, int | None]]) -> list[str]:
         """Validate proposed channel-to-port mapping changes.
@@ -292,15 +304,45 @@ class WdmLinePort(NetBoxModel):
             ),
         ]
 
+    FIXED_FIELDS = ("rear_port", "direction", "role")
+
     def __str__(self):
         return f"{self.direction}: {self.rear_port}"
 
     def get_absolute_url(self):
         return reverse("plugins:netbox_wdm:wdmlineport", args=[self.pk])
 
+    def _check_fixed_fields(self):
+        """Check that fixed fields haven't changed on a fixed node."""
+        if not self.pk or not self.wdm_node.is_fixed:
+            return
+        db_obj = WdmLinePort.objects.get(pk=self.pk)
+        for field in self.FIXED_FIELDS:
+            attr = f"{field}_id" if field == "rear_port" else field
+            if getattr(self, attr) != getattr(db_obj, attr):
+                raise ValidationError(
+                    _("Cannot modify %(field)s on a fixed WDM node.") % {"field": field}
+                )
+
+    def clean(self):
+        """On fixed nodes, line port configuration cannot be changed after creation."""
+        super().clean()
+        self._check_fixed_fields()
+
+    def save(self, *args, **kwargs):
+        """Enforce fixed node constraints at save time.
+
+        Allows initial creation (from auto-populate) but blocks modifications
+        to fixed fields on existing line ports of fixed nodes.
+        """
+        self._check_fixed_fields()
+        super().save(*args, **kwargs)
+
 
 class WavelengthChannel(NetBoxModel):
     """A wavelength channel instance on a WDM node."""
+
+    prerequisite_models = ("netbox_wdm.WdmNode",)
 
     wdm_node = models.ForeignKey(
         to="netbox_wdm.WdmNode",
@@ -364,15 +406,42 @@ class WavelengthChannel(NetBoxModel):
             ),
         ]
 
+    FIXED_FIELDS = ("mux_front_port", "demux_front_port", "grid_position", "wavelength_nm", "label")
+
     def __str__(self):
         return f"{self.label} ({self.wavelength_nm}nm)"
 
     def get_absolute_url(self):
         return reverse("plugins:netbox_wdm:wavelengthchannel", args=[self.pk])
 
+    def _check_fixed_fields(self):
+        """Check that fixed fields haven't changed on a fixed node."""
+        if not self.pk or not self.wdm_node.is_fixed:
+            return
+        db_obj = WavelengthChannel.objects.get(pk=self.pk)
+        for field in self.FIXED_FIELDS:
+            attr = f"{field}_id" if field.endswith("_port") else field
+            if getattr(self, attr) != getattr(db_obj, attr):
+                raise ValidationError(
+                    _("Cannot modify %(field)s on a fixed WDM node. Only status can be changed.")
+                    % {"field": field}
+                )
+
+    def clean(self):
+        """On fixed nodes, only status may be changed after creation."""
+        super().clean()
+        self._check_fixed_fields()
+
+    def save(self, *args, **kwargs):
+        """Enforce fixed node constraints at save time."""
+        self._check_fixed_fields()
+        super().save(*args, **kwargs)
+
 
 class WavelengthService(NetBoxModel):
     """An end-to-end wavelength service spanning WDM channels."""
+
+    prerequisite_models = ("netbox_wdm.WdmNode",)
 
     name = models.CharField(max_length=200, verbose_name=_("name"))
     status = models.CharField(
