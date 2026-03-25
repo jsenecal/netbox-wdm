@@ -117,13 +117,13 @@ class WavelengthEditor {
       const statusTd = document.createElement('td');
       const badge = document.createElement('span');
       if (ch.status === 'lit') {
-        badge.className = 'badge bg-success';
+        badge.className = 'wdm-badge wdm-badge--lit';
         badge.textContent = 'Lit';
       } else if (ch.status === 'reserved') {
-        badge.className = 'badge bg-warning';
+        badge.className = 'wdm-badge wdm-badge--reserved';
         badge.textContent = 'Reserved';
       } else {
-        badge.className = 'badge bg-secondary';
+        badge.className = 'wdm-badge wdm-badge--available';
         badge.textContent = 'Available';
       }
       statusTd.appendChild(badge);
@@ -329,7 +329,7 @@ class WavelengthEditor {
     this.updateToolbar();
   }
 
-  private showMessage(type: string, text: string): void {
+  private showMessage(type: 'success' | 'danger' | 'warning' | 'info', text: string): void {
     clearElement(this.messageArea);
     const alert = document.createElement('div');
     alert.className = `alert alert-${type} alert-dismissible fade show`;

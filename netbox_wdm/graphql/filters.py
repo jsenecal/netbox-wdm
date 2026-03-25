@@ -3,14 +3,14 @@ import strawberry_django
 from ..models import WavelengthChannel, WavelengthService, WdmDeviceTypeProfile, WdmNode
 
 
-@strawberry_django.filters.filter(WdmDeviceTypeProfile)
+@strawberry_django.filters.filter_type(WdmDeviceTypeProfile)
 class WdmDeviceTypeProfileFilter:
     id: int | None
     node_type: str | None
     grid: str | None
 
 
-@strawberry_django.filters.filter(WdmNode)
+@strawberry_django.filters.filter_type(WdmNode)
 class WdmNodeFilter:
     id: int | None
     node_type: str | None
@@ -18,7 +18,7 @@ class WdmNodeFilter:
     device_id: int | None
 
 
-@strawberry_django.filters.filter(WavelengthChannel)
+@strawberry_django.filters.filter_type(WavelengthChannel)
 class WavelengthChannelFilter:
     id: int | None
     wdm_node_id: int | None
@@ -26,7 +26,7 @@ class WavelengthChannelFilter:
     grid_position: int | None
 
 
-@strawberry_django.filters.filter(WavelengthService)
+@strawberry_django.filters.filter_type(WavelengthService)
 class WavelengthServiceFilter:
     id: int | None
     name: str | None

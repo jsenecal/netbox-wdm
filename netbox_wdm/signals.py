@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models.signals import post_save
 
 
@@ -13,11 +14,14 @@ def _device_post_save(sender, instance, created, **kwargs):
     except WdmDeviceTypeProfile.DoesNotExist:
         return
 
-    WdmNode.objects.create(
-        device=instance,
-        node_type=profile.node_type,
-        grid=profile.grid,
-    )
+    def _create_node():
+        WdmNode.objects.create(
+            device=instance,
+            node_type=profile.node_type,
+            grid=profile.grid,
+        )
+
+    transaction.on_commit(_create_node)
 
 
 def connect_signals():

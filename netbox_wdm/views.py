@@ -61,16 +61,16 @@ class WdmDeviceTypeProfileListView(generic.ObjectListView):
 
 @register_model_view(WdmDeviceTypeProfile)
 class WdmDeviceTypeProfileView(generic.ObjectView):
-    queryset = WdmDeviceTypeProfile.objects.all()
+    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
 
 
 class WdmDeviceTypeProfileEditView(generic.ObjectEditView):
-    queryset = WdmDeviceTypeProfile.objects.all()
+    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
     form = WdmDeviceTypeProfileForm
 
 
 class WdmDeviceTypeProfileDeleteView(generic.ObjectDeleteView):
-    queryset = WdmDeviceTypeProfile.objects.all()
+    queryset = WdmDeviceTypeProfile.objects.select_related("device_type")
 
 
 class WdmDeviceTypeProfileBulkImportView(generic.BulkImportView):
@@ -107,16 +107,16 @@ class WdmDeviceTypeProfileChannelTemplatesView(generic.ObjectChildrenView):
 
 @register_model_view(WdmChannelTemplate)
 class WdmChannelTemplateView(generic.ObjectView):
-    queryset = WdmChannelTemplate.objects.all()
+    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
 
 
 class WdmChannelTemplateEditView(generic.ObjectEditView):
-    queryset = WdmChannelTemplate.objects.all()
+    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
     form = WdmChannelTemplateForm
 
 
 class WdmChannelTemplateDeleteView(generic.ObjectDeleteView):
-    queryset = WdmChannelTemplate.objects.all()
+    queryset = WdmChannelTemplate.objects.select_related("profile__device_type")
 
 
 # ---- WdmNode ----
@@ -131,7 +131,7 @@ class WdmNodeListView(generic.ObjectListView):
 
 @register_model_view(WdmNode)
 class WdmNodeView(generic.ObjectView):
-    queryset = WdmNode.objects.all()
+    queryset = WdmNode.objects.select_related("device")
 
     def get_extra_context(self, request, instance):
         channels = instance.channels.all()
@@ -155,12 +155,12 @@ class WdmNodeView(generic.ObjectView):
 
 
 class WdmNodeEditView(generic.ObjectEditView):
-    queryset = WdmNode.objects.all()
+    queryset = WdmNode.objects.select_related("device")
     form = WdmNodeForm
 
 
 class WdmNodeDeleteView(generic.ObjectDeleteView):
-    queryset = WdmNode.objects.all()
+    queryset = WdmNode.objects.select_related("device")
 
 
 class WdmNodeBulkImportView(generic.BulkImportView):
@@ -214,7 +214,7 @@ class WdmNodeTrunkPortsView(generic.ObjectChildrenView):
 class WdmNodeWavelengthEditorView(generic.ObjectView):
     """Live wavelength channel editor for ROADM nodes."""
 
-    queryset = WdmNode.objects.all()
+    queryset = WdmNode.objects.select_related("device")
     tab = ViewTab(
         label=_("Wavelength Editor"),
         permission="netbox_wdm.change_wavelengthchannel",
@@ -225,20 +225,19 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         return "netbox_wdm/wdmnode_wavelength_editor.html"
 
     def get_extra_context(self, request, instance):
-        channels = instance.channels.select_related("front_port").order_by("grid_position")
-        assigned_fp_ids = set(
-            instance.channels.exclude(front_port__isnull=True).values_list("front_port_id", flat=True)
-        )
+        channels = list(instance.channels.select_related("front_port").order_by("grid_position"))
+        assigned_fp_ids = {ch.front_port_id for ch in channels if ch.front_port_id}
         available_ports = FrontPort.objects.filter(device=instance.device).exclude(pk__in=assigned_fp_ids)
+
+        channel_ids = [ch.pk for ch in channels]
+        svc_by_channel = {}
+        for sa in WavelengthServiceChannelAssignment.objects.filter(channel_id__in=channel_ids).select_related(
+            "service"
+        ):
+            svc_by_channel[sa.channel_id] = sa.service.name
 
         channel_data = []
         for ch in channels:
-            svc_name = None
-            svc_assignment = (
-                WavelengthServiceChannelAssignment.objects.filter(channel=ch).select_related("service").first()
-            )
-            if svc_assignment:
-                svc_name = svc_assignment.service.name
             channel_data.append(
                 {
                     "id": ch.pk,
@@ -248,7 +247,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
                     "front_port_id": ch.front_port_id,
                     "front_port_name": ch.front_port.name if ch.front_port else None,
                     "status": ch.status,
-                    "service_name": svc_name,
+                    "service_name": svc_by_channel.get(ch.pk),
                 }
             )
 
@@ -270,16 +269,16 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
 
 @register_model_view(WdmTrunkPort)
 class WdmTrunkPortView(generic.ObjectView):
-    queryset = WdmTrunkPort.objects.all()
+    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
 
 
 class WdmTrunkPortEditView(generic.ObjectEditView):
-    queryset = WdmTrunkPort.objects.all()
+    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
     form = WdmTrunkPortForm
 
 
 class WdmTrunkPortDeleteView(generic.ObjectDeleteView):
-    queryset = WdmTrunkPort.objects.all()
+    queryset = WdmTrunkPort.objects.select_related("wdm_node__device", "rear_port")
 
 
 # ---- WavelengthChannel ----
@@ -294,16 +293,16 @@ class WavelengthChannelListView(generic.ObjectListView):
 
 @register_model_view(WavelengthChannel)
 class WavelengthChannelView(generic.ObjectView):
-    queryset = WavelengthChannel.objects.all()
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
 
 
 class WavelengthChannelEditView(generic.ObjectEditView):
-    queryset = WavelengthChannel.objects.all()
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
     form = WavelengthChannelForm
 
 
 class WavelengthChannelDeleteView(generic.ObjectDeleteView):
-    queryset = WavelengthChannel.objects.all()
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
 
 
 class WavelengthChannelBulkEditView(generic.BulkEditView):
@@ -331,12 +330,12 @@ class WavelengthServiceListView(generic.ObjectListView):
 
 @register_model_view(WavelengthService)
 class WavelengthServiceView(generic.ObjectView):
-    queryset = WavelengthService.objects.all()
+    queryset = WavelengthService.objects.select_related("tenant")
 
 
 @register_model_view(WavelengthService, "trace", path="trace")
 class WavelengthServiceTraceView(generic.ObjectView):
-    queryset = WavelengthService.objects.all()
+    queryset = WavelengthService.objects.select_related("tenant")
     tab = ViewTab(
         label=_("Trace"),
         permission="netbox_wdm.view_wavelengthservice",
@@ -351,12 +350,12 @@ class WavelengthServiceTraceView(generic.ObjectView):
 
 
 class WavelengthServiceEditView(generic.ObjectEditView):
-    queryset = WavelengthService.objects.all()
+    queryset = WavelengthService.objects.select_related("tenant")
     form = WavelengthServiceForm
 
 
 class WavelengthServiceDeleteView(generic.ObjectDeleteView):
-    queryset = WavelengthService.objects.all()
+    queryset = WavelengthService.objects.select_related("tenant")
 
 
 class WavelengthServiceBulkImportView(generic.BulkImportView):

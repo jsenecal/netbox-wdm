@@ -1,6 +1,7 @@
 from decimal import Decimal
 
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from netbox.models import NetBoxModel
@@ -70,18 +71,23 @@ class WdmChannelTemplate(NetBoxModel):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
+        related_name="+",
         verbose_name=_("front port template"),
     )
 
     class Meta:
         ordering = ("profile", "grid_position")
-        unique_together = (
-            ("profile", "wavelength_nm"),
-            ("profile", "grid_position"),
-        )
         verbose_name = _("WDM channel template")
         verbose_name_plural = _("WDM channel templates")
         constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "wavelength_nm"],
+                name="unique_profile_wavelength",
+            ),
+            models.UniqueConstraint(
+                fields=["profile", "grid_position"],
+                name="unique_profile_grid_position",
+            ),
             models.UniqueConstraint(
                 fields=["profile", "front_port_template"],
                 condition=models.Q(front_port_template__isnull=False),
@@ -130,14 +136,13 @@ class WdmNode(NetBoxModel):
     def get_absolute_url(self):
         return reverse("plugins:netbox_wdm:wdmnode", args=[self.pk])
 
-    @staticmethod
-    def validate_channel_mapping(wdm_node, desired_mapping: dict[int, int | None]) -> list[str]:
+    def validate_channel_mapping(self, desired_mapping: dict[int, int | None]) -> list[str]:
         """Validate proposed channel-to-port mapping changes.
 
         Returns list of error strings. Empty list means validation passed.
         """
         errors = []
-        channels = {ch.pk: ch for ch in wdm_node.channels.all()}
+        channels = {ch.pk: ch for ch in self.channels.all()}
 
         protected_statuses = {WavelengthChannelStatusChoices.LIT, WavelengthChannelStatusChoices.RESERVED}
         for ch_pk, desired_fp_pk in desired_mapping.items():
@@ -166,9 +171,10 @@ class WdmNode(NetBoxModel):
     def save(self, *args, **kwargs):
         """Save and auto-populate channels from device type profile on creation."""
         is_new = self._state.adding
-        super().save(*args, **kwargs)
-        if is_new and self.node_type != WdmNodeTypeChoices.AMPLIFIER:
-            self._auto_populate_channels()
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if is_new and self.node_type != WdmNodeTypeChoices.AMPLIFIER:
+                self._auto_populate_channels()
 
     def _auto_populate_channels(self):
         """Create WavelengthChannel rows from the device type's WDM profile templates."""
@@ -214,6 +220,7 @@ class WdmTrunkPort(NetBoxModel):
     rear_port = models.ForeignKey(
         to="dcim.RearPort",
         on_delete=models.PROTECT,
+        related_name="+",
         verbose_name=_("rear port"),
     )
     direction = models.CharField(
@@ -225,12 +232,18 @@ class WdmTrunkPort(NetBoxModel):
 
     class Meta:
         ordering = ("wdm_node", "position")
-        unique_together = (
-            ("wdm_node", "rear_port"),
-            ("wdm_node", "direction"),
-        )
         verbose_name = _("WDM trunk port")
         verbose_name_plural = _("WDM trunk ports")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["wdm_node", "rear_port"],
+                name="unique_trunkport_rear_port",
+            ),
+            models.UniqueConstraint(
+                fields=["wdm_node", "direction"],
+                name="unique_trunkport_direction",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.direction}: {self.rear_port}"
@@ -260,24 +273,30 @@ class WavelengthChannel(NetBoxModel):
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
+        related_name="+",
         verbose_name=_("front port"),
     )
     status = models.CharField(
         max_length=50,
         choices=WavelengthChannelStatusChoices,
         default=WavelengthChannelStatusChoices.AVAILABLE,
+        db_index=True,
         verbose_name=_("status"),
     )
 
     class Meta:
         ordering = ("wdm_node", "grid_position")
-        unique_together = (
-            ("wdm_node", "wavelength_nm"),
-            ("wdm_node", "grid_position"),
-        )
         verbose_name = _("wavelength channel")
         verbose_name_plural = _("wavelength channels")
         constraints = [
+            models.UniqueConstraint(
+                fields=["wdm_node", "wavelength_nm"],
+                name="unique_channel_wavelength",
+            ),
+            models.UniqueConstraint(
+                fields=["wdm_node", "grid_position"],
+                name="unique_channel_grid_position",
+            ),
             models.UniqueConstraint(
                 fields=["wdm_node", "front_port"],
                 condition=models.Q(front_port__isnull=False),
@@ -300,6 +319,7 @@ class WavelengthService(NetBoxModel):
         max_length=50,
         choices=WavelengthServiceStatusChoices,
         default=WavelengthServiceStatusChoices.PLANNED,
+        db_index=True,
         verbose_name=_("status"),
     )
     wavelength_nm = models.DecimalField(
@@ -342,30 +362,26 @@ class WavelengthService(NetBoxModel):
         if not self.pk:
             return
 
-        channel_assignments = self.channel_assignments.select_related("channel__wdm_node").all()
-        if not channel_assignments.exists():
+        cas = list(self.channel_assignments.select_related("channel__wdm_node"))
+        if not cas:
             return
 
         grids = set()
         svc_wl = Decimal(str(self.wavelength_nm))
-        for ca in channel_assignments:
+        for ca in cas:
             if ca.channel:
                 grids.add(ca.channel.wdm_node.grid)
 
         if len(grids) > 1:
-            from django.core.exceptions import ValidationError
-
             raise ValidationError(
                 _("All WDM nodes in a wavelength service must use the same grid. Found: %(grids)s")
                 % {"grids": ", ".join(sorted(grids))}
             )
 
-        for ca in channel_assignments:
+        for ca in cas:
             if ca.channel:
                 ch_wl = Decimal(str(ca.channel.wavelength_nm))
                 if abs(ch_wl - svc_wl) > Decimal("0.01"):
-                    from django.core.exceptions import ValidationError
-
                     raise ValidationError(
                         _("Channel %(label)s has wavelength %(ch_wl)s nm but service wavelength is %(svc_wl)s nm.")
                         % {
@@ -441,12 +457,18 @@ class WavelengthServiceChannelAssignment(models.Model):
 
     class Meta:
         ordering = ("service", "sequence")
-        unique_together = (
-            ("service", "channel"),
-            ("service", "sequence"),
-        )
         verbose_name = _("wavelength service channel assignment")
         verbose_name_plural = _("wavelength service channel assignments")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["service", "channel"],
+                name="unique_wsca_service_channel",
+            ),
+            models.UniqueConstraint(
+                fields=["service", "sequence"],
+                name="unique_wsca_service_sequence",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.service} #{self.sequence}: {self.channel}"

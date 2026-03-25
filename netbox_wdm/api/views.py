@@ -33,13 +33,13 @@ from .serializers import (
 
 
 class WdmDeviceTypeProfileViewSet(NetBoxModelViewSet):
-    queryset = WdmDeviceTypeProfile.objects.prefetch_related("device_type", "tags")
+    queryset = WdmDeviceTypeProfile.objects.select_related("device_type").prefetch_related("tags")
     serializer_class = WdmDeviceTypeProfileSerializer
     filterset_class = WdmDeviceTypeProfileFilterSet
 
 
 class WdmChannelTemplateViewSet(NetBoxModelViewSet):
-    queryset = WdmChannelTemplate.objects.prefetch_related("profile", "tags")
+    queryset = WdmChannelTemplate.objects.select_related("profile").prefetch_related("tags")
     serializer_class = WdmChannelTemplateSerializer
     filterset_class = WdmChannelTemplateFilterSet
 
@@ -136,7 +136,7 @@ def _retrace_affected_paths(wdm_node, trunk_ports):
 
 
 class WdmNodeViewSet(NetBoxModelViewSet):
-    queryset = WdmNode.objects.prefetch_related("device", "tags")
+    queryset = WdmNode.objects.select_related("device").prefetch_related("tags")
     serializer_class = WdmNodeSerializer
     filterset_class = WdmNodeFilterSet
 
@@ -156,7 +156,7 @@ class WdmNodeViewSet(NetBoxModelViewSet):
         desired = {int(k): (int(v) if v else None) for k, v in desired.items()}
 
         with transaction.atomic():
-            errors = WdmNode.validate_channel_mapping(node, desired)
+            errors = node.validate_channel_mapping(desired)
             if errors:
                 return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -168,19 +168,19 @@ class WdmNodeViewSet(NetBoxModelViewSet):
 
 
 class WdmTrunkPortViewSet(NetBoxModelViewSet):
-    queryset = WdmTrunkPort.objects.prefetch_related("wdm_node", "rear_port", "tags")
+    queryset = WdmTrunkPort.objects.select_related("wdm_node", "rear_port").prefetch_related("tags")
     serializer_class = WdmTrunkPortSerializer
     filterset_class = WdmTrunkPortFilterSet
 
 
 class WavelengthChannelViewSet(NetBoxModelViewSet):
-    queryset = WavelengthChannel.objects.prefetch_related("wdm_node", "tags")
+    queryset = WavelengthChannel.objects.select_related("wdm_node").prefetch_related("tags")
     serializer_class = WavelengthChannelSerializer
     filterset_class = WavelengthChannelFilterSet
 
 
 class WavelengthServiceViewSet(NetBoxModelViewSet):
-    queryset = WavelengthService.objects.prefetch_related("tenant", "tags")
+    queryset = WavelengthService.objects.select_related("tenant").prefetch_related("tags")
     serializer_class = WavelengthServiceSerializer
     filterset_class = WavelengthServiceFilterSet
 
