@@ -7,6 +7,7 @@ from netbox.object_actions import BulkDelete, DeleteObject, EditObject
 from netbox.views import generic
 from utilities.views import ViewTab, register_model_view
 
+from .choices import WdmNodeTypeChoices
 from .filters import (
     WavelengthChannelFilterSet,
     WavelengthServiceFilterSet,
@@ -279,6 +280,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
     tab = ViewTab(
         label=_("Wavelength Editor"),
         permission="netbox_wdm.change_wavelengthchannel",
+        visible=lambda obj: obj.node_type == WdmNodeTypeChoices.ROADM,
         weight=600,
     )
 

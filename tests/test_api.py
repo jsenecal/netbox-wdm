@@ -412,7 +412,6 @@ class TestWdmLinePortAPI:
             wdm_node=wdm_node,
             rear_port=rp,
             direction=WdmLineDirectionChoices.WEST,
-            position=1,
         )
         response = api_client.get(self.base_url)
         assert response.status_code == status.HTTP_200_OK
@@ -426,7 +425,6 @@ class TestWdmLinePortAPI:
             wdm_node=wdm_node,
             rear_port=rp,
             direction=WdmLineDirectionChoices.WEST,
-            position=1,
         )
         response = api_client.get(f"{self.base_url}{tp.pk}/")
         assert response.status_code == status.HTTP_200_OK
@@ -442,7 +440,6 @@ class TestWdmLinePortAPI:
                 "wdm_node": wdm_node.pk,
                 "rear_port": rp.pk,
                 "direction": WdmLineDirectionChoices.EAST,
-                "position": 2,
             },
             format="json",
         )
@@ -456,7 +453,6 @@ class TestWdmLinePortAPI:
             wdm_node=wdm_node,
             rear_port=rp,
             direction=WdmLineDirectionChoices.WEST,
-            position=1,
         )
         response = api_client.delete(f"{self.base_url}{tp.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT

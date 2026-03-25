@@ -86,13 +86,13 @@ class WdmLinePortTable(NetBoxTable):
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
     rear_port = tables.Column(linkify=True, verbose_name=_("Rear Port"))
     direction = tables.Column(verbose_name=_("Direction"))
-    position = tables.Column(verbose_name=_("Position"))
+    role = tables.Column(verbose_name=_("Role"))
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
         model = WdmLinePort
-        fields = ("pk", "id", "wdm_node", "rear_port", "direction", "position", "actions")
-        default_columns = ("pk", "wdm_node", "rear_port", "direction", "position", "actions")
+        fields = ("pk", "id", "wdm_node", "rear_port", "direction", "role", "actions")
+        default_columns = ("pk", "wdm_node", "rear_port", "direction", "role", "actions")
 
 
 class WavelengthChannelTable(NetBoxTable):

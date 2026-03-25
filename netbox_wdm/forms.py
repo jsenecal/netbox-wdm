@@ -141,13 +141,13 @@ class WdmLinePortForm(NetBoxModelForm):
     rear_port = DynamicModelChoiceField(queryset=RearPort.objects.all(), label=_("Rear Port"))
 
     fieldsets = (
-        FieldSet("wdm_node", "rear_port", "direction", "role", "position", name=_("Line Port")),
+        FieldSet("wdm_node", "rear_port", "direction", "role", name=_("Line Port")),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmLinePort
-        fields = ("wdm_node", "rear_port", "direction", "role", "position", "tags")
+        fields = ("wdm_node", "rear_port", "direction", "role", "tags")
 
 
 # --- WavelengthChannel ---

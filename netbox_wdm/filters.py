@@ -77,7 +77,7 @@ class WdmLinePortFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
 
     class Meta:
         model = WdmLinePort
-        fields = ("id", "wdm_node", "direction", "position")
+        fields = ("id", "wdm_node", "direction", "role")
 
 
 class WavelengthChannelFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):

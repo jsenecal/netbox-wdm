@@ -81,13 +81,12 @@ class WdmLinePortSerializer(NetBoxModelSerializer):
             "rear_port",
             "direction",
             "role",
-            "position",
             "tags",
             "custom_fields",
             "created",
             "last_updated",
         )
-        brief_fields = ("id", "url", "display", "direction", "position")
+        brief_fields = ("id", "url", "display", "direction", "role")
 
 
 class WavelengthChannelSerializer(NetBoxModelSerializer):

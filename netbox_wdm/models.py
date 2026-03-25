@@ -276,10 +276,9 @@ class WdmLinePort(NetBoxModel):
         default=WdmLineRoleChoices.BIDI,
         verbose_name=_("role"),
     )
-    position = models.PositiveIntegerField(verbose_name=_("position"))
 
     class Meta:
-        ordering = ("wdm_node", "position")
+        ordering = ("wdm_node", "direction", "role")
         verbose_name = _("WDM line port")
         verbose_name_plural = _("WDM line ports")
         constraints = [

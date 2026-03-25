@@ -724,13 +724,13 @@ class Command(BaseCommand):
         for dev in [dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm]:
             if not hasattr(dev, "wdm_node"):
                 continue
-            for rp_name, role, position in [("COM-TX", "tx", 1), ("COM-RX", "rx", 2)]:
+            for rp_name, role in [("COM-TX", "tx"), ("COM-RX", "rx")]:
                 rp = RearPort.objects.filter(device=dev, name=rp_name).first()
                 if rp:
                     tp, created = WdmLinePort.objects.get_or_create(
                         wdm_node=dev.wdm_node,
                         rear_port=rp,
-                        defaults={"direction": "common", "role": role, "position": position},
+                        defaults={"direction": "common", "role": role},
                     )
                     if created:
                         self._tag(tp, tag)
@@ -743,7 +743,7 @@ class Command(BaseCommand):
                 tp, created = WdmLinePort.objects.get_or_create(
                     wdm_node=dev_east_sf.wdm_node,
                     rear_port=rp,
-                    defaults={"direction": "common", "role": "bidi", "position": 1},
+                    defaults={"direction": "common", "role": "bidi"},
                 )
                 if created:
                     self._tag(tp, tag)
@@ -752,18 +752,18 @@ class Command(BaseCommand):
         # ROADM: 4 line ports
         if hasattr(dev_hub_roadm, "wdm_node"):
             roadm_lines = [
-                ("LINE-EAST-TX", "tx", "east", 1),
-                ("LINE-EAST-RX", "rx", "east", 2),
-                ("LINE-WEST-TX", "tx", "west", 3),
-                ("LINE-WEST-RX", "rx", "west", 4),
+                ("LINE-EAST-TX", "tx", "east"),
+                ("LINE-EAST-RX", "rx", "east"),
+                ("LINE-WEST-TX", "tx", "west"),
+                ("LINE-WEST-RX", "rx", "west"),
             ]
-            for rp_name, role, direction, position in roadm_lines:
+            for rp_name, role, direction in roadm_lines:
                 rp = RearPort.objects.filter(device=dev_hub_roadm, name=rp_name).first()
                 if rp:
                     tp, created = WdmLinePort.objects.get_or_create(
                         wdm_node=dev_hub_roadm.wdm_node,
                         rear_port=rp,
-                        defaults={"direction": direction, "role": role, "position": position},
+                        defaults={"direction": direction, "role": role},
                     )
                     if created:
                         self._tag(tp, tag)
