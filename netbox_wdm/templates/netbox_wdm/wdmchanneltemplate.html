@@ -26,8 +26,12 @@
                     <td>{{ object.wavelength_nm }}</td>
                 </tr>
                 <tr>
-                    <th scope="row">{% trans "Front Port Template" %}</th>
-                    <td>{% if object.front_port_template %}{{ object.front_port_template }}{% else %}&mdash;{% endif %}</td>
+                    <th scope="row">{% trans "MUX Front Port Template" %}</th>
+                    <td>{% if object.mux_front_port_template %}{{ object.mux_front_port_template }}{% else %}&mdash;{% endif %}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "DEMUX Front Port Template" %}</th>
+                    <td>{% if object.demux_front_port_template %}{{ object.demux_front_port_template }}{% else %}&mdash;{% endif %}</td>
                 </tr>
             </table>
         </div>

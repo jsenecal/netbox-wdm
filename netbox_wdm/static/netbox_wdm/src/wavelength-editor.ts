@@ -1,9 +1,16 @@
 import type { ChannelData, EditorConfig, PortData } from './wavelength-editor-types';
 
+interface PortMapping {
+  mux: number | null;
+  demux: number | null;
+}
+
 interface Change {
   channelId: number;
-  oldPortId: number | null;
-  newPortId: number | null;
+  oldMux: number | null;
+  newMux: number | null;
+  oldDemux: number | null;
+  newDemux: number | null;
 }
 
 function getCsrfToken(): string {
@@ -20,11 +27,12 @@ function clearElement(el: HTMLElement): void {
 class WavelengthEditor {
   private config: EditorConfig;
   private container: HTMLElement;
-  private currentMapping: Map<number, number | null>;
-  private initialMapping: Map<number, number | null>;
+  private currentMapping: Map<number, PortMapping>;
+  private initialMapping: Map<number, PortMapping>;
   private undoStack: Change[] = [];
   private redoStack: Change[] = [];
   private lastUpdated: string;
+  private isDuplex: boolean;
 
   private undoBtn!: HTMLButtonElement;
   private redoBtn!: HTMLButtonElement;
@@ -36,12 +44,17 @@ class WavelengthEditor {
     this.container = container;
     this.config = config;
     this.lastUpdated = config.lastUpdated;
+    this.isDuplex = config.fiberType === 'duplex';
 
     this.currentMapping = new Map();
     this.initialMapping = new Map();
     for (const ch of config.channels) {
-      this.currentMapping.set(ch.id, ch.front_port_id);
-      this.initialMapping.set(ch.id, ch.front_port_id);
+      const mapping: PortMapping = {
+        mux: ch.mux_front_port_id,
+        demux: ch.demux_front_port_id,
+      };
+      this.currentMapping.set(ch.id, { ...mapping });
+      this.initialMapping.set(ch.id, { ...mapping });
     }
 
     this.render();
@@ -78,7 +91,10 @@ class WavelengthEditor {
 
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    for (const h of ['Grid Pos', 'Label', 'Wavelength (nm)', 'Port Assignment', 'Status']) {
+    const headers = this.isDuplex
+      ? ['Grid Pos', 'Label', 'Wavelength (nm)', 'MUX Port', 'DEMUX Port', 'Status']
+      : ['Grid Pos', 'Label', 'Wavelength (nm)', 'Port', 'Status'];
+    for (const h of headers) {
       const th = document.createElement('th');
       th.scope = 'col';
       th.textContent = h;
@@ -97,10 +113,11 @@ class WavelengthEditor {
       this.addCell(tr, ch.label);
       this.addCell(tr, String(ch.wavelength_nm));
 
-      const portTd = document.createElement('td');
+      // MUX port column (always shown)
+      const muxTd = document.createElement('td');
       if (ch.status === 'available') {
-        const select = this.buildPortSelect(ch);
-        portTd.appendChild(select);
+        const select = this.buildPortSelect(ch, 'mux');
+        muxTd.appendChild(select);
       } else {
         const span = document.createElement('span');
         const lockIcon = document.createElement('i');
@@ -109,10 +126,30 @@ class WavelengthEditor {
           lockIcon.title = ch.service_name;
         }
         span.appendChild(lockIcon);
-        span.appendChild(document.createTextNode(ch.front_port_name || 'Unassigned'));
-        portTd.appendChild(span);
+        span.appendChild(document.createTextNode(ch.mux_front_port_name || 'Unassigned'));
+        muxTd.appendChild(span);
       }
-      tr.appendChild(portTd);
+      tr.appendChild(muxTd);
+
+      // DEMUX port column (duplex only)
+      if (this.isDuplex) {
+        const demuxTd = document.createElement('td');
+        if (ch.status === 'available') {
+          const select = this.buildPortSelect(ch, 'demux');
+          demuxTd.appendChild(select);
+        } else {
+          const span = document.createElement('span');
+          const lockIcon = document.createElement('i');
+          lockIcon.className = 'mdi mdi-lock me-1';
+          if (ch.service_name) {
+            lockIcon.title = ch.service_name;
+          }
+          span.appendChild(lockIcon);
+          span.appendChild(document.createTextNode(ch.demux_front_port_name || 'Unassigned'));
+          demuxTd.appendChild(span);
+        }
+        tr.appendChild(demuxTd);
+      }
 
       const statusTd = document.createElement('td');
       const badge = document.createElement('span');
@@ -143,38 +180,52 @@ class WavelengthEditor {
     tr.appendChild(td);
   }
 
-  private buildPortSelect(ch: ChannelData): HTMLSelectElement {
+  private getAssignedPortIds(): Set<number> {
+    const assigned = new Set<number>();
+    for (const ch of this.config.channels) {
+      const mapping = this.currentMapping.get(ch.id);
+      if (mapping) {
+        if (mapping.mux) assigned.add(mapping.mux);
+        if (mapping.demux) assigned.add(mapping.demux);
+      }
+    }
+    return assigned;
+  }
+
+  private buildPortSelect(ch: ChannelData, role: 'mux' | 'demux'): HTMLSelectElement {
     const select = document.createElement('select');
     select.className = 'form-select form-select-sm';
     select.dataset.channelId = String(ch.id);
+    select.dataset.portRole = role;
 
     const unassigned = document.createElement('option');
     unassigned.value = '';
     unassigned.textContent = '-- Unassigned --';
     select.appendChild(unassigned);
 
-    const currentPortId = this.currentMapping.get(ch.id);
+    const currentMapping = this.currentMapping.get(ch.id);
+    const currentPortId = currentMapping ? currentMapping[role] : null;
     const availableIds = new Set(this.config.availablePorts.map((p) => p.id));
 
-    if (ch.front_port_id && !availableIds.has(ch.front_port_id)) {
+    // Include the currently assigned port if it's not in available ports
+    const origPortId = role === 'mux' ? ch.mux_front_port_id : ch.demux_front_port_id;
+    const origPortName = role === 'mux' ? ch.mux_front_port_name : ch.demux_front_port_name;
+    if (origPortId && !availableIds.has(origPortId)) {
       const opt = document.createElement('option');
-      opt.value = String(ch.front_port_id);
-      opt.textContent = ch.front_port_name || `Port ${ch.front_port_id}`;
+      opt.value = String(origPortId);
+      opt.textContent = origPortName || `Port ${origPortId}`;
       select.appendChild(opt);
     }
 
+    // Collect ports assigned to other available channels that aren't in available pool
     const otherAssigned = new Map<number, string>();
     for (const other of this.config.channels) {
-      if (
-        other.id !== ch.id &&
-        other.status === 'available' &&
-        other.front_port_id &&
-        !availableIds.has(other.front_port_id)
-      ) {
-        otherAssigned.set(
-          other.front_port_id,
-          other.front_port_name || `Port ${other.front_port_id}`,
-        );
+      if (other.id !== ch.id && other.status === 'available') {
+        const otherPortId = role === 'mux' ? other.mux_front_port_id : other.demux_front_port_id;
+        const otherPortName = role === 'mux' ? other.mux_front_port_name : other.demux_front_port_name;
+        if (otherPortId && !availableIds.has(otherPortId)) {
+          otherAssigned.set(otherPortId, otherPortName || `Port ${otherPortId}`);
+        }
       }
     }
 
@@ -196,11 +247,32 @@ class WavelengthEditor {
 
     select.addEventListener('change', () => {
       const newPortId = select.value ? Number(select.value) : null;
-      const oldPortId = this.currentMapping.get(ch.id) ?? null;
-      if (newPortId === oldPortId) return;
+      const mapping = this.currentMapping.get(ch.id);
+      if (!mapping) return;
+      const oldMux = mapping.mux;
+      const oldDemux = mapping.demux;
 
-      this.currentMapping.set(ch.id, newPortId);
-      this.undoStack.push({ channelId: ch.id, oldPortId, newPortId });
+      if (role === 'mux') {
+        if (newPortId === oldMux) return;
+        mapping.mux = newPortId;
+        this.undoStack.push({
+          channelId: ch.id,
+          oldMux,
+          newMux: newPortId,
+          oldDemux: oldDemux,
+          newDemux: oldDemux,
+        });
+      } else {
+        if (newPortId === oldDemux) return;
+        mapping.demux = newPortId;
+        this.undoStack.push({
+          channelId: ch.id,
+          oldMux: oldMux,
+          newMux: oldMux,
+          oldDemux,
+          newDemux: newPortId,
+        });
+      }
       this.redoStack = [];
       this.updateToolbar();
     });
@@ -222,8 +294,10 @@ class WavelengthEditor {
   }
 
   private isDirty(): boolean {
-    for (const [chId, portId] of this.currentMapping) {
-      if (this.initialMapping.get(chId) !== portId) return true;
+    for (const [chId, mapping] of this.currentMapping) {
+      const initial = this.initialMapping.get(chId);
+      if (!initial) return true;
+      if (initial.mux !== mapping.mux || initial.demux !== mapping.demux) return true;
     }
     return false;
   }
@@ -243,27 +317,42 @@ class WavelengthEditor {
   private undo(): void {
     const change = this.undoStack.pop();
     if (!change) return;
-    this.currentMapping.set(change.channelId, change.oldPortId);
+    const mapping = this.currentMapping.get(change.channelId);
+    if (mapping) {
+      mapping.mux = change.oldMux;
+      mapping.demux = change.oldDemux;
+    }
     this.redoStack.push(change);
-    this.syncSelect(change.channelId);
+    this.syncSelect(change.channelId, 'mux');
+    if (this.isDuplex) {
+      this.syncSelect(change.channelId, 'demux');
+    }
     this.updateToolbar();
   }
 
   private redo(): void {
     const change = this.redoStack.pop();
     if (!change) return;
-    this.currentMapping.set(change.channelId, change.newPortId);
+    const mapping = this.currentMapping.get(change.channelId);
+    if (mapping) {
+      mapping.mux = change.newMux;
+      mapping.demux = change.newDemux;
+    }
     this.undoStack.push(change);
-    this.syncSelect(change.channelId);
+    this.syncSelect(change.channelId, 'mux');
+    if (this.isDuplex) {
+      this.syncSelect(change.channelId, 'demux');
+    }
     this.updateToolbar();
   }
 
-  private syncSelect(channelId: number): void {
+  private syncSelect(channelId: number, role: 'mux' | 'demux'): void {
     const select = this.container.querySelector(
-      `select[data-channel-id="${channelId}"]`,
+      `select[data-channel-id="${channelId}"][data-port-role="${role}"]`,
     ) as HTMLSelectElement | null;
     if (select) {
-      const val = this.currentMapping.get(channelId);
+      const mapping = this.currentMapping.get(channelId);
+      const val = mapping ? mapping[role] : null;
       select.value = val ? String(val) : '';
     }
   }
@@ -273,9 +362,9 @@ class WavelengthEditor {
     clearElement(this.saveBtn);
     this.saveBtn.textContent = 'Saving...';
 
-    const mapping: Record<string, number | null> = {};
-    for (const [chId, portId] of this.currentMapping) {
-      mapping[String(chId)] = portId;
+    const mapping: Record<string, { mux: number | null; demux: number | null }> = {};
+    for (const [chId, portMapping] of this.currentMapping) {
+      mapping[String(chId)] = { mux: portMapping.mux, demux: portMapping.demux };
     }
 
     try {
@@ -301,8 +390,8 @@ class WavelengthEditor {
         if (data.last_updated) {
           this.lastUpdated = data.last_updated;
         }
-        for (const [chId, portId] of this.currentMapping) {
-          this.initialMapping.set(chId, portId);
+        for (const [chId, portMapping] of this.currentMapping) {
+          this.initialMapping.set(chId, { ...portMapping });
         }
         this.undoStack = [];
         this.redoStack = [];

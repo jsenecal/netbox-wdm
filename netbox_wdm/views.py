@@ -1,6 +1,6 @@
 import json
 
-from dcim.models import FrontPort
+from dcim.models import DeviceType, FrontPort
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from netbox.object_actions import BulkDelete, DeleteObject, EditObject
@@ -268,9 +268,18 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
 
         port_data = [{"id": p.pk, "name": p.name} for p in available_ports]
 
+        # Get fiber_type from the device type's WDM profile
+        fiber_type = "duplex"
+        try:
+            profile = instance.device.device_type.wdm_profile
+            fiber_type = profile.fiber_type
+        except WdmDeviceTypeProfile.DoesNotExist:
+            pass
+
         config = {
             "nodeId": instance.pk,
             "nodeType": instance.node_type,
+            "fiberType": fiber_type,
             "lastUpdated": str(instance.last_updated),
             "applyUrl": reverse("plugins-api:netbox_wdm-api:wdmnode-apply-mapping", args=[instance.pk]),
             "channels": channel_data,
@@ -388,3 +397,31 @@ class WavelengthServiceBulkDeleteView(generic.BulkDeleteView):
     queryset = WavelengthService.objects.all()
     filterset = WavelengthServiceFilterSet
     table = WavelengthServiceTable
+
+
+# ---- DeviceType WDM Profile Tab ----
+
+
+@register_model_view(DeviceType, "wdm_profile", path="wdm-profile")
+class DeviceTypeWdmProfileView(generic.ObjectView):
+    queryset = DeviceType.objects.all()
+    tab = ViewTab(
+        label=_("WDM Profile"),
+        badge=lambda obj: WdmDeviceTypeProfile.objects.filter(device_type=obj).exists(),
+        permission="netbox_wdm.view_wdmdevicetypeprofile",
+        weight=1100,
+    )
+
+    def get_template_name(self):
+        return "netbox_wdm/devicetype_wdm_tab.html"
+
+    def get_extra_context(self, request, instance):
+        profile = WdmDeviceTypeProfile.objects.filter(device_type=instance).first()
+        channel_templates = []
+        if profile:
+            channel_templates = list(
+                profile.channel_templates.select_related(
+                    "mux_front_port_template", "demux_front_port_template"
+                ).order_by("grid_position")
+            )
+        return {"profile": profile, "channel_templates": channel_templates}
