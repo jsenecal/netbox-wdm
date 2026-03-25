@@ -28,13 +28,13 @@ class WdmDeviceTypeProfileForm(NetBoxModelForm):
     device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all(), label=_("Device Type"))
 
     fieldsets = (
-        FieldSet("device_type", "node_type", "grid", name=_("WDM Profile")),
+        FieldSet("device_type", "node_type", "grid", "fiber_type", name=_("WDM Profile")),
         FieldSet("description", "tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmDeviceTypeProfile
-        fields = ("device_type", "node_type", "grid", "description", "tags")
+        fields = ("device_type", "node_type", "grid", "fiber_type", "description", "tags")
 
 
 class WdmDeviceTypeProfileFilterForm(NetBoxModelFilterSetForm):
@@ -55,7 +55,7 @@ class WdmDeviceTypeProfileImportForm(NetBoxModelImportForm):
 
     class Meta:
         model = WdmDeviceTypeProfile
-        fields = ("device_type", "node_type", "grid", "description")
+        fields = ("device_type", "node_type", "grid", "fiber_type", "description")
 
 
 # --- WdmChannelTemplate ---
@@ -63,20 +63,37 @@ class WdmDeviceTypeProfileImportForm(NetBoxModelImportForm):
 
 class WdmChannelTemplateForm(NetBoxModelForm):
     profile = DynamicModelChoiceField(queryset=WdmDeviceTypeProfile.objects.all(), label=_("Profile"))
-    front_port_template = DynamicModelChoiceField(
-        queryset=FrontPortTemplate.objects.all(), required=False, label=_("Front Port Template")
+    mux_front_port_template = DynamicModelChoiceField(
+        queryset=FrontPortTemplate.objects.all(), required=False, label=_("MUX Front Port Template")
+    )
+    demux_front_port_template = DynamicModelChoiceField(
+        queryset=FrontPortTemplate.objects.all(), required=False, label=_("DEMUX Front Port Template")
     )
 
     fieldsets = (
         FieldSet(
-            "profile", "grid_position", "wavelength_nm", "label", "front_port_template", name=_("Channel Template")
+            "profile",
+            "grid_position",
+            "wavelength_nm",
+            "label",
+            "mux_front_port_template",
+            "demux_front_port_template",
+            name=_("Channel Template"),
         ),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmChannelTemplate
-        fields = ("profile", "grid_position", "wavelength_nm", "label", "front_port_template", "tags")
+        fields = (
+            "profile",
+            "grid_position",
+            "wavelength_nm",
+            "label",
+            "mux_front_port_template",
+            "demux_front_port_template",
+            "tags",
+        )
 
 
 # --- WdmNode ---
@@ -124,13 +141,13 @@ class WdmTrunkPortForm(NetBoxModelForm):
     rear_port = DynamicModelChoiceField(queryset=RearPort.objects.all(), label=_("Rear Port"))
 
     fieldsets = (
-        FieldSet("wdm_node", "rear_port", "direction", "position", name=_("Trunk Port")),
+        FieldSet("wdm_node", "rear_port", "direction", "role", "position", name=_("Trunk Port")),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmTrunkPort
-        fields = ("wdm_node", "rear_port", "direction", "position", "tags")
+        fields = ("wdm_node", "rear_port", "direction", "role", "position", "tags")
 
 
 # --- WavelengthChannel ---
@@ -138,16 +155,39 @@ class WdmTrunkPortForm(NetBoxModelForm):
 
 class WavelengthChannelForm(NetBoxModelForm):
     wdm_node = DynamicModelChoiceField(queryset=WdmNode.objects.all(), label=_("WDM Node"))
-    front_port = DynamicModelChoiceField(queryset=FrontPort.objects.all(), required=False, label=_("Front Port"))
+    mux_front_port = DynamicModelChoiceField(
+        queryset=FrontPort.objects.all(), required=False, label=_("MUX Front Port")
+    )
+    demux_front_port = DynamicModelChoiceField(
+        queryset=FrontPort.objects.all(), required=False, label=_("DEMUX Front Port")
+    )
 
     fieldsets = (
-        FieldSet("wdm_node", "grid_position", "wavelength_nm", "label", "front_port", "status", name=_("Channel")),
+        FieldSet(
+            "wdm_node",
+            "grid_position",
+            "wavelength_nm",
+            "label",
+            "mux_front_port",
+            "demux_front_port",
+            "status",
+            name=_("Channel"),
+        ),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
         model = WavelengthChannel
-        fields = ("wdm_node", "grid_position", "wavelength_nm", "label", "front_port", "status", "tags")
+        fields = (
+            "wdm_node",
+            "grid_position",
+            "wavelength_nm",
+            "label",
+            "mux_front_port",
+            "demux_front_port",
+            "status",
+            "tags",
+        )
 
 
 class WavelengthChannelBulkEditForm(NetBoxModelBulkEditForm):

@@ -9,9 +9,11 @@ from netbox.models import NetBoxModel
 from .choices import (
     WavelengthChannelStatusChoices,
     WavelengthServiceStatusChoices,
+    WdmFiberTypeChoices,
     WdmGridChoices,
     WdmNodeTypeChoices,
     WdmTrunkDirectionChoices,
+    WdmTrunkRoleChoices,
 )
 
 
@@ -34,9 +36,15 @@ class WdmDeviceTypeProfile(NetBoxModel):
         choices=WdmGridChoices,
         verbose_name=_("grid"),
     )
+    fiber_type = models.CharField(
+        max_length=50,
+        choices=WdmFiberTypeChoices,
+        default=WdmFiberTypeChoices.DUPLEX,
+        verbose_name=_("fiber type"),
+    )
     description = models.TextField(blank=True, verbose_name=_("description"))
 
-    clone_fields = ("node_type", "grid")
+    clone_fields = ("node_type", "grid", "fiber_type")
 
     class Meta:
         ordering = ("device_type",)
@@ -66,13 +74,21 @@ class WdmChannelTemplate(NetBoxModel):
         verbose_name=_("wavelength (nm)"),
     )
     label = models.CharField(max_length=20, verbose_name=_("label"))
-    front_port_template = models.ForeignKey(
+    mux_front_port_template = models.ForeignKey(
         to="dcim.FrontPortTemplate",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="+",
-        verbose_name=_("front port template"),
+        verbose_name=_("MUX front port template"),
+    )
+    demux_front_port_template = models.ForeignKey(
+        to="dcim.FrontPortTemplate",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+        verbose_name=_("DEMUX front port template"),
     )
 
     class Meta:
@@ -89,9 +105,14 @@ class WdmChannelTemplate(NetBoxModel):
                 name="unique_profile_grid_position",
             ),
             models.UniqueConstraint(
-                fields=["profile", "front_port_template"],
-                condition=models.Q(front_port_template__isnull=False),
+                fields=["profile", "mux_front_port_template"],
+                condition=models.Q(mux_front_port_template__isnull=False),
                 name="unique_profile_fpt",
+            ),
+            models.UniqueConstraint(
+                fields=["profile", "demux_front_port_template"],
+                condition=models.Q(demux_front_port_template__isnull=False),
+                name="unique_profile_demux_fpt",
             ),
         ]
 
@@ -136,35 +157,50 @@ class WdmNode(NetBoxModel):
     def get_absolute_url(self):
         return reverse("plugins:netbox_wdm:wdmnode", args=[self.pk])
 
-    def validate_channel_mapping(self, desired_mapping: dict[int, int | None]) -> list[str]:
+    def validate_channel_mapping(self, desired_mapping: dict[int, dict[str, int | None]]) -> list[str]:
         """Validate proposed channel-to-port mapping changes.
 
+        desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
         Returns list of error strings. Empty list means validation passed.
         """
         errors = []
         channels = {ch.pk: ch for ch in self.channels.all()}
 
         protected_statuses = {WavelengthChannelStatusChoices.LIT, WavelengthChannelStatusChoices.RESERVED}
-        for ch_pk, desired_fp_pk in desired_mapping.items():
+        for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             if ch is None:
                 continue
-            if ch.status in protected_statuses and ch.front_port_id != desired_fp_pk:
+            mux_changed = ch.mux_front_port_id != ports.get("mux")
+            demux_changed = ch.demux_front_port_id != ports.get("demux")
+            if ch.status in protected_statuses and (mux_changed or demux_changed):
                 errors.append(f"Channel {ch.label} (pk={ch.pk}) is {ch.get_status_display()} and cannot be remapped.")
 
-        port_usage = {}
-        for ch_pk, desired_fp_pk in desired_mapping.items():
-            if desired_fp_pk is None:
-                continue
+        mux_port_usage: dict[int, str] = {}
+        demux_port_usage: dict[int, str] = {}
+        for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             label = ch.label if ch else f"pk={ch_pk}"
-            if desired_fp_pk in port_usage:
-                errors.append(
-                    f"Port conflict: channels {port_usage[desired_fp_pk]} and {label} "
-                    f"both map to FrontPort pk={desired_fp_pk}."
-                )
-            else:
-                port_usage[desired_fp_pk] = label
+
+            mux_fp_pk = ports.get("mux")
+            if mux_fp_pk is not None:
+                if mux_fp_pk in mux_port_usage:
+                    errors.append(
+                        f"Port conflict: channels {mux_port_usage[mux_fp_pk]} and {label} "
+                        f"both map to MUX FrontPort pk={mux_fp_pk}."
+                    )
+                else:
+                    mux_port_usage[mux_fp_pk] = label
+
+            demux_fp_pk = ports.get("demux")
+            if demux_fp_pk is not None:
+                if demux_fp_pk in demux_port_usage:
+                    errors.append(
+                        f"Port conflict: channels {demux_port_usage[demux_fp_pk]} and {label} "
+                        f"both map to DEMUX FrontPort pk={demux_fp_pk}."
+                    )
+                else:
+                    demux_port_usage[demux_fp_pk] = label
 
         return errors
 
@@ -185,7 +221,9 @@ class WdmNode(NetBoxModel):
         except WdmDeviceTypeProfile.DoesNotExist:
             return
 
-        templates = list(profile.channel_templates.select_related("front_port_template").all())
+        templates = list(
+            profile.channel_templates.select_related("mux_front_port_template", "demux_front_port_template").all()
+        )
         if not templates:
             return
 
@@ -193,16 +231,20 @@ class WdmNode(NetBoxModel):
 
         channels = []
         for ct in templates:
-            front_port = None
-            if ct.front_port_template:
-                front_port = fp_by_name.get(ct.front_port_template.name)
+            mux_front_port = None
+            if ct.mux_front_port_template:
+                mux_front_port = fp_by_name.get(ct.mux_front_port_template.name)
+            demux_front_port = None
+            if ct.demux_front_port_template:
+                demux_front_port = fp_by_name.get(ct.demux_front_port_template.name)
             channels.append(
                 WavelengthChannel(
                     wdm_node=self,
                     grid_position=ct.grid_position,
                     wavelength_nm=ct.wavelength_nm,
                     label=ct.label,
-                    front_port=front_port,
+                    mux_front_port=mux_front_port,
+                    demux_front_port=demux_front_port,
                 )
             )
         WavelengthChannel.objects.bulk_create(channels)
@@ -228,6 +270,12 @@ class WdmTrunkPort(NetBoxModel):
         choices=WdmTrunkDirectionChoices,
         verbose_name=_("direction"),
     )
+    role = models.CharField(
+        max_length=50,
+        choices=WdmTrunkRoleChoices,
+        default=WdmTrunkRoleChoices.BIDI,
+        verbose_name=_("role"),
+    )
     position = models.PositiveIntegerField(verbose_name=_("position"))
 
     class Meta:
@@ -240,8 +288,8 @@ class WdmTrunkPort(NetBoxModel):
                 name="unique_trunkport_rear_port",
             ),
             models.UniqueConstraint(
-                fields=["wdm_node", "direction"],
-                name="unique_trunkport_direction",
+                fields=["wdm_node", "direction", "role"],
+                name="unique_trunkport_direction_role",
             ),
         ]
 
@@ -268,13 +316,21 @@ class WavelengthChannel(NetBoxModel):
         verbose_name=_("wavelength (nm)"),
     )
     label = models.CharField(max_length=20, verbose_name=_("label"))
-    front_port = models.ForeignKey(
+    mux_front_port = models.ForeignKey(
         to="dcim.FrontPort",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="+",
-        verbose_name=_("front port"),
+        verbose_name=_("MUX front port"),
+    )
+    demux_front_port = models.ForeignKey(
+        to="dcim.FrontPort",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+        verbose_name=_("DEMUX front port"),
     )
     status = models.CharField(
         max_length=50,
@@ -298,9 +354,14 @@ class WavelengthChannel(NetBoxModel):
                 name="unique_channel_grid_position",
             ),
             models.UniqueConstraint(
-                fields=["wdm_node", "front_port"],
-                condition=models.Q(front_port__isnull=False),
-                name="unique_node_fp",
+                fields=["wdm_node", "mux_front_port"],
+                condition=models.Q(mux_front_port__isnull=False),
+                name="unique_node_mux_fp",
+            ),
+            models.UniqueConstraint(
+                fields=["wdm_node", "demux_front_port"],
+                condition=models.Q(demux_front_port__isnull=False),
+                name="unique_node_demux_fp",
             ),
         ]
 

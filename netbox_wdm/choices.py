@@ -36,6 +36,28 @@ class WdmTrunkDirectionChoices(ChoiceSet):
     )
 
 
+class WdmFiberTypeChoices(ChoiceSet):
+    DUPLEX = "duplex"
+    SINGLE_FIBER = "single_fiber"
+
+    CHOICES = (
+        (DUPLEX, "Duplex", "blue"),
+        (SINGLE_FIBER, "Single Fiber", "orange"),
+    )
+
+
+class WdmTrunkRoleChoices(ChoiceSet):
+    TX = "tx"
+    RX = "rx"
+    BIDI = "bidi"
+
+    CHOICES = (
+        (TX, "TX"),
+        (RX, "RX"),
+        (BIDI, "Bidirectional"),
+    )
+
+
 class WavelengthChannelStatusChoices(ChoiceSet):
     AVAILABLE = "available"
     RESERVED = "reserved"

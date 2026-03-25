@@ -31,13 +31,32 @@ class WdmChannelTemplateTable(NetBoxTable):
     grid_position = tables.Column(verbose_name=_("Grid Position"))
     label = tables.Column(verbose_name=_("Label"))
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
-    front_port_template = tables.Column(linkify=True, verbose_name=_("Front Port Template"))
+    mux_front_port_template = tables.Column(linkify=True, verbose_name=_("MUX Front Port Template"))
+    demux_front_port_template = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port Template"))
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
         model = WdmChannelTemplate
-        fields = ("pk", "id", "profile", "grid_position", "label", "wavelength_nm", "front_port_template", "actions")
-        default_columns = ("pk", "profile", "grid_position", "label", "wavelength_nm", "front_port_template", "actions")
+        fields = (
+            "pk",
+            "id",
+            "profile",
+            "grid_position",
+            "label",
+            "wavelength_nm",
+            "mux_front_port_template",
+            "demux_front_port_template",
+            "actions",
+        )
+        default_columns = (
+            "pk",
+            "profile",
+            "grid_position",
+            "label",
+            "wavelength_nm",
+            "mux_front_port_template",
+            "actions",
+        )
 
 
 class WdmNodeTable(NetBoxTable):
@@ -73,14 +92,26 @@ class WavelengthChannelTable(NetBoxTable):
     grid_position = tables.Column(verbose_name=_("Grid Position"))
     label = tables.Column(verbose_name=_("Label"))
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
-    front_port = tables.Column(linkify=True, verbose_name=_("Front Port"))
+    mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
+    demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
     status = tables.Column(verbose_name=_("Status"))
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
         model = WavelengthChannel
-        fields = ("pk", "id", "wdm_node", "grid_position", "label", "wavelength_nm", "front_port", "status", "actions")
-        default_columns = ("pk", "label", "grid_position", "wavelength_nm", "front_port", "status", "actions")
+        fields = (
+            "pk",
+            "id",
+            "wdm_node",
+            "grid_position",
+            "label",
+            "wavelength_nm",
+            "mux_front_port",
+            "demux_front_port",
+            "status",
+            "actions",
+        )
+        default_columns = ("pk", "label", "grid_position", "wavelength_nm", "mux_front_port", "status", "actions")
 
 
 class WavelengthServiceTable(NetBoxTable):

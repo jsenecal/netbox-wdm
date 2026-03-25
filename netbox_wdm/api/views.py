@@ -44,8 +44,11 @@ class WdmChannelTemplateViewSet(NetBoxModelViewSet):
     filterset_class = WdmChannelTemplateFilterSet
 
 
-def _apply_mapping(wdm_node, desired_mapping: dict[int, int | None]) -> dict:
-    """Apply channel-to-port mapping changes. Uses bulk operations."""
+def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) -> dict:
+    """Apply channel-to-port mapping changes. Uses bulk operations.
+
+    desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
+    """
     channels = {ch.pk: ch for ch in wdm_node.channels.all()}
     trunk_ports = list(wdm_node.trunk_ports.select_related("rear_port").all())
 
@@ -54,42 +57,51 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, int | None]) -> dict:
     old_fp_ids_to_delete = []
     new_mappings_to_create = []
 
-    for ch_pk, desired_fp_pk in desired_mapping.items():
+    for ch_pk, ports in desired_mapping.items():
         ch = channels.get(ch_pk)
         if ch is None:
             continue
 
-        current_fp_pk = ch.front_port_id
-        if current_fp_pk == desired_fp_pk:
+        desired_mux = ports.get("mux")
+        desired_demux = ports.get("demux")
+        current_mux = ch.mux_front_port_id
+        current_demux = ch.demux_front_port_id
+
+        if current_mux == desired_mux and current_demux == desired_demux:
             continue
 
-        if current_fp_pk is not None:
-            old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position))
+        for current_fp_pk in (current_mux, current_demux):
+            if current_fp_pk is not None:
+                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position))
 
-        if desired_fp_pk is not None:
-            for tp in trunk_ports:
-                new_mappings_to_create.append(
-                    PortMapping(
-                        device=wdm_node.device,
-                        front_port_id=desired_fp_pk,
-                        rear_port=tp.rear_port,
-                        front_port_position=1,
-                        rear_port_position=ch.grid_position,
+        for desired_fp_pk in (desired_mux, desired_demux):
+            if desired_fp_pk is not None:
+                for tp in trunk_ports:
+                    new_mappings_to_create.append(
+                        PortMapping(
+                            device=wdm_node.device,
+                            front_port_id=desired_fp_pk,
+                            rear_port=tp.rear_port,
+                            front_port_position=1,
+                            rear_port_position=ch.grid_position,
+                        )
                     )
-                )
 
-        ch.front_port_id = desired_fp_pk
+        ch.mux_front_port_id = desired_mux
+        ch.demux_front_port_id = desired_demux
         channels_to_update.append(ch)
 
-        if current_fp_pk is None and desired_fp_pk is not None:
+        had_port = current_mux is not None or current_demux is not None
+        has_port = desired_mux is not None or desired_demux is not None
+        if not had_port and has_port:
             added += 1
-        elif current_fp_pk is not None and desired_fp_pk is None:
+        elif had_port and not has_port:
             removed += 1
         else:
             changed += 1
 
     if channels_to_update:
-        WavelengthChannel.objects.bulk_update(channels_to_update, ["front_port_id"])
+        WavelengthChannel.objects.bulk_update(channels_to_update, ["mux_front_port_id", "demux_front_port_id"])
 
     if old_fp_ids_to_delete:
         delete_q = Q()
@@ -152,8 +164,18 @@ class WdmNodeViewSet(NetBoxModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        desired = request.data.get("mapping", {})
-        desired = {int(k): (int(v) if v else None) for k, v in desired.items()}
+        raw_mapping = request.data.get("mapping", {})
+        desired = {}
+        for k, v in raw_mapping.items():
+            ch_pk = int(k)
+            if isinstance(v, dict):
+                desired[ch_pk] = {
+                    "mux": int(v["mux"]) if v.get("mux") else None,
+                    "demux": int(v["demux"]) if v.get("demux") else None,
+                }
+            else:
+                # Legacy format: single port ID maps to mux only
+                desired[ch_pk] = {"mux": int(v) if v else None, "demux": None}
 
         with transaction.atomic():
             errors = node.validate_channel_mapping(desired)

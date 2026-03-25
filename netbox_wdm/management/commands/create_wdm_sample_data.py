@@ -327,7 +327,7 @@ class Command(BaseCommand):
                     defaults={
                         "wavelength_nm": wavelength,
                         "label": label,
-                        "front_port_template": fp_template,
+                        "mux_front_port_template": fp_template,
                     },
                 )
                 if was_created:
@@ -422,8 +422,8 @@ class Command(BaseCommand):
             channels = list(dev_east_mux.wdm_node.channels.order_by("grid_position")[:10])
             fps = list(FrontPort.objects.filter(device=dev_east_mux).order_by("name")[:10])
             for ch, fp in zip(channels, fps, strict=True):
-                ch.front_port = fp
-            WavelengthChannel.objects.bulk_update(channels, ["front_port_id"])
+                ch.mux_front_port = fp
+            WavelengthChannel.objects.bulk_update(channels, ["mux_front_port_id"])
             self.stdout.write(f"  Assigned {len(channels)} front ports on {dev_east_mux.name}")
 
         # Same for WEST-MUX-01
@@ -431,8 +431,8 @@ class Command(BaseCommand):
             channels = list(dev_west_mux.wdm_node.channels.order_by("grid_position")[:10])
             fps = list(FrontPort.objects.filter(device=dev_west_mux).order_by("name")[:10])
             for ch, fp in zip(channels, fps, strict=True):
-                ch.front_port = fp
-            WavelengthChannel.objects.bulk_update(channels, ["front_port_id"])
+                ch.mux_front_port = fp
+            WavelengthChannel.objects.bulk_update(channels, ["mux_front_port_id"])
             self.stdout.write(f"  Assigned {len(channels)} front ports on {dev_west_mux.name}")
 
         # Assign first 8 add/drop ports on ROADM
@@ -440,8 +440,8 @@ class Command(BaseCommand):
             channels = list(dev_hub_roadm.wdm_node.channels.order_by("grid_position")[:8])
             fps = list(FrontPort.objects.filter(device=dev_hub_roadm).order_by("name")[:8])
             for ch, fp in zip(channels, fps, strict=True):
-                ch.front_port = fp
-            WavelengthChannel.objects.bulk_update(channels, ["front_port_id"])
+                ch.mux_front_port = fp
+            WavelengthChannel.objects.bulk_update(channels, ["mux_front_port_id"])
             self.stdout.write(f"  Assigned {len(channels)} add/drop ports on {dev_hub_roadm.name}")
 
         # Assign first 6 ports on CWDM
@@ -449,8 +449,8 @@ class Command(BaseCommand):
             channels = list(dev_east_cwdm.wdm_node.channels.order_by("grid_position")[:6])
             fps = list(FrontPort.objects.filter(device=dev_east_cwdm).order_by("name")[:6])
             for ch, fp in zip(channels, fps, strict=True):
-                ch.front_port = fp
-            WavelengthChannel.objects.bulk_update(channels, ["front_port_id"])
+                ch.mux_front_port = fp
+            WavelengthChannel.objects.bulk_update(channels, ["mux_front_port_id"])
             self.stdout.write(f"  Assigned {len(channels)} front ports on {dev_east_cwdm.name}")
 
         # Set channel statuses: lit, reserved, available mix

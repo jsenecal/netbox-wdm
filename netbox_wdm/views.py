@@ -231,8 +231,15 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         return "netbox_wdm/wdmnode_wavelength_editor.html"
 
     def get_extra_context(self, request, instance):
-        channels = list(instance.channels.select_related("front_port").order_by("grid_position"))
-        assigned_fp_ids = {ch.front_port_id for ch in channels if ch.front_port_id}
+        channels = list(
+            instance.channels.select_related("mux_front_port", "demux_front_port").order_by("grid_position")
+        )
+        assigned_fp_ids = set()
+        for ch in channels:
+            if ch.mux_front_port_id:
+                assigned_fp_ids.add(ch.mux_front_port_id)
+            if ch.demux_front_port_id:
+                assigned_fp_ids.add(ch.demux_front_port_id)
         available_ports = FrontPort.objects.filter(device=instance.device).exclude(pk__in=assigned_fp_ids)
 
         channel_ids = [ch.pk for ch in channels]
@@ -250,8 +257,10 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
                     "grid_position": ch.grid_position,
                     "wavelength_nm": float(ch.wavelength_nm),
                     "label": ch.label,
-                    "front_port_id": ch.front_port_id,
-                    "front_port_name": ch.front_port.name if ch.front_port else None,
+                    "mux_front_port_id": ch.mux_front_port_id,
+                    "mux_front_port_name": ch.mux_front_port.name if ch.mux_front_port else None,
+                    "demux_front_port_id": ch.demux_front_port_id,
+                    "demux_front_port_name": ch.demux_front_port.name if ch.demux_front_port else None,
                     "status": ch.status,
                     "service_name": svc_by_channel.get(ch.pk),
                 }
@@ -293,7 +302,7 @@ class WdmTrunkPortDeleteView(generic.ObjectDeleteView):
 
 
 class WavelengthChannelListView(generic.ObjectListView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node", "front_port")
+    queryset = WavelengthChannel.objects.select_related("wdm_node", "mux_front_port", "demux_front_port")
     table = WavelengthChannelTable
     filterset = WavelengthChannelFilterSet
     filterset_form = WavelengthChannelFilterForm
@@ -301,18 +310,18 @@ class WavelengthChannelListView(generic.ObjectListView):
 
 @register_model_view(WavelengthChannel)
 class WavelengthChannelView(generic.ObjectView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
 
 
 @register_model_view(WavelengthChannel, "edit")
 class WavelengthChannelEditView(generic.ObjectEditView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
     form = WavelengthChannelForm
 
 
 @register_model_view(WavelengthChannel, "delete")
 class WavelengthChannelDeleteView(generic.ObjectDeleteView):
-    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "front_port")
+    queryset = WavelengthChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
 
 
 class WavelengthChannelBulkEditView(generic.BulkEditView):

@@ -4,7 +4,7 @@ import pytest
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from django.db import IntegrityError
 
-from netbox_wdm.choices import WavelengthChannelStatusChoices, WdmGridChoices, WdmNodeTypeChoices
+from netbox_wdm.choices import WavelengthChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
 from netbox_wdm.models import (
     WavelengthChannel,
     WdmChannelTemplate,
@@ -70,6 +70,20 @@ class TestWdmDeviceTypeProfile:
     def test_get_absolute_url(self, profile):
         url = profile.get_absolute_url()
         assert "/plugins/wdm/" in url
+
+    def test_fiber_type_default(self, profile):
+        assert profile.fiber_type == WdmFiberTypeChoices.DUPLEX
+
+    def test_fiber_type_single_fiber(self, device_type):
+        # Delete existing profile first (from fixture)
+        WdmDeviceTypeProfile.objects.filter(device_type=device_type).delete()
+        p = WdmDeviceTypeProfile.objects.create(
+            device_type=device_type,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+            fiber_type=WdmFiberTypeChoices.SINGLE_FIBER,
+        )
+        assert p.fiber_type == WdmFiberTypeChoices.SINGLE_FIBER
 
     def test_unique_device_type(self, profile, device_type):
         with pytest.raises(IntegrityError):
@@ -215,11 +229,11 @@ class TestValidateChannelMapping:
             label="C21",
             status=WavelengthChannelStatusChoices.LIT,
         )
-        errors = WdmNode.validate_channel_mapping(node, {ch.pk: 999})
+        errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 999, "demux": None}})
         assert len(errors) == 1
         assert "cannot be remapped" in errors[0]
 
-    def test_reject_port_conflict(self, device):
+    def test_reject_mux_port_conflict(self, device):
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
@@ -231,9 +245,27 @@ class TestValidateChannelMapping:
         ch2 = WavelengthChannel.objects.create(
             wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
         )
-        errors = WdmNode.validate_channel_mapping(node, {ch1.pk: 100, ch2.pk: 100})
+        errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": 100, "demux": None}, ch2.pk: {"mux": 100, "demux": None}})
         assert len(errors) == 1
         assert "Port conflict" in errors[0]
+        assert "MUX" in errors[0]
+
+    def test_reject_demux_port_conflict(self, device):
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        ch1 = WavelengthChannel.objects.create(
+            wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
+        )
+        ch2 = WavelengthChannel.objects.create(
+            wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
+        )
+        errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": None, "demux": 200}, ch2.pk: {"mux": None, "demux": 200}})
+        assert len(errors) == 1
+        assert "Port conflict" in errors[0]
+        assert "DEMUX" in errors[0]
 
     def test_valid_mapping(self, device):
         node = WdmNode.objects.create(
@@ -244,5 +276,5 @@ class TestValidateChannelMapping:
         ch = WavelengthChannel.objects.create(
             wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
         )
-        errors = WdmNode.validate_channel_mapping(node, {ch.pk: 100})
+        errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
         assert errors == []
