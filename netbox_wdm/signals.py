@@ -15,6 +15,8 @@ def _device_post_save(sender, instance, created, **kwargs):
         return
 
     def _create_node():
+        if WdmNode.objects.filter(device=instance).exists():
+            return
         WdmNode.objects.create(
             device=instance,
             node_type=profile.node_type,
