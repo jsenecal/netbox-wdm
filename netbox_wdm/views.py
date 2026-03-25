@@ -285,7 +285,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
     )
 
     def get(self, request, *args, **kwargs):
-        instance = self.get_object()
+        instance = self.get_object(**kwargs)
         if instance.node_type != WdmNodeTypeChoices.ROADM:
             from django.http import Http404
 
