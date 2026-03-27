@@ -175,7 +175,6 @@ class WdmNodeChannelTable(NetBoxTable):
 
 
 class WdmWavelengthPathTable(NetBoxTable):
-    pk = columns.ToggleColumn()
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
     nodes = tables.Column(verbose_name=_("Nodes"), empty_values=(), orderable=False)
@@ -184,8 +183,9 @@ class WdmWavelengthPathTable(NetBoxTable):
 
     class Meta(NetBoxTable.Meta):
         model = WdmWavelengthPath
-        fields = ("pk", "id", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
-        default_columns = ("pk", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+        fields = ("id", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+        default_columns = ("wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+        exclude = ("pk", "actions")
 
     def render_nodes(self, record):
         return record.get_display_label().split(": ", 1)[-1] if record.get_display_label() != "empty" else "—"
