@@ -95,7 +95,7 @@ class WdmProfileChannelPlansView(generic.ObjectChildrenView):
     filterset = WdmChannelPlanFilterSet
     actions = (EditObject, DeleteObject, BulkDelete)
     tab = ViewTab(
-        label=_("Channel Plans"),
+        label=_("Channels"),
         badge=lambda obj: obj.channel_plans.count(),
         permission="netbox_wdm.view_wdmchannelplan",
         weight=500,
@@ -492,7 +492,7 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
     queryset = DeviceType.objects.all()
     tab = ViewTab(
         label=_("WDM Profile"),
-        badge=lambda obj: WdmProfile.objects.filter(device_type=obj).exists(),
+        visible=lambda obj: WdmProfile.objects.filter(device_type=obj).exists(),
         permission="netbox_wdm.view_wdmprofile",
         weight=1100,
     )

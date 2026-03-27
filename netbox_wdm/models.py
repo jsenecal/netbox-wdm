@@ -433,6 +433,112 @@ class WdmChannel(NetBoxModel):
         super().save(*args, **kwargs)
 
 
+class WdmWavelengthPath(models.Model):
+    """An automatically discovered end-to-end wavelength path across connected WDM nodes."""
+
+    grid_position = models.PositiveIntegerField(verbose_name=_("grid position"))
+    wavelength_nm = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        verbose_name=_("wavelength (nm)"),
+    )
+    is_complete = models.BooleanField(
+        default=False,
+        verbose_name=_("is complete"),
+    )
+    is_active = models.BooleanField(
+        default=False,
+        verbose_name=_("is active"),
+    )
+
+    _netbox_private = True
+
+    class Meta:
+        ordering = ("wavelength_nm",)
+        verbose_name = _("WDM wavelength path")
+        verbose_name_plural = _("WDM wavelength paths")
+
+    def __str__(self):
+        return f"WavelengthPath {self.pk} ({self.wavelength_nm}nm)"
+
+    def get_display_label(self):
+        """Rich label with node names for UI display. Queries the database."""
+        node_names = list(
+            self.path_channels.select_related("channel__wdm_node__device")
+            .order_by("sequence")
+            .values_list("channel__wdm_node__device__name", flat=True)
+        )
+        nodes_str = " \u2192 ".join(node_names) if node_names else "empty"
+        return f"{self.wavelength_nm}nm: {nodes_str}"
+
+    def get_channels(self):
+        """Return channels in sequence order."""
+        return WdmChannel.objects.filter(wavelength_path_entries__path=self).order_by(
+            "wavelength_path_entries__sequence"
+        )
+
+    def get_stitched_path(self):
+        """Return the stitched end-to-end path as an ordered list of hop dicts."""
+        hops = []
+        for entry in self.path_channels.select_related(
+            "channel__wdm_node__device",
+            "channel__mux_front_port",
+            "channel__demux_front_port",
+        ).order_by("sequence"):
+            ch = entry.channel
+            hops.append(
+                {
+                    "type": "wdm_node",
+                    "node_id": ch.wdm_node_id,
+                    "node_name": ch.wdm_node.device.name,
+                    "channel_id": ch.pk,
+                    "channel_label": ch.label,
+                    "wavelength_nm": float(ch.wavelength_nm),
+                    "mux_front_port_id": ch.mux_front_port_id,
+                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
+                    "demux_front_port_id": ch.demux_front_port_id,
+                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
+                }
+            )
+        return hops
+
+
+class WdmWavelengthPathChannel(models.Model):
+    """Through table linking a wavelength path to its channels in sequence."""
+
+    path = models.ForeignKey(
+        to="netbox_wdm.WdmWavelengthPath",
+        on_delete=models.CASCADE,
+        related_name="path_channels",
+        verbose_name=_("path"),
+    )
+    channel = models.ForeignKey(
+        to="netbox_wdm.WdmChannel",
+        on_delete=models.PROTECT,
+        related_name="wavelength_path_entries",
+        verbose_name=_("channel"),
+    )
+    sequence = models.PositiveIntegerField(verbose_name=_("sequence"))
+
+    class Meta:
+        ordering = ("path", "sequence")
+        verbose_name = _("wavelength path channel")
+        verbose_name_plural = _("wavelength path channels")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["path", "channel"],
+                name="unique_wavelength_path_channel",
+            ),
+            models.UniqueConstraint(
+                fields=["path", "sequence"],
+                name="unique_wavelength_path_sequence",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.path} #{self.sequence}: {self.channel}"
+
+
 class WdmCircuit(NetBoxModel):
     """An end-to-end WDM circuit spanning WDM channels."""
 

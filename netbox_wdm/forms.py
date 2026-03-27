@@ -149,6 +149,13 @@ class WdmLinePortForm(NetBoxModelForm):
         model = WdmLinePort
         fields = ("wdm_node", "rear_port", "direction", "role", "tags")
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk and self.instance.wdm_node.is_fixed:
+            for field_name in WdmLinePort.FIXED_FIELDS:
+                if field_name in self.fields:
+                    self.fields[field_name].disabled = True
+
 
 # --- WdmChannel ---
 
@@ -188,6 +195,13 @@ class WdmChannelForm(NetBoxModelForm):
             "status",
             "tags",
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk and self.instance.wdm_node.is_fixed:
+            for field_name in WdmChannel.FIXED_FIELDS:
+                if field_name in self.fields:
+                    self.fields[field_name].disabled = True
 
 
 class WdmChannelBulkEditForm(NetBoxModelBulkEditForm):

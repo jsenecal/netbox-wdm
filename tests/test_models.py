@@ -3,14 +3,16 @@
 import pytest
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from django.db import IntegrityError
+from django.db.models import ProtectedError
 
 from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
 from netbox_wdm.models import (
     WdmChannel,
     WdmChannelPlan,
-    WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
+    WdmWavelengthPathChannel,
 )
 
 
@@ -116,13 +118,9 @@ class TestWdmChannelPlan:
         assert "1560.61" in str(cp)
 
     def test_unique_position(self, profile):
-        WdmChannelPlan.objects.create(
-            profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
-        )
+        WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21")
         with pytest.raises(IntegrityError):
-            WdmChannelPlan.objects.create(
-                profile=profile, grid_position=1, wavelength_nm=1559.79, label="C22"
-            )
+            WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm=1559.79, label="C22")
 
 
 @pytest.mark.django_db
@@ -144,12 +142,8 @@ class TestWdmNode:
         assert "WDM:" in str(node)
 
     def test_auto_populate_channels_from_profile(self, device, profile):
-        WdmChannelPlan.objects.create(
-            profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
-        )
-        WdmChannelPlan.objects.create(
-            profile=profile, grid_position=2, wavelength_nm=1559.79, label="C22"
-        )
+        WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21")
+        WdmChannelPlan.objects.create(profile=profile, grid_position=2, wavelength_nm=1559.79, label="C22")
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
@@ -158,9 +152,7 @@ class TestWdmNode:
         assert node.channels.count() == 2
 
     def test_amplifier_no_auto_populate(self, device, profile):
-        WdmChannelPlan.objects.create(
-            profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21"
-        )
+        WdmChannelPlan.objects.create(profile=profile, grid_position=1, wavelength_nm=1560.61, label="C21")
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
@@ -239,13 +231,11 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(
-            wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        errors = WdmNode.validate_channel_mapping(
+            node, {ch1.pk: {"mux": 100, "demux": None}, ch2.pk: {"mux": 100, "demux": None}}
         )
-        ch2 = WdmChannel.objects.create(
-            wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
-        )
-        errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": 100, "demux": None}, ch2.pk: {"mux": 100, "demux": None}})
         assert len(errors) == 1
         assert "Port conflict" in errors[0]
         assert "MUX" in errors[0]
@@ -256,13 +246,11 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(
-            wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        errors = WdmNode.validate_channel_mapping(
+            node, {ch1.pk: {"mux": None, "demux": 200}, ch2.pk: {"mux": None, "demux": 200}}
         )
-        ch2 = WdmChannel.objects.create(
-            wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22"
-        )
-        errors = WdmNode.validate_channel_mapping(node, {ch1.pk: {"mux": None, "demux": 200}, ch2.pk: {"mux": None, "demux": 200}})
         assert len(errors) == 1
         assert "Port conflict" in errors[0]
         assert "DEMUX" in errors[0]
@@ -273,8 +261,75 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WdmChannel.objects.create(
-            wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21"
-        )
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
         assert errors == []
+
+
+@pytest.mark.django_db
+class TestWdmWavelengthPath:
+    def test_create(self, device):
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=ch, sequence=1)
+        assert path.pk is not None
+        assert path.path_channels.count() == 1
+
+    def test_str(self, device):
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm=1560.61, is_complete=False, is_active=False
+        )
+        assert "1560.61" in str(path)
+
+    def test_channel_protect(self, device):
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=ch, sequence=1)
+        with pytest.raises(ProtectedError):
+            ch.delete()
+
+    def test_unique_path_sequence(self, device):
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=ch1, sequence=1)
+        with pytest.raises(IntegrityError):
+            WdmWavelengthPathChannel.objects.create(path=path, channel=ch2, sequence=1)
+
+    def test_get_ordered_channels(self, device):
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=ch2, sequence=2)
+        WdmWavelengthPathChannel.objects.create(path=path, channel=ch1, sequence=1)
+        ordered = list(path.get_channels())
+        assert ordered[0] == ch1
+        assert ordered[1] == ch2
