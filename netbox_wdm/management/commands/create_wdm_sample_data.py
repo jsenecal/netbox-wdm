@@ -97,13 +97,15 @@ class Command(BaseCommand):
             dev_west_cwdm,
             dev_west_pp,
             dev_west_router,
+            dev_hub_dwdm,
+            dev_hub_roadm,
         )
 
         # -- Channel configuration --
         self._configure_channels(dev_east_cwdm, dev_west_cwdm)
 
         # -- Rebuild wavelength paths (signals use on_commit, which won't fire inside atomic) --
-        self._rebuild_wavelength_paths(dev_east_cwdm, dev_west_cwdm)
+        self._rebuild_wavelength_paths(dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm, dev_hub_roadm)
 
         # -- WDM circuits --
         self._create_circuits(tag, dev_east_cwdm, dev_west_cwdm)
@@ -788,6 +790,8 @@ class Command(BaseCommand):
         dev_west_cwdm,
         dev_west_pp,
         dev_west_router,
+        dev_hub_dwdm,
+        dev_hub_roadm,
     ):
         from dcim.models import Cable, FrontPort, Interface, RearPort
 
@@ -865,6 +869,14 @@ class Command(BaseCommand):
             [get_front_port(dev_east_cwdm, "EXP-MUX"), get_front_port(dev_east_cwdm, "EXP-DEMUX")],
             get_rear_port(dev_east_sf, "COM"),
             "East CWDM DX EXP to SF COM (upgrade chain)",
+        )
+
+        # === Hub DWDM MUX to ROADM (duplex trunk) ===
+        # MUX COM-TX -> ROADM LINE-EAST-RX (forward), MUX COM-RX <- ROADM LINE-EAST-TX (return)
+        create_cable(
+            [get_rear_port(dev_hub_dwdm, "COM-TX"), get_rear_port(dev_hub_dwdm, "COM-RX")],
+            [get_rear_port(dev_hub_roadm, "LINE-EAST-RX"), get_rear_port(dev_hub_roadm, "LINE-EAST-TX")],
+            "Hub DWDM MUX to ROADM East",
         )
 
     # ================================================================
