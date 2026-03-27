@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.urls import reverse
@@ -552,10 +550,13 @@ class WdmCircuit(NetBoxModel):
         db_index=True,
         verbose_name=_("status"),
     )
-    wavelength_nm = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        verbose_name=_("wavelength (nm)"),
+    wavelength_path = models.ForeignKey(
+        to="netbox_wdm.WdmWavelengthPath",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="circuits",
+        verbose_name=_("wavelength path"),
     )
     tenant = models.ForeignKey(
         to="tenancy.Tenant",
@@ -568,7 +569,7 @@ class WdmCircuit(NetBoxModel):
     description = models.TextField(blank=True, verbose_name=_("description"))
     comments = models.TextField(blank=True, verbose_name=_("comments"))
 
-    clone_fields = ("status", "wavelength_nm", "tenant")
+    clone_fields = ("status", "tenant")
 
     class Meta:
         ordering = ("name",)
@@ -585,40 +586,6 @@ class WdmCircuit(NetBoxModel):
         super().__init__(*args, **kwargs)
         self._original_status = self.status if self.pk else None
 
-    def clean(self):
-        """Validate channel consistency: same grid, matching wavelength."""
-        super().clean()
-
-        if not self.pk:
-            return
-
-        segments = list(self.path_segments.select_related("channel__wdm_node"))
-        if not segments:
-            return
-
-        grids = set()
-        svc_wl = Decimal(str(self.wavelength_nm))
-        for seg in segments:
-            grids.add(seg.channel.wdm_node.grid)
-
-        if len(grids) > 1:
-            raise ValidationError(
-                _("All WDM nodes in a circuit must use the same grid. Found: %(grids)s")
-                % {"grids": ", ".join(sorted(grids))}
-            )
-
-        for seg in segments:
-            ch_wl = Decimal(str(seg.channel.wavelength_nm))
-            if abs(ch_wl - svc_wl) > Decimal("0.01"):
-                raise ValidationError(
-                    _("Channel %(label)s has wavelength %(ch_wl)s nm but circuit wavelength is %(svc_wl)s nm.")
-                    % {
-                        "label": seg.channel.label,
-                        "ch_wl": seg.channel.wavelength_nm,
-                        "svc_wl": self.wavelength_nm,
-                    }
-                )
-
     def save(self, *args, **kwargs):
         """Save and handle lifecycle transitions."""
         is_new = self._state.adding
@@ -629,66 +596,16 @@ class WdmCircuit(NetBoxModel):
 
         if not is_new and old_status != self.status:
             if self.status == WdmCircuitStatusChoices.DECOMMISSIONED:
-                channel_ids = self.path_segments.values_list("channel_id", flat=True)
-                self.path_segments.all().delete()
-                WdmChannel.objects.filter(pk__in=channel_ids).update(status=WdmChannelStatusChoices.AVAILABLE)
+                if self.wavelength_path:
+                    channel_ids = WdmWavelengthPathChannel.objects.filter(path=self.wavelength_path).values_list(
+                        "channel_id", flat=True
+                    )
+                    WdmChannel.objects.filter(pk__in=channel_ids).update(status=WdmChannelStatusChoices.AVAILABLE)
+                    self.wavelength_path = None
+                    super().save(update_fields=["wavelength_path"])
 
     def get_stitched_path(self):
         """Return the stitched end-to-end path as an ordered list of hop dicts."""
-        hops = []
-        for seg in self.path_segments.select_related(
-            "channel__wdm_node__device",
-            "channel__mux_front_port",
-            "channel__demux_front_port",
-        ).order_by("sequence"):
-            ch = seg.channel
-            hops.append(
-                {
-                    "type": "wdm_node",
-                    "node_id": ch.wdm_node_id,
-                    "node_name": ch.wdm_node.device.name,
-                    "channel_id": ch.pk,
-                    "channel_label": ch.label,
-                    "wavelength_nm": float(ch.wavelength_nm),
-                    "mux_front_port_id": ch.mux_front_port_id,
-                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
-                    "demux_front_port_id": ch.demux_front_port_id,
-                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
-                }
-            )
-        return hops
-
-
-class WdmCircuitPath(models.Model):
-    """Links a WDM circuit to channels in sequence. PROTECT prevents channel deletion."""
-
-    circuit = models.ForeignKey(
-        to="netbox_wdm.WdmCircuit",
-        on_delete=models.CASCADE,
-        related_name="path_segments",
-        verbose_name=_("circuit"),
-    )
-    channel = models.ForeignKey(
-        to="netbox_wdm.WdmChannel",
-        on_delete=models.PROTECT,
-        verbose_name=_("channel"),
-    )
-    sequence = models.PositiveIntegerField(verbose_name=_("sequence"))
-
-    class Meta:
-        ordering = ("circuit", "sequence")
-        verbose_name = _("WDM circuit path")
-        verbose_name_plural = _("WDM circuit paths")
-        constraints = [
-            models.UniqueConstraint(
-                fields=["circuit", "channel"],
-                name="unique_circuit_channel",
-            ),
-            models.UniqueConstraint(
-                fields=["circuit", "sequence"],
-                name="unique_circuit_sequence",
-            ),
-        ]
-
-    def __str__(self):
-        return f"{self.circuit} #{self.sequence}: {self.channel}"
+        if self.wavelength_path:
+            return self.wavelength_path.get_stitched_path()
+        return []

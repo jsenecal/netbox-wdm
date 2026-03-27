@@ -101,4 +101,4 @@ class WdmCircuitFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
 
     class Meta:
         model = WdmCircuit
-        fields = ("id", "name", "status", "wavelength_nm")
+        fields = ("id", "name", "status")

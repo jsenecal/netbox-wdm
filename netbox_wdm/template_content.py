@@ -1,7 +1,7 @@
 from django.contrib.contenttypes.models import ContentType
 from netbox.plugins import PluginTemplateExtension
 
-from .models import WdmCircuitPath, WdmNode
+from .models import WdmNode, WdmWavelengthPathChannel
 
 
 class DeviceWdmNodePanel(PluginTemplateExtension):
@@ -71,14 +71,16 @@ class CableWdmCircuitsPanel(PluginTemplateExtension):
         if not channel_ids:
             return ""
 
-        # Find circuits using these channels
-        circuit_ids = (
-            WdmCircuitPath.objects.filter(channel_id__in=channel_ids).values_list("circuit_id", flat=True).distinct()
+        # Find circuits using these channels via wavelength paths
+        path_ids = (
+            WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
+            .values_list("path_id", flat=True)
+            .distinct()
         )
 
         from .models import WdmCircuit
 
-        circuits = list(WdmCircuit.objects.filter(pk__in=circuit_ids).order_by("name"))
+        circuits = list(WdmCircuit.objects.filter(wavelength_path_id__in=path_ids).order_by("name"))
         if not circuits:
             return ""
 

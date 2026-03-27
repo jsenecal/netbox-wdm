@@ -36,10 +36,10 @@ from .models import (
     WdmChannel,
     WdmChannelPlan,
     WdmCircuit,
-    WdmCircuitPath,
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPathChannel,
 )
 from .tables import (
     WdmChannelPlanTable,
@@ -313,8 +313,13 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
 
         channel_ids = [ch.pk for ch in channels]
         svc_by_channel = {}
-        for seg in WdmCircuitPath.objects.filter(channel_id__in=channel_ids).select_related("circuit"):
-            svc_by_channel[seg.channel_id] = seg.circuit.name
+        for wpc in (
+            WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
+            .select_related("path")
+            .prefetch_related("path__circuits")
+        ):
+            for circuit in wpc.path.circuits.all():
+                svc_by_channel[wpc.channel_id] = circuit.name
 
         channel_data = []
         for ch in channels:

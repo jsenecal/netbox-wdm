@@ -24,4 +24,4 @@ class WdmCircuitIndex(SearchIndex):
         ("name", 100),
         ("description", 500),
     )
-    display_attrs = ("status", "wavelength_nm", "tenant")
+    display_attrs = ("status", "tenant")

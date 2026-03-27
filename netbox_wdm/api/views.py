@@ -211,13 +211,14 @@ class WdmCircuitViewSet(NetBoxModelViewSet):
         """Return the stitched end-to-end wavelength path."""
         circuit = self.get_object()
         path = circuit.get_stitched_path()
+        wp = circuit.wavelength_path
         return Response(
             {
                 "service_id": circuit.pk,
                 "service_name": circuit.name,
-                "wavelength_nm": float(circuit.wavelength_nm),
+                "wavelength_nm": float(wp.wavelength_nm) if wp else None,
                 "status": circuit.status,
-                "is_complete": len(path) > 0,
+                "is_complete": wp.is_complete if wp else False,
                 "hops": path,
             }
         )

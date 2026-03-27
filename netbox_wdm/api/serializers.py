@@ -120,7 +120,7 @@ class WdmCircuitSerializer(NetBoxModelSerializer):
             "display",
             "name",
             "status",
-            "wavelength_nm",
+            "wavelength_path",
             "tenant",
             "description",
             "comments",
@@ -129,4 +129,4 @@ class WdmCircuitSerializer(NetBoxModelSerializer):
             "created",
             "last_updated",
         )
-        brief_fields = ("id", "url", "display", "name", "status", "wavelength_nm")
+        brief_fields = ("id", "url", "display", "name", "status", "wavelength_path")

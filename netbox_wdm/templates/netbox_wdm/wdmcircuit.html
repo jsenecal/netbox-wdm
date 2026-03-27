@@ -18,8 +18,8 @@
                     <td>{{ object.get_status_display }}</td>
                 </tr>
                 <tr>
-                    <th scope="row">{% trans "Wavelength (nm)" %}</th>
-                    <td>{{ object.wavelength_nm }}</td>
+                    <th scope="row">{% trans "Wavelength Path" %}</th>
+                    <td>{% if object.wavelength_path %}{{ object.wavelength_path }}{% else %}&mdash;{% endif %}</td>
                 </tr>
                 <tr>
                     <th scope="row">{% trans "Tenant" %}</th>

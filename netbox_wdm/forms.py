@@ -19,6 +19,7 @@ from .models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
 )
 
 # --- WdmProfile ---
@@ -226,17 +227,20 @@ class WdmChannelFilterForm(NetBoxModelFilterSetForm):
 
 
 class WdmCircuitForm(NetBoxModelForm):
+    wavelength_path = DynamicModelChoiceField(
+        queryset=WdmWavelengthPath.objects.all(), required=False, label=_("Wavelength Path")
+    )
     tenant = DynamicModelChoiceField(queryset=Tenant.objects.all(), required=False)
     comments = CommentField()
 
     fieldsets = (
-        FieldSet("name", "status", "wavelength_nm", "tenant", name=_("Circuit")),
+        FieldSet("name", "status", "wavelength_path", "tenant", name=_("Circuit")),
         FieldSet("description", "comments", "tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmCircuit
-        fields = ("name", "status", "wavelength_nm", "tenant", "description", "comments", "tags")
+        fields = ("name", "status", "wavelength_path", "tenant", "description", "comments", "tags")
 
 
 class WdmCircuitFilterForm(NetBoxModelFilterSetForm):
@@ -255,4 +259,4 @@ class WdmCircuitImportForm(NetBoxModelImportForm):
 
     class Meta:
         model = WdmCircuit
-        fields = ("name", "status", "wavelength_nm", "description", "comments")
+        fields = ("name", "status", "description", "comments")
