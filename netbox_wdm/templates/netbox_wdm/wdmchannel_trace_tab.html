@@ -1,0 +1,47 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+{% if trace_data %}
+<link rel="stylesheet" href="{% static 'netbox_wdm/css/channel-trace.css' %}">
+<div class="row mb-3">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">
+                {% trans "Wavelength Path Trace" %}
+                <span class="badge bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
+                {% if trace_data.is_active %}
+                <span class="badge bg-success ms-1">{% trans "Active" %}</span>
+                {% endif %}
+                {% if trace_data.is_complete %}
+                <span class="badge bg-info ms-1">{% trans "Complete" %}</span>
+                {% endif %}
+            </h5>
+            <div class="card-body p-0">
+                <div id="channel-trace-container" class="wdm-trace-container" style="height: 600px;"></div>
+                <div id="channel-trace-tooltip" class="wdm-trace-tooltip"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    {% trans "This channel is not part of a discovered wavelength path." %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+{% if trace_data %}
+<script>
+window.CHANNEL_TRACE_DATA = {{ trace_data_json|safe }};
+window.CHANNEL_TRACE_CURRENT_ID = {{ object.pk }};
+</script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{% static 'netbox_wdm/dist/channel-trace.min.js' %}"></script>
+{% endif %}
+{% endblock %}

@@ -394,6 +394,210 @@ class WdmChannelView(generic.ObjectView):
     queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
 
 
+@register_model_view(WdmChannel, "elements", path="elements")
+class WdmChannelElementsView(generic.ObjectView):
+    queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
+    tab = ViewTab(
+        label=_("Elements"),
+        badge=lambda obj: (
+            obj.wavelength_path_entries.first().path.path_channels.count()
+            if obj.wavelength_path_entries.exists()
+            else None
+        ),
+        hide_if_empty=True,
+        permission="netbox_wdm.view_wdmchannel",
+        weight=510,
+    )
+
+    def get_template_name(self):
+        return "netbox_wdm/wdmchannel_elements_tab.html"
+
+    def get_extra_context(self, request, instance):
+        path_entry = WdmWavelengthPathChannel.objects.filter(channel=instance).select_related("path").first()
+        if not path_entry:
+            return {"hops": []}
+
+        hops = []
+        for entry in path_entry.path.path_channels.select_related(
+            "channel__wdm_node__device",
+            "channel__mux_front_port",
+            "channel__demux_front_port",
+        ).order_by("sequence"):
+            ch = entry.channel
+            hops.append(
+                {
+                    "sequence": entry.sequence,
+                    "node_id": ch.wdm_node_id,
+                    "node_name": ch.wdm_node.device.name,
+                    "node_url": ch.wdm_node.device.get_absolute_url(),
+                    "channel_id": ch.pk,
+                    "channel_label": ch.label,
+                    "channel_url": ch.get_absolute_url(),
+                    "wavelength_nm": float(ch.wavelength_nm),
+                    "mux_port": {
+                        "id": ch.mux_front_port_id,
+                        "name": ch.mux_front_port.name,
+                        "url": ch.mux_front_port.get_absolute_url(),
+                    }
+                    if ch.mux_front_port
+                    else None,
+                    "demux_port": {
+                        "id": ch.demux_front_port_id,
+                        "name": ch.demux_front_port.name,
+                        "url": ch.demux_front_port.get_absolute_url(),
+                    }
+                    if ch.demux_front_port
+                    else None,
+                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
+                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
+                }
+            )
+
+        return {"hops": hops}
+
+
+@register_model_view(WdmChannel, "trace", path="trace")
+class WdmChannelTraceView(generic.ObjectView):
+    queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
+    tab = ViewTab(
+        label=_("Trace"),
+        visible=lambda obj: obj.wavelength_path_entries.exists(),
+        permission="netbox_wdm.view_wdmchannel",
+        weight=500,
+    )
+
+    def get_template_name(self):
+        return "netbox_wdm/wdmchannel_trace_tab.html"
+
+    def get_extra_context(self, request, instance):
+        from dcim.models import Cable, CableTermination, RearPort
+        from django.contrib.contenttypes.models import ContentType
+
+        from .models import WdmLinePort, WdmWavelengthPathChannel
+
+        path_entry = WdmWavelengthPathChannel.objects.filter(channel=instance).select_related("path").first()
+        if not path_entry:
+            return {"trace_data": None, "trace_data_json": "null"}
+
+        wl_path = path_entry.path
+        hops = []
+        for entry in wl_path.path_channels.select_related(
+            "channel__wdm_node__device",
+            "channel__mux_front_port",
+            "channel__demux_front_port",
+        ).order_by("sequence"):
+            ch = entry.channel
+            hops.append(
+                {
+                    "sequence": entry.sequence,
+                    "node_id": ch.wdm_node_id,
+                    "node_name": ch.wdm_node.device.name,
+                    "node_url": ch.wdm_node.device.get_absolute_url(),
+                    "channel_id": ch.pk,
+                    "channel_label": ch.label,
+                    "channel_url": ch.get_absolute_url(),
+                    "wavelength_nm": float(ch.wavelength_nm),
+                    "mux_port": {
+                        "id": ch.mux_front_port_id,
+                        "name": ch.mux_front_port.name,
+                        "url": ch.mux_front_port.get_absolute_url(),
+                    }
+                    if ch.mux_front_port
+                    else None,
+                    "demux_port": {
+                        "id": ch.demux_front_port_id,
+                        "name": ch.demux_front_port.name,
+                        "url": ch.demux_front_port.get_absolute_url(),
+                    }
+                    if ch.demux_front_port
+                    else None,
+                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
+                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
+                }
+            )
+
+        # Cable segments between consecutive hops
+        cable_segments = []
+        rp_ct = ContentType.objects.get_for_model(RearPort)
+        hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
+        for i in range(len(hop_entries) - 1):
+            from_node = hop_entries[i].channel.wdm_node
+            segment_path = []
+
+            tx_lp = (
+                WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"])
+                .select_related("rear_port")
+                .first()
+            )
+
+            if tx_lp and tx_lp.rear_port.cable_id:
+                segment_path.append(
+                    {
+                        "type": "rear_port",
+                        "id": tx_lp.rear_port_id,
+                        "name": tx_lp.rear_port.name,
+                        "device": from_node.device.name,
+                        "url": tx_lp.rear_port.get_absolute_url(),
+                    }
+                )
+
+                try:
+                    cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
+                    segment_path.append(
+                        {
+                            "type": "cable",
+                            "id": cable.pk,
+                            "label": cable.label or f"Cable #{cable.pk}",
+                            "status": cable.status,
+                            "color": cable.color or "",
+                            "url": cable.get_absolute_url(),
+                        }
+                    )
+                except Cable.DoesNotExist:
+                    pass
+
+                far_terms = CableTermination.objects.filter(
+                    cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
+                ).exclude(termination_id=tx_lp.rear_port_id)
+                far_term = far_terms.first()
+                if far_term:
+                    far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
+                    if far_rp:
+                        segment_path.append(
+                            {
+                                "type": "rear_port",
+                                "id": far_rp.pk,
+                                "name": far_rp.name,
+                                "device": far_rp.device.name,
+                                "url": far_rp.get_absolute_url(),
+                            }
+                        )
+
+            cable_segments.append(
+                {
+                    "from_hop": hop_entries[i].sequence,
+                    "to_hop": hop_entries[i + 1].sequence,
+                    "path": segment_path,
+                }
+            )
+
+        trace_data = {
+            "channel_id": instance.pk,
+            "wavelength_path_id": wl_path.pk,
+            "wavelength_nm": float(wl_path.wavelength_nm),
+            "grid_position": wl_path.grid_position,
+            "is_complete": wl_path.is_complete,
+            "is_active": wl_path.is_active,
+            "hops": hops,
+            "cable_segments": cable_segments,
+        }
+
+        return {
+            "trace_data": trace_data,
+            "trace_data_json": json.dumps(trace_data),
+        }
+
+
 @register_model_view(WdmChannel, "edit")
 class WdmChannelEditView(generic.ObjectEditView):
     queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")

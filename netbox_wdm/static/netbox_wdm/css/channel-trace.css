@@ -1,0 +1,90 @@
+.wdm-trace-container {
+    position: relative;
+    width: 100%;
+    min-height: 400px;
+    overflow: hidden;
+    border: 1px solid var(--wdm-border, #dee2e6);
+    border-radius: 0.375rem;
+    background: var(--wdm-bg, #fff);
+}
+
+.wdm-trace-container svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.wdm-trace-controls {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+}
+
+.wdm-trace-controls button {
+    background: var(--wdm-bg, #fff);
+    border: 1px solid var(--wdm-border, #dee2e6);
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--wdm-text, #333);
+}
+
+.wdm-trace-controls button:hover {
+    background: var(--wdm-bg-hover, #f0f0f0);
+}
+
+.wdm-trace-node rect {
+    stroke-width: 2;
+    rx: 6;
+    ry: 6;
+}
+
+.wdm-trace-node.current rect {
+    stroke-width: 3;
+}
+
+.wdm-trace-node text {
+    font-family: inherit;
+    fill: var(--wdm-text, #333);
+}
+
+.wdm-trace-node .node-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.wdm-trace-node .node-detail {
+    font-size: 11px;
+    fill: var(--wdm-text-muted, #6c757d);
+}
+
+.wdm-trace-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--wdm-bg, #fff);
+    border: 1px solid var(--wdm-border, #dee2e6);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    max-width: 300px;
+    display: none;
+    color: var(--wdm-text, #333);
+}
+
+.wdm-trace-tooltip.visible {
+    display: block;
+}
+
+[data-bs-theme="dark"] .wdm-trace-container {
+    --wdm-bg: #212529;
+    --wdm-border: #495057;
+    --wdm-text: #dee2e6;
+    --wdm-text-muted: #adb5bd;
+    --wdm-bg-hover: #2c3034;
+}
