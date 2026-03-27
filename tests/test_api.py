@@ -636,3 +636,57 @@ class TestStitchAPI:
         response = api_client.get(f"/api/plugins/wdm/wdm-circuits/{circuit.pk}/stitch/")
         assert response.status_code == status.HTTP_200_OK
         assert abs(response.data["wavelength_nm"] - 1560.61) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# WdmChannel trace endpoint tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestWdmChannelTraceAPI:
+    def _url(self, channel_pk):
+        return f"/api/plugins/wdm/wdm-channels/{channel_pk}/trace/"
+
+    def test_trace_no_path(self, api_client, channel):
+        """Channel with no wavelength path returns empty trace."""
+        response = api_client.get(self._url(channel.pk))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["channel_id"] == channel.pk
+        assert response.data["wavelength_path_id"] is None
+        assert response.data["hops"] == []
+        assert response.data["cable_segments"] == []
+
+    def test_trace_with_path(self, api_client, wdm_node, channel):
+        """Channel on a wavelength path returns hop data."""
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm="1560.61", is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=channel, sequence=1)
+
+        response = api_client.get(self._url(channel.pk))
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["wavelength_path_id"] == path.pk
+        assert response.data["wavelength_nm"] == 1560.61
+        assert len(response.data["hops"]) == 1
+        hop = response.data["hops"][0]
+        assert hop["channel_id"] == channel.pk
+        assert hop["node_name"] == wdm_node.device.name
+        assert "node_url" in hop
+        assert "channel_url" in hop
+
+    def test_trace_response_shape(self, api_client, channel):
+        """Verify all top-level keys are present."""
+        response = api_client.get(self._url(channel.pk))
+        assert response.status_code == status.HTTP_200_OK
+        for key in (
+            "channel_id",
+            "wavelength_path_id",
+            "wavelength_nm",
+            "grid_position",
+            "is_complete",
+            "is_active",
+            "hops",
+            "cable_segments",
+        ):
+            assert key in response.data
