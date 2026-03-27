@@ -400,7 +400,7 @@ class WdmChannel(NetBoxModel):
             ),
         ]
 
-    FIXED_FIELDS = ("mux_front_port", "demux_front_port", "grid_position", "wavelength_nm", "label")
+    FIXED_FIELDS = ("mux_front_port", "demux_front_port")
 
     def __str__(self):
         return f"{self.label} ({self.wavelength_nm}nm)"

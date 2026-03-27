@@ -173,9 +173,6 @@ class WdmChannelForm(NetBoxModelForm):
     fieldsets = (
         FieldSet(
             "wdm_node",
-            "grid_position",
-            "wavelength_nm",
-            "label",
             "mux_front_port",
             "demux_front_port",
             "status",
@@ -188,9 +185,6 @@ class WdmChannelForm(NetBoxModelForm):
         model = WdmChannel
         fields = (
             "wdm_node",
-            "grid_position",
-            "wavelength_nm",
-            "label",
             "mux_front_port",
             "demux_front_port",
             "status",
@@ -200,7 +194,7 @@ class WdmChannelForm(NetBoxModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk and self.instance.wdm_node.is_fixed:
-            for field_name in WdmChannel.FIXED_FIELDS:
+            for field_name in ("mux_front_port", "demux_front_port"):
                 if field_name in self.fields:
                     self.fields[field_name].disabled = True
 
