@@ -73,6 +73,7 @@ class Command(BaseCommand):
 
         dev_hub_dwdm = self._create_device("HUB-DWDM-MUX-01", site_hub, dt_dwdm_44, role_mux, tag)
         dev_hub_roadm = self._create_device("HUB-ROADM-01", site_hub, dt_roadm, role_roadm, tag)
+        dev_hub_cwdm = self._create_device("HUB-CWDM-MUX-01", site_hub, dt_cwdm_dx, role_mux, tag)
         self._create_device("HUB-EDFA-01", site_hub, dt_edfa, role_amp, tag)
         self._create_device("HUB-PP-01", site_hub, dt_pp, role_pp, tag)
         self._create_device("HUB-PP-02", site_hub, dt_pp, role_pp, tag)
@@ -85,6 +86,7 @@ class Command(BaseCommand):
             dev_east_sf,
             dev_hub_dwdm,
             dev_hub_roadm,
+            dev_hub_cwdm,
         )
 
         # -- Cabling --
@@ -99,13 +101,16 @@ class Command(BaseCommand):
             dev_west_router,
             dev_hub_dwdm,
             dev_hub_roadm,
+            dev_hub_cwdm,
         )
 
         # -- Channel configuration --
         self._configure_channels(dev_east_cwdm, dev_west_cwdm)
 
         # -- Rebuild wavelength paths (signals use on_commit, which won't fire inside atomic) --
-        self._rebuild_wavelength_paths(dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm, dev_hub_roadm)
+        self._rebuild_wavelength_paths(
+            dev_east_cwdm, dev_west_cwdm, dev_east_sf, dev_hub_dwdm, dev_hub_roadm, dev_hub_cwdm
+        )
 
         # -- WDM circuits --
         self._create_circuits(tag, dev_east_cwdm, dev_west_cwdm)
@@ -722,13 +727,15 @@ class Command(BaseCommand):
     # Line Ports
     # ================================================================
 
-    def _create_line_ports(self, tag, dev_east_cwdm, dev_west_cwdm, dev_east_sf, dev_hub_dwdm, dev_hub_roadm):
+    def _create_line_ports(
+        self, tag, dev_east_cwdm, dev_west_cwdm, dev_east_sf, dev_hub_dwdm, dev_hub_roadm, dev_hub_cwdm
+    ):
         from dcim.models import RearPort
 
         from netbox_wdm.models import WdmLinePort
 
         # Duplex MUX line ports: COM-TX (tx) and COM-RX (rx)
-        for dev in [dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm]:
+        for dev in [dev_east_cwdm, dev_west_cwdm, dev_hub_dwdm, dev_hub_cwdm]:
             if not hasattr(dev, "wdm_node"):
                 continue
             for rp_name, role in [("COM-TX", "tx"), ("COM-RX", "rx")]:
@@ -792,6 +799,7 @@ class Command(BaseCommand):
         dev_west_router,
         dev_hub_dwdm,
         dev_hub_roadm,
+        dev_hub_cwdm,
     ):
         from dcim.models import Cable, FrontPort, Interface, RearPort
 
@@ -864,19 +872,20 @@ class Command(BaseCommand):
                 f"West CWDM CH{ch_num} to Router eth{i}",
             )
 
-        # === EXP daisy-chain demo ===
-        create_cable(
-            [get_front_port(dev_east_cwdm, "EXP-MUX"), get_front_port(dev_east_cwdm, "EXP-DEMUX")],
-            get_rear_port(dev_east_sf, "COM"),
-            "East CWDM DX EXP to SF COM (upgrade chain)",
-        )
-
-        # === Hub DWDM MUX to ROADM (duplex trunk) ===
-        # MUX COM-TX -> ROADM LINE-EAST-RX (forward), MUX COM-RX <- ROADM LINE-EAST-TX (return)
+        # === Hub DWDM MUX to ROADM East (duplex trunk) ===
         create_cable(
             [get_rear_port(dev_hub_dwdm, "COM-TX"), get_rear_port(dev_hub_dwdm, "COM-RX")],
             [get_rear_port(dev_hub_roadm, "LINE-EAST-RX"), get_rear_port(dev_hub_roadm, "LINE-EAST-TX")],
             "Hub DWDM MUX to ROADM East",
+        )
+
+        # === CWDM SF to Hub CWDM (single-fiber to duplex) ===
+        # SF COM (bidi, single rear port) → Hub CWDM COM-RX
+        # Creates a second set of CWDM wavelength paths on a separate topology
+        create_cable(
+            get_rear_port(dev_east_sf, "COM"),
+            get_rear_port(dev_hub_cwdm, "COM-RX"),
+            "East CWDM SF to Hub CWDM",
         )
 
     # ================================================================
