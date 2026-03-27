@@ -96,8 +96,6 @@ def channel(wdm_node):
     return WdmChannel.objects.create(
         wdm_node=wdm_node,
         grid_position=1,
-        wavelength_nm="1560.61",
-        label="C21",
     )
 
 
@@ -300,8 +298,6 @@ class TestApplyMappingAPI:
         ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
-            wavelength_nm="1560.61",
-            label="C21",
         )
         response = api_client.post(
             self._url(wdm_node.pk),
@@ -317,8 +313,6 @@ class TestApplyMappingAPI:
         ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
-            wavelength_nm="1560.61",
-            label="C21",
             status=WdmChannelStatusChoices.ACTIVE,
         )
         response = api_client.post(
@@ -334,8 +328,6 @@ class TestApplyMappingAPI:
         ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=1,
-            wavelength_nm="1560.61",
-            label="C21",
             status=WdmChannelStatusChoices.RESERVED,
         )
         response = api_client.post(
@@ -347,8 +339,8 @@ class TestApplyMappingAPI:
         assert "errors" in response.data
 
     def test_reject_port_conflict(self, api_client, wdm_node):
-        ch1 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=1, wavelength_nm="1560.61", label="C21")
-        ch2 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=2, wavelength_nm="1559.79", label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=1)
+        ch2 = WdmChannel.objects.create(wdm_node=wdm_node, grid_position=2)
         response = api_client.post(
             self._url(wdm_node.pk),
             {"mapping": {str(ch1.pk): 100, str(ch2.pk): 100}},
@@ -484,8 +476,6 @@ class TestWdmChannelAPI:
             {
                 "wdm_node": wdm_node.pk,
                 "grid_position": 3,
-                "wavelength_nm": "1558.98",
-                "label": "C23",
             },
             format="json",
         )
@@ -505,8 +495,6 @@ class TestWdmChannelAPI:
         ch = WdmChannel.objects.create(
             wdm_node=wdm_node,
             grid_position=10,
-            wavelength_nm="1550.12",
-            label="C-DEL",
         )
         response = api_client.delete(f"{self.base_url}{ch.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT

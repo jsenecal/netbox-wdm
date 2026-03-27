@@ -1,7 +1,5 @@
 """Tests for wavelength path tracing algorithm."""
 
-from decimal import Decimal
-
 import pytest
 from dcim.models import (
     Cable,
@@ -111,8 +109,6 @@ def _create_mux_device(site, manufacturer, device_role, suffix):
     ch1 = WdmChannel(
         wdm_node=node,
         grid_position=1,
-        wavelength_nm=Decimal("1530.33"),
-        label="CH1",
         mux_front_port=ch1_mux,
         demux_front_port=ch1_demux,
     )
@@ -121,8 +117,6 @@ def _create_mux_device(site, manufacturer, device_role, suffix):
     ch2 = WdmChannel(
         wdm_node=node,
         grid_position=2,
-        wavelength_nm=Decimal("1531.12"),
-        label="CH2",
         mux_front_port=ch2_mux,
         demux_front_port=ch2_demux,
     )

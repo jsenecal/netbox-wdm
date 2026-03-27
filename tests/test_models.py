@@ -185,8 +185,6 @@ class TestWdmChannel:
         ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
-            wavelength_nm=1560.61,
-            label="C21",
         )
         assert ch.pk is not None
         assert ch.status == WdmChannelStatusChoices.AVAILABLE
@@ -200,8 +198,6 @@ class TestWdmChannel:
         ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
-            wavelength_nm=1560.61,
-            label="C21",
         )
         assert "C21" in str(ch)
 
@@ -217,8 +213,6 @@ class TestValidateChannelMapping:
         ch = WdmChannel.objects.create(
             wdm_node=node,
             grid_position=1,
-            wavelength_nm=1560.61,
-            label="C21",
             status=WdmChannelStatusChoices.ACTIVE,
         )
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 999, "demux": None}})
@@ -231,8 +225,8 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
-        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
         errors = WdmNode.validate_channel_mapping(
             node, {ch1.pk: {"mux": 100, "demux": None}, ch2.pk: {"mux": 100, "demux": None}}
         )
@@ -246,8 +240,8 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
-        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
         errors = WdmNode.validate_channel_mapping(
             node, {ch1.pk: {"mux": None, "demux": 200}, ch2.pk: {"mux": None, "demux": 200}}
         )
@@ -261,7 +255,7 @@ class TestValidateChannelMapping:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
         assert errors == []
 
@@ -274,7 +268,7 @@ class TestWdmWavelengthPath:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
@@ -294,7 +288,7 @@ class TestWdmWavelengthPath:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
+        ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
@@ -308,8 +302,8 @@ class TestWdmWavelengthPath:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
-        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
@@ -323,8 +317,8 @@ class TestWdmWavelengthPath:
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
             grid=WdmGridChoices.DWDM_100GHZ,
         )
-        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1, wavelength_nm=1560.61, label="C21")
-        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2, wavelength_nm=1559.79, label="C22")
+        ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
+        ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
