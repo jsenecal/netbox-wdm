@@ -433,7 +433,7 @@ class WdmChannel(NetBoxModel):
         super().save(*args, **kwargs)
 
 
-class WdmWavelengthPath(models.Model):
+class WdmWavelengthPath(NetBoxModel):
     """An automatically discovered end-to-end wavelength path across connected WDM nodes."""
 
     grid_position = models.PositiveIntegerField(verbose_name=_("grid position"))
