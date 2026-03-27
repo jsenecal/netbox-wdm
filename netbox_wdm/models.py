@@ -449,8 +449,6 @@ class WdmWavelengthPath(models.Model):
         verbose_name=_("is active"),
     )
 
-    _netbox_private = True
-
     class Meta:
         ordering = ("wavelength_nm",)
         verbose_name = _("WDM wavelength path")

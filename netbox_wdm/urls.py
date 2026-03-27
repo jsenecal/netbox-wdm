@@ -28,6 +28,8 @@ urlpatterns = [
     path("wdm-nodes/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmnode"))),
     # WDM Line Port
     path("wdm-line-ports/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmlineport"))),
+    # WDM Wavelength Paths
+    path("wdm-wavelength-paths/", views.WdmWavelengthPathListView.as_view(), name="wdmwavelengthpath_list"),
     # WDM Channel
     path("wdm-channels/", views.WdmChannelListView.as_view(), name="wdmchannel_list"),
     path("wdm-channels/add/", views.WdmChannelEditView.as_view(), name="wdmchannel_add"),

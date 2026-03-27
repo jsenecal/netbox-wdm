@@ -33,7 +33,7 @@ menu = PluginMenu(
                     ),
                 ),
                 PluginMenuItem(
-                    link="plugins:netbox_wdm:wdmchannel_list",
+                    link="plugins:netbox_wdm:wdmwavelengthpath_list",
                     link_text="Channels",
                     permissions=["netbox_wdm.view_wdmchannel"],
                 ),

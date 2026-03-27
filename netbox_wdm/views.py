@@ -39,6 +39,7 @@ from .models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
     WdmWavelengthPathChannel,
 )
 from .tables import (
@@ -46,8 +47,10 @@ from .tables import (
     WdmChannelTable,
     WdmCircuitTable,
     WdmLinePortTable,
+    WdmNodeChannelTable,
     WdmNodeTable,
     WdmProfileTable,
+    WdmWavelengthPathTable,
 )
 
 # ---- WdmProfile ----
@@ -240,7 +243,7 @@ class WdmNodeBulkDeleteView(generic.BulkDeleteView):
 class WdmNodeChannelsView(generic.ObjectChildrenView):
     queryset = WdmNode.objects.all()
     child_model = WdmChannel
-    table = WdmChannelTable
+    table = WdmNodeChannelTable
     filterset = WdmChannelFilterSet
     actions = (EditObject, DeleteObject, BulkDelete)
     tab = ViewTab(
@@ -377,6 +380,14 @@ class WdmLinePortEditView(generic.ObjectEditView):
 @register_model_view(WdmLinePort, "delete")
 class WdmLinePortDeleteView(generic.ObjectDeleteView):
     queryset = WdmLinePort.objects.select_related("wdm_node__device", "rear_port")
+
+
+# ---- WdmWavelengthPath ----
+
+
+class WdmWavelengthPathListView(generic.ObjectListView):
+    queryset = WdmWavelengthPath.objects.all()
+    table = WdmWavelengthPathTable
 
 
 # ---- WdmChannel ----

@@ -9,6 +9,7 @@ from .models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
 )
 
 
@@ -112,7 +113,7 @@ class WdmChannelTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
-    label = tables.Column(verbose_name=_("Label"))
+    label = tables.Column(linkify=True, verbose_name=_("Label"))
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
     mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
     demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
@@ -133,7 +134,61 @@ class WdmChannelTable(NetBoxTable):
             "status",
             "actions",
         )
+        default_columns = (
+            "pk",
+            "wdm_node",
+            "label",
+            "grid_position",
+            "wavelength_nm",
+            "mux_front_port",
+            "status",
+            "actions",
+        )
+
+
+class WdmNodeChannelTable(NetBoxTable):
+    """Channel table for the WDM Node detail page — no node column, label links to channel detail."""
+
+    pk = columns.ToggleColumn()
+    label = tables.Column(linkify=True, verbose_name=_("Label"))
+    grid_position = tables.Column(verbose_name=_("Grid Position"))
+    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
+    mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
+    demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
+    status = tables.Column(verbose_name=_("Status"))
+    actions = columns.ActionsColumn(extra_buttons=CHANNEL_TRACE_BUTTONS)
+
+    class Meta(NetBoxTable.Meta):
+        model = WdmChannel
+        fields = (
+            "pk",
+            "id",
+            "label",
+            "grid_position",
+            "wavelength_nm",
+            "mux_front_port",
+            "demux_front_port",
+            "status",
+            "actions",
+        )
         default_columns = ("pk", "label", "grid_position", "wavelength_nm", "mux_front_port", "status", "actions")
+
+
+class WdmWavelengthPathTable(NetBoxTable):
+    pk = columns.ToggleColumn()
+    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
+    grid_position = tables.Column(verbose_name=_("Grid Position"))
+    nodes = tables.Column(verbose_name=_("Nodes"), empty_values=(), orderable=False)
+    is_complete = columns.BooleanColumn(verbose_name=_("Complete"))
+    is_active = columns.BooleanColumn(verbose_name=_("Active"))
+
+    class Meta(NetBoxTable.Meta):
+        model = WdmWavelengthPath
+        fields = ("pk", "id", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+        default_columns = ("pk", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+
+    def render_nodes(self, record):
+        return record.get_display_label().split(": ", 1)[-1] if record.get_display_label() != "empty" else "—"
 
 
 class WdmCircuitTable(NetBoxTable):
