@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save
 
 
 def _device_post_save(sender, instance, created, **kwargs):
@@ -26,8 +26,94 @@ def _device_post_save(sender, instance, created, **kwargs):
     transaction.on_commit(_create_node)
 
 
+def _rebuild_nodes(nodes):
+    """Schedule path rebuilds for a set of WdmNode instances on transaction commit."""
+    from .trace import rebuild_wavelength_paths_for_node
+
+    for node in nodes:
+        transaction.on_commit(lambda n=node: rebuild_wavelength_paths_for_node(n))
+
+
+def _cable_trace_paths(sender, instance, **kwargs):
+    """Rebuild wavelength paths for WDM nodes connected via this cable's rear port terminations."""
+    from dcim.models import CableTermination, RearPort
+    from django.contrib.contenttypes.models import ContentType
+
+    from .models import WdmLinePort
+
+    cable = instance
+    rp_ct = ContentType.objects.get_for_model(RearPort)
+    rp_ids = list(
+        CableTermination.objects.filter(cable=cable, termination_type=rp_ct).values_list("termination_id", flat=True)
+    )
+    if not rp_ids:
+        return
+
+    nodes = set()
+    for lp in WdmLinePort.objects.filter(rear_port_id__in=rp_ids).select_related("wdm_node"):
+        nodes.add(lp.wdm_node)
+
+    if nodes:
+        _rebuild_nodes(nodes)
+
+
+def _cable_post_delete(sender, instance, **kwargs):
+    """Rebuild paths for all nodes that had paths — terminations are already gone after delete."""
+    from .models import WdmWavelengthPath, WdmWavelengthPathChannel
+
+    node_pks = (
+        WdmWavelengthPathChannel.objects.filter(path__in=WdmWavelengthPath.objects.all())
+        .values_list("channel__wdm_node", flat=True)
+        .distinct()
+    )
+
+    from .models import WdmNode
+
+    nodes = set(WdmNode.objects.filter(pk__in=node_pks))
+    if nodes:
+        _rebuild_nodes(nodes)
+
+
+def _channel_post_save(sender, instance, **kwargs):
+    """Rebuild wavelength paths when a channel is created or updated."""
+    _rebuild_nodes({instance.wdm_node})
+
+
+def _channel_post_delete(sender, instance, **kwargs):
+    """Rebuild wavelength paths when a channel is deleted."""
+    _rebuild_nodes({instance.wdm_node})
+
+
+def _lineport_changed(sender, instance, **kwargs):
+    """Rebuild wavelength paths when a line port changes."""
+    _rebuild_nodes({instance.wdm_node})
+
+
+def _portmapping_changed(sender, instance, **kwargs):
+    """Rebuild wavelength paths when a port mapping changes."""
+    from .models import WdmNode
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    _rebuild_nodes({node})
+
+
 def connect_signals():
     """Connect device signals. Called from AppConfig.ready()."""
-    from dcim.models import Device
+    from dcim.models import Cable, Device, PortMapping
+    from dcim.models.cables import trace_paths
+
+    from .models import WdmChannel, WdmLinePort
 
     post_save.connect(_device_post_save, sender=Device, dispatch_uid="wdm_device_post_save")
+    trace_paths.connect(_cable_trace_paths, sender=Cable, dispatch_uid="wdm_cable_trace_paths")
+    post_delete.connect(_cable_post_delete, sender=Cable, dispatch_uid="wdm_cable_post_delete")
+    post_save.connect(_channel_post_save, sender=WdmChannel, dispatch_uid="wdm_channel_post_save")
+    post_delete.connect(_channel_post_delete, sender=WdmChannel, dispatch_uid="wdm_channel_post_delete")
+    post_save.connect(_lineport_changed, sender=WdmLinePort, dispatch_uid="wdm_lineport_post_save")
+    post_delete.connect(_lineport_changed, sender=WdmLinePort, dispatch_uid="wdm_lineport_post_delete")
+    post_save.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_save")
+    post_delete.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_delete")
