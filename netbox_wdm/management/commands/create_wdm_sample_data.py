@@ -102,6 +102,9 @@ class Command(BaseCommand):
         # -- Channel configuration --
         self._configure_channels(dev_east_cwdm, dev_west_cwdm)
 
+        # -- Rebuild wavelength paths (signals use on_commit, which won't fire inside atomic) --
+        self._rebuild_wavelength_paths(dev_east_cwdm, dev_west_cwdm)
+
         # -- WDM circuits --
         self._create_circuits(tag, dev_east_cwdm, dev_west_cwdm)
 
@@ -119,10 +122,11 @@ class Command(BaseCommand):
             WdmChannel,
             WdmChannelPlan,
             WdmCircuit,
-            WdmCircuitPath,
             WdmLinePort,
             WdmNode,
             WdmProfile,
+            WdmWavelengthPath,
+            WdmWavelengthPathChannel,
         )
 
         self.stdout.write("Flushing existing sample data...")
@@ -139,7 +143,11 @@ class Command(BaseCommand):
         Cable.objects.filter(tags=tag).delete()
 
         # Then WDM objects in dependency order
-        WdmCircuitPath.objects.filter(circuit__tags=tag).delete()
+        # Clear circuit -> wavelength_path FKs before deleting paths
+        WdmCircuit.objects.filter(tags=tag).update(wavelength_path=None)
+        # Delete wavelength path channels and paths for tagged nodes
+        WdmWavelengthPathChannel.objects.filter(channel__wdm_node__tags=tag).delete()
+        WdmWavelengthPath.objects.filter(path_channels__isnull=True).delete()
         WdmCircuit.objects.filter(tags=tag).delete()
         WdmChannel.objects.filter(wdm_node__tags=tag).delete()
         WdmLinePort.objects.filter(wdm_node__tags=tag).delete()
@@ -890,11 +898,26 @@ class Command(BaseCommand):
             )
 
     # ================================================================
+    # Wavelength Paths
+    # ================================================================
+
+    def _rebuild_wavelength_paths(self, *devices):
+        from netbox_wdm.models import WdmWavelengthPath
+        from netbox_wdm.trace import rebuild_wavelength_paths_for_node
+
+        for dev in devices:
+            if hasattr(dev, "wdm_node"):
+                rebuild_wavelength_paths_for_node(dev.wdm_node)
+
+        total = WdmWavelengthPath.objects.count()
+        self.stdout.write(f"  Wavelength paths rebuilt: {total} total")
+
+    # ================================================================
     # WDM Circuits
     # ================================================================
 
     def _create_circuits(self, tag, dev_east_cwdm, dev_west_cwdm):
-        from netbox_wdm.models import WdmCircuit
+        from netbox_wdm.models import WdmCircuit, WdmWavelengthPath
 
         east_channels = (
             list(dev_east_cwdm.wdm_node.channels.order_by("grid_position"))
@@ -911,85 +934,87 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("  Skipping circuits: missing channels"))
             return
 
+        def find_path(channel):
+            """Find the auto-discovered wavelength path containing a given channel."""
+            return WdmWavelengthPath.objects.filter(
+                wavelength_nm=channel.wavelength_nm,
+                path_channels__channel=channel,
+            ).first()
+
         # Circuit 1: ACTIVE East-West on CH1 (1270nm)
+        path1 = find_path(east_channels[0])
         ckt1, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1270-EastWest",
             defaults={
                 "status": "active",
-                "wavelength_nm": east_channels[0].wavelength_nm,
+                "wavelength_path": path1,
                 "description": "Active CWDM circuit, fully cabled East to West.",
             },
         )
         if created:
             self._tag(ckt1, tag)
-            self._assign_channels(ckt1, [east_channels[0], west_channels[0]])
-            self.stdout.write(f"  Circuit: {ckt1.name} (ACTIVE, 2-hop, {ckt1.wavelength_nm}nm)")
+            wl = path1.wavelength_nm if path1 else east_channels[0].wavelength_nm
+            self.stdout.write(f"  Circuit: {ckt1.name} (ACTIVE, {wl}nm)")
 
         # Circuit 2: ACTIVE East-West on CH2 (1290nm)
+        path2 = find_path(east_channels[1])
         ckt2, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1290-EastWest",
             defaults={
                 "status": "active",
-                "wavelength_nm": east_channels[1].wavelength_nm,
+                "wavelength_path": path2,
                 "description": "Active CWDM circuit, fully cabled East to West.",
             },
         )
         if created:
             self._tag(ckt2, tag)
-            self._assign_channels(ckt2, [east_channels[1], west_channels[1]])
-            self.stdout.write(f"  Circuit: {ckt2.name} (ACTIVE, 2-hop, {ckt2.wavelength_nm}nm)")
+            wl = path2.wavelength_nm if path2 else east_channels[1].wavelength_nm
+            self.stdout.write(f"  Circuit: {ckt2.name} (ACTIVE, {wl}nm)")
 
         # Circuit 3: STAGED East-West on CH3 (1310nm)
+        path3 = find_path(east_channels[2])
         ckt3, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1310-Staged",
             defaults={
                 "status": "staged",
-                "wavelength_nm": east_channels[2].wavelength_nm,
+                "wavelength_path": path3,
                 "description": "Staged circuit, cabled and reserved, awaiting activation.",
             },
         )
         if created:
             self._tag(ckt3, tag)
-            self._assign_channels(ckt3, [east_channels[2], west_channels[2]])
-            self.stdout.write(f"  Circuit: {ckt3.name} (STAGED, 2-hop, {ckt3.wavelength_nm}nm)")
+            wl = path3.wavelength_nm if path3 else east_channels[2].wavelength_nm
+            self.stdout.write(f"  Circuit: {ckt3.name} (STAGED, {wl}nm)")
 
         # Circuit 4: ACTIVE East-only on CH4 (1330nm) - active+DISCONNECTED
+        path4 = find_path(east_channels[3])
         ckt4, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1330-Fault",
             defaults={
                 "status": "active",
-                "wavelength_nm": east_channels[3].wavelength_nm,
+                "wavelength_path": path4,
                 "description": "Active circuit on disconnected channel - cable fault or missing patch.",
             },
         )
         if created:
             self._tag(ckt4, tag)
-            self._assign_channels(ckt4, [east_channels[3]])
-            self.stdout.write(f"  Circuit: {ckt4.name} (ACTIVE but DISCONNECTED, 1-hop, {ckt4.wavelength_nm}nm)")
+            wl = path4.wavelength_nm if path4 else east_channels[3].wavelength_nm
+            self.stdout.write(f"  Circuit: {ckt4.name} (ACTIVE but DISCONNECTED, {wl}nm)")
 
         # Circuit 5: PLANNED East-only on CH5 (1350nm)
+        path5 = find_path(east_channels[4])
         ckt5, created = WdmCircuit.objects.get_or_create(
             name="CWDM-1350-Planned",
             defaults={
                 "status": "planned",
-                "wavelength_nm": east_channels[4].wavelength_nm,
+                "wavelength_path": path5,
                 "description": "Planned circuit, channel reserved but not yet cabled.",
             },
         )
         if created:
             self._tag(ckt5, tag)
-            self._assign_channels(ckt5, [east_channels[4]])
-            self.stdout.write(f"  Circuit: {ckt5.name} (PLANNED, 1-hop, {ckt5.wavelength_nm}nm)")
-
-    def _assign_channels(self, circuit, channels):
-        from netbox_wdm.models import WdmCircuitPath
-
-        for seq, ch in enumerate(channels, start=1):
-            WdmCircuitPath.objects.get_or_create(
-                circuit=circuit,
-                channel=ch,
-                defaults={"sequence": seq},
-            )
+            wl = path5.wavelength_nm if path5 else east_channels[4].wavelength_nm
+            self.stdout.write(f"  Circuit: {ckt5.name} (PLANNED, {wl}nm)")
 
     # ================================================================
     # Summary
@@ -1002,10 +1027,10 @@ class Command(BaseCommand):
             WdmChannel,
             WdmChannelPlan,
             WdmCircuit,
-            WdmCircuitPath,
             WdmLinePort,
             WdmNode,
             WdmProfile,
+            WdmWavelengthPath,
         )
 
         self.stdout.write("\n--- Summary ---")
@@ -1019,7 +1044,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Line Ports:        {WdmLinePort.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Channels:           {WdmChannel.objects.count()}")
         self.stdout.write(f"  Circuits:           {WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG).count()}")
-        self.stdout.write(f"  Circuit Paths:      {WdmCircuitPath.objects.count()}")
+        self.stdout.write(f"  Wavelength Paths:   {WdmWavelengthPath.objects.count()}")
 
         self.stdout.write("\n--- Channel Status Breakdown ---")
         for node in WdmNode.objects.filter(tags__slug=SAMPLE_TAG).select_related("device"):
@@ -1033,8 +1058,8 @@ class Command(BaseCommand):
 
         self.stdout.write("\n--- Circuits ---")
         for ckt in WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG):
-            hops = ckt.path_segments.count()
-            self.stdout.write(f"  {ckt.name}: {ckt.status} ({hops} hops, {ckt.wavelength_nm}nm)")
+            wl = ckt.wavelength_path.wavelength_nm if ckt.wavelength_path else "N/A"
+            self.stdout.write(f"  {ckt.name}: {ckt.status} ({wl}nm)")
 
         self.stdout.write("\n--- Cables ---")
         for cable in Cable.objects.filter(tags__slug=SAMPLE_TAG):
