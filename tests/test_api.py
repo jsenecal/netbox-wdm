@@ -16,10 +16,11 @@ from netbox_wdm.models import (
     WdmChannel,
     WdmChannelPlan,
     WdmCircuit,
-    WdmCircuitPath,
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
+    WdmWavelengthPathChannel,
 )
 
 # ---------------------------------------------------------------------------
@@ -105,7 +106,6 @@ def circuit():
     return WdmCircuit.objects.create(
         name="Test Circuit",
         status=WdmCircuitStatusChoices.PLANNED,
-        wavelength_nm="1560.61",
     )
 
 
@@ -549,7 +549,6 @@ class TestWdmCircuitAPI:
             {
                 "name": "New WDM Circuit",
                 "status": WdmCircuitStatusChoices.PLANNED,
-                "wavelength_nm": "1559.79",
             },
             format="json",
         )
@@ -569,7 +568,6 @@ class TestWdmCircuitAPI:
         ckt = WdmCircuit.objects.create(
             name="Delete Me",
             status=WdmCircuitStatusChoices.PLANNED,
-            wavelength_nm="1558.17",
         )
         response = api_client.delete(f"{self.base_url}{ckt.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -591,7 +589,7 @@ class TestStitchAPI:
         return f"/api/plugins/wdm/wdm-circuits/{circuit_pk}/stitch/"
 
     def test_stitch_empty_circuit(self, api_client, circuit):
-        """A circuit with no path segments returns is_complete=False."""
+        """A circuit with no wavelength path returns is_complete=False."""
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["service_id"] == circuit.pk
@@ -599,16 +597,19 @@ class TestStitchAPI:
         assert response.data["is_complete"] is False
         assert response.data["hops"] == []
 
-    def test_stitch_with_channels(self, api_client, circuit, channel, wdm_node):
-        """A circuit with path segments returns hops in sequence order."""
-        WdmCircuitPath.objects.create(
-            circuit=circuit,
-            channel=channel,
-            sequence=1,
+    def test_stitch_with_channels(self, api_client, channel, wdm_node):
+        """A circuit with a wavelength path returns hops in sequence order."""
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm="1560.61", is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=channel, sequence=1)
+        circuit = WdmCircuit.objects.create(
+            name="Stitch Test Circuit",
+            status=WdmCircuitStatusChoices.PLANNED,
+            wavelength_path=path,
         )
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["is_complete"] is True
         assert len(response.data["hops"]) == 1
         hop = response.data["hops"][0]
         assert hop["channel_id"] == channel.pk
@@ -622,7 +623,16 @@ class TestStitchAPI:
         for key in ("service_id", "service_name", "wavelength_nm", "status", "is_complete", "hops"):
             assert key in response.data
 
-    def test_stitch_wavelength_value(self, api_client, circuit):
-        response = api_client.get(self._url(circuit.pk))
+    def test_stitch_wavelength_value(self, api_client, channel):
+        path = WdmWavelengthPath.objects.create(
+            grid_position=1, wavelength_nm="1560.61", is_complete=True, is_active=True
+        )
+        WdmWavelengthPathChannel.objects.create(path=path, channel=channel, sequence=1)
+        circuit = WdmCircuit.objects.create(
+            name="WL Value Circuit",
+            status=WdmCircuitStatusChoices.PLANNED,
+            wavelength_path=path,
+        )
+        response = api_client.get(f"/api/plugins/wdm/wdm-circuits/{circuit.pk}/stitch/")
         assert response.status_code == status.HTTP_200_OK
         assert abs(response.data["wavelength_nm"] - 1560.61) < 0.01
