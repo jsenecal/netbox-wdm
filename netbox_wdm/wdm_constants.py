@@ -50,3 +50,13 @@ WDM_GRIDS: dict[str, tuple[tuple[int, str, float], ...]] = {
     "dwdm_100ghz": DWDM_100GHZ_CHANNELS,
     "dwdm_50ghz": DWDM_50GHZ_CHANNELS,
 }
+
+# Lookup dicts keyed by (grid, position) for fast access
+_GRID_LOOKUP: dict[str, dict[int, tuple[str, float]]] = {}
+for _grid_key, _channels in WDM_GRIDS.items():
+    _GRID_LOOKUP[_grid_key] = {pos: (label, wl) for pos, label, wl in _channels}
+
+
+def get_channel_info(grid: str, position: int) -> tuple[str, float]:
+    """Return (label, wavelength_nm) for a grid type and position."""
+    return _GRID_LOOKUP[grid][position]

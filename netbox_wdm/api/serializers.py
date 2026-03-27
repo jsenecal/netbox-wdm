@@ -1,4 +1,5 @@
 from netbox.api.serializers import NetBoxModelSerializer
+from rest_framework import serializers
 
 from ..models import (
     WdmChannel,
@@ -90,6 +91,9 @@ class WdmLinePortSerializer(NetBoxModelSerializer):
 
 
 class WdmChannelSerializer(NetBoxModelSerializer):
+    label = serializers.CharField(read_only=True)
+    wavelength_nm = serializers.FloatField(read_only=True)
+
     class Meta:
         model = WdmChannel
         fields = (

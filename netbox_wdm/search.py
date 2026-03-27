@@ -13,8 +13,8 @@ class WdmNodeIndex(SearchIndex):
 @register_search
 class WdmChannelIndex(SearchIndex):
     model = WdmChannel
-    fields = (("label", 100),)
-    display_attrs = ("wdm_node", "wavelength_nm", "status")
+    fields = (("grid_position", 100),)
+    display_attrs = ("wdm_node", "grid_position", "status")
 
 
 @register_search

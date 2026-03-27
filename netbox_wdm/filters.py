@@ -85,11 +85,11 @@ class WdmChannelFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
         queryset=WdmNode.objects.all(), field_name="wdm_node", label=_("WDM Node (ID)")
     )
     status = django_filters.MultipleChoiceFilter(choices=WdmChannelStatusChoices)
-    search_fields = ("label__icontains",)
+    search_fields = ("grid_position",)
 
     class Meta:
         model = WdmChannel
-        fields = ("id", "wdm_node", "status", "grid_position", "wavelength_nm")
+        fields = ("id", "wdm_node", "status", "grid_position")
 
 
 class WdmCircuitFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):

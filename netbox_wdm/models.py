@@ -249,8 +249,6 @@ class WdmNode(NetBoxModel):
                 WdmChannel(
                     wdm_node=self,
                     grid_position=cp.grid_position,
-                    wavelength_nm=cp.wavelength_nm,
-                    label=cp.label,
                     mux_front_port=mux_front_port,
                     demux_front_port=demux_front_port,
                 )
@@ -345,12 +343,6 @@ class WdmChannel(NetBoxModel):
         verbose_name=_("WDM node"),
     )
     grid_position = models.PositiveIntegerField(verbose_name=_("grid position"))
-    wavelength_nm = models.DecimalField(
-        max_digits=8,
-        decimal_places=2,
-        verbose_name=_("wavelength (nm)"),
-    )
-    label = models.CharField(max_length=20, verbose_name=_("label"))
     mux_front_port = models.ForeignKey(
         to="dcim.FrontPort",
         on_delete=models.SET_NULL,
@@ -381,10 +373,6 @@ class WdmChannel(NetBoxModel):
         verbose_name_plural = _("WDM channels")
         constraints = [
             models.UniqueConstraint(
-                fields=["wdm_node", "wavelength_nm"],
-                name="unique_channel_wavelength",
-            ),
-            models.UniqueConstraint(
                 fields=["wdm_node", "grid_position"],
                 name="unique_channel_grid_position",
             ),
@@ -401,6 +389,20 @@ class WdmChannel(NetBoxModel):
         ]
 
     FIXED_FIELDS = ("mux_front_port", "demux_front_port")
+
+    @property
+    def label(self):
+        """ITU channel label derived from the node's grid and this channel's position."""
+        from .wdm_constants import get_channel_info
+
+        return get_channel_info(self.wdm_node.grid, self.grid_position)[0]
+
+    @property
+    def wavelength_nm(self):
+        """Wavelength in nm derived from the node's grid and this channel's position."""
+        from .wdm_constants import get_channel_info
+
+        return get_channel_info(self.wdm_node.grid, self.grid_position)[1]
 
     def __str__(self):
         return f"{self.label} ({self.wavelength_nm}nm)"
