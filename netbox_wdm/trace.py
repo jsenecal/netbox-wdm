@@ -110,10 +110,145 @@ def _follow_frontport_cable(front_port):
         return None
 
 
+def _follow_cable_from_rearport_to_frontport(rear_port):
+    """Follow a cable from a rear port to a far-end front port (patch cable pattern).
+
+    Returns the far-end FrontPort or None.
+    """
+    fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=rear_port.pk)
+    if not fresh_rp.cable_id:
+        return None
+
+    rp_ct = ContentType.objects.get_for_model(RearPort)
+    fp_ct = ContentType.objects.get_for_model(FrontPort)
+
+    # Find which side the rear port is on
+    rp_terms = list(
+        CableTermination.objects.filter(cable_id=fresh_rp.cable_id, termination_type=rp_ct).order_by("cable_end", "pk")
+    )
+    fp_terms = list(
+        CableTermination.objects.filter(cable_id=fresh_rp.cable_id, termination_type=fp_ct).order_by("cable_end", "pk")
+    )
+
+    if not fp_terms:
+        return None
+
+    my_side = None
+    my_index = -1
+    a_rp_terms = [t for t in rp_terms if t.cable_end == "A"]
+    b_rp_terms = [t for t in rp_terms if t.cable_end == "B"]
+
+    for i, t in enumerate(a_rp_terms):
+        if t.termination_id == fresh_rp.pk:
+            my_side = "A"
+            my_index = i
+            break
+    if my_side is None:
+        for i, t in enumerate(b_rp_terms):
+            if t.termination_id == fresh_rp.pk:
+                my_side = "B"
+                my_index = i
+                break
+
+    if my_side is None or my_index < 0:
+        return None
+
+    far_fp_terms = [t for t in fp_terms if t.cable_end != my_side]
+    if my_index >= len(far_fp_terms):
+        return None
+
+    try:
+        return FrontPort.objects.select_related("device").get(pk=far_fp_terms[my_index].termination_id)
+    except FrontPort.DoesNotExist:
+        return None
+
+
+def _resolve_rearport_cable(current_rp, visited):
+    """Follow a cable from a RearPort to the next RearPort.
+
+    Handles both direct trunk cables (RP→RP) and patch cables through
+    pass-through devices (RP→FP→PortMapping→RP→cable→RP→PortMapping→FP→RP).
+
+    Returns the next RearPort or None. Updates visited set.
+    """
+    # Try direct RearPort-to-RearPort cable first
+    far_rp = _follow_cable_from_rearport(current_rp)
+    if far_rp is not None:
+        return far_rp
+
+    # Try RearPort-to-FrontPort (patch cable into a pass-through device)
+    far_fp = _follow_cable_from_rearport_to_frontport(current_rp)
+    if far_fp is None:
+        return None
+
+    # FrontPort → PortMapping → RearPort (enter the pass-through device)
+    pm_in = PortMapping.objects.filter(front_port=far_fp).select_related("rear_port").first()
+    if pm_in is None or pm_in.rear_port.pk in visited:
+        return None
+
+    inner_rp = pm_in.rear_port
+    visited.add(inner_rp.pk)
+
+    # Follow cable from inner RearPort (e.g., trunk cable between patch panels)
+    next_rp = _follow_cable_from_rearport(inner_rp)
+    if next_rp is not None:
+        if next_rp.pk in visited:
+            return None
+        visited.add(next_rp.pk)
+
+        # Check if next_rp is a WDM node directly — if so return it
+        try:
+            WdmLinePort.objects.get(rear_port=next_rp)
+            return next_rp
+        except WdmLinePort.DoesNotExist:
+            pass
+
+        # Otherwise pass through another device: PortMapping → FrontPort → cable → RearPort
+        pm_exit = PortMapping.objects.filter(rear_port=next_rp).select_related("front_port").first()
+        if pm_exit is None:
+            return None
+
+        exit_fp = pm_exit.front_port
+        if not exit_fp.cable_id:
+            return None
+
+        # Follow FrontPort cable — could go to RearPort (patch cable out)
+        exit_far_fp = _follow_frontport_cable(exit_fp)
+        if exit_far_fp is not None:
+            # FP→FP link, then PortMapping→RP
+            exit_pm = PortMapping.objects.filter(front_port=exit_far_fp).select_related("rear_port").first()
+            if exit_pm is not None and exit_pm.rear_port.pk not in visited:
+                return exit_pm.rear_port
+
+        # Try FrontPort→RearPort cable (patch cable to WDM device)
+        # Check CableTermination for RearPort on far end of exit_fp's cable
+        rp_ct = ContentType.objects.get_for_model(RearPort)
+        fp_ct = ContentType.objects.get_for_model(FrontPort)
+        all_terms = list(CableTermination.objects.filter(cable_id=exit_fp.cable_id).order_by("cable_end", "pk"))
+        my_side = None
+        for t in all_terms:
+            if t.termination_type == fp_ct and t.termination_id == exit_fp.pk:
+                my_side = t.cable_end
+                break
+        if my_side:
+            far_rp_terms = [t for t in all_terms if t.cable_end != my_side and t.termination_type == rp_ct]
+            if far_rp_terms:
+                try:
+                    return RearPort.objects.get(pk=far_rp_terms[0].termination_id)
+                except RearPort.DoesNotExist:
+                    pass
+
+    return None
+
+
 def _get_far_end_node(rear_port):
     """Follow cables from rear_port through intermediate devices until reaching a WDM node.
 
-    Pass-through path: RearPort →(cable)→ RearPort →(PortMapping)→ FrontPort →(cable)→ FrontPort →(PortMapping)→ RearPort → ...
+    Supports:
+    1. Direct trunk cables: RearPort →(cable)→ RearPort
+    2. Patch cables through pass-through devices (patch panels):
+       RearPort →(cable)→ FrontPort →(PortMapping)→ RearPort →(cable)→
+       RearPort →(PortMapping)→ FrontPort →(cable)→ RearPort
 
     Returns (WdmNode, far_end_RearPort) or (None, None).
     """
@@ -121,40 +256,23 @@ def _get_far_end_node(rear_port):
     current_rp = rear_port
 
     for _ in range(20):  # max hops to prevent infinite loops
-        # Step 1: Follow cable from rear port to far-end rear port
-        far_rp = _follow_cable_from_rearport(current_rp)
-        if far_rp is None or far_rp.pk in visited:
+        far_rp = _resolve_rearport_cable(current_rp, visited)
+        if far_rp is None:
+            return None, None
+
+        if far_rp.pk in visited:
             return None, None
         visited.add(far_rp.pk)
 
-        # Step 2: Check if this rear port belongs to a WDM node
+        # Check if this rear port belongs to a WDM node
         try:
             lp = WdmLinePort.objects.select_related("wdm_node").get(rear_port=far_rp)
             return lp.wdm_node, far_rp
         except WdmLinePort.DoesNotExist:
             pass
 
-        # Step 3: Pass through device via PortMapping → FrontPort → cable → FrontPort → PortMapping → RearPort
-        pm = PortMapping.objects.filter(rear_port=far_rp).select_related("front_port").first()
-        if pm is None:
-            return None, None
-
-        source_fp = pm.front_port
-        if not source_fp.cable_id:
-            return None, None
-
-        # Follow the front port cable to far-end front port
-        far_fp = _follow_frontport_cable(source_fp)
-        if far_fp is None:
-            return None, None
-
-        # Find the rear port on the far-end front port's device via PortMapping
-        far_pm = PortMapping.objects.filter(front_port=far_fp).select_related("rear_port").first()
-        if far_pm is None or far_pm.rear_port.pk in visited:
-            return None, None
-
-        current_rp = far_pm.rear_port
-        visited.add(current_rp.pk)
+        # Not a WDM node — continue from this rear port
+        current_rp = far_rp
 
     return None, None
 

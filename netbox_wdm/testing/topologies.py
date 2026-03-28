@@ -35,7 +35,7 @@ def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
         site: Site instance for all devices.
         dt_mux: DeviceType for duplex MUX devices.
         dt_pp: DeviceType for patch panels.
-        roles: Dict with keys "wdm-mux" and "patch-panel" mapping to DeviceRole instances.
+        roles: Dict with keys "wdm-mux" and "fiber-pp" mapping to DeviceRole instances.
         name_prefix: Optional prefix for device names.
 
     Returns:
@@ -46,8 +46,8 @@ def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
     mux_a = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}DX-MUX-A")
     mux_b = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}DX-MUX-B")
 
-    pp_a = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-A")
-    pp_b = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-B")
+    pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
+    pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
 
     tx_cables, rx_cables = cable_duplex_through_pp_pair(
         device_a_tx_rp=mux_a.line_ports["tx"].rear_port,
@@ -79,7 +79,7 @@ def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
         site: Site instance for all devices.
         dt_sf_mux: DeviceType for single-fiber MUX devices.
         dt_pp: DeviceType for patch panels.
-        roles: Dict with keys "wdm-mux" and "patch-panel" mapping to DeviceRole instances.
+        roles: Dict with keys "wdm-mux" and "fiber-pp" mapping to DeviceRole instances.
         name_prefix: Optional prefix for device names.
 
     Returns:
@@ -90,8 +90,8 @@ def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
     mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}SF-MUX-A")
     mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}SF-MUX-B")
 
-    pp_a = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-A")
-    pp_b = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-B")
+    pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
+    pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
 
     cables_tuple = cable_through_pp_pair(
         device_a_rearport=mux_a.line_ports["bidi"].rear_port,
@@ -123,7 +123,7 @@ def dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix=""):
         dt_dwdm: DeviceType for DWDM MUX device.
         dt_roadm: DeviceType for ROADM device.
         dt_pp: DeviceType for patch panels.
-        roles: Dict with keys "wdm-mux", "wdm-roadm", and "patch-panel" mapping to DeviceRole instances.
+        roles: Dict with keys "wdm-mux", "wdm-roadm", and "fiber-pp" mapping to DeviceRole instances.
         name_prefix: Optional prefix for device names.
 
     Returns:
@@ -134,8 +134,8 @@ def dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix=""):
     mux = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}DWDM-MUX", grid="dwdm_100ghz")
     roadm = create_roadm(site, dt_roadm, roles["wdm-roadm"], f"{p}ROADM")
 
-    pp_a = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-A")
-    pp_b = create_patch_panel(site, dt_pp, roles["patch-panel"], f"{p}PP-B")
+    pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
+    pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
 
     tx_cables, rx_cables = cable_duplex_through_pp_pair(
         device_a_tx_rp=mux.line_ports["tx"].rear_port,

@@ -1,9 +1,11 @@
-"""Device type factories: create DeviceTypes with port templates and PortTemplateMappings."""
+"""Device type factories: create DeviceTypes with port templates, PortTemplateMappings, and WDM profiles."""
 
 from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, RearPortTemplate
 from dcim.models.device_component_templates import PortTemplateMapping
 
-from netbox_wdm.wdm_constants import DWDM_100GHZ_CHANNELS
+from netbox_wdm.choices import WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
+from netbox_wdm.models import WdmChannelPlan, WdmProfile
+from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_100GHZ_CHANNELS
 
 
 def create_cwdm_mux_dx_type(manufacturer, num_channels=8):
@@ -65,6 +67,28 @@ def create_cwdm_mux_dx_type(manufacturer, num_channels=8):
             defaults={"front_port_position": 1, "rear_port_position": pos_idx},
         )
 
+    # WDM Profile + Channel Plans
+    profile, _ = WdmProfile.objects.get_or_create(
+        device_type=dt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
+            "grid": WdmGridChoices.CWDM,
+            "fiber_type": WdmFiberTypeChoices.DUPLEX,
+        },
+    )
+    for i, (fp_mux, fp_demux) in enumerate(zip(mux_fps, demux_fps, strict=True)):
+        pos, label, wl = CWDM_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_mux,
+                "demux_front_port_template": fp_demux,
+            },
+        )
+
     return dt
 
 
@@ -96,6 +120,30 @@ def create_cwdm_mux_sf_type(manufacturer, num_channels=8):
             front_port=fp,
             rear_port=com,
             defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+
+    # WDM Profile + Channel Plans (single-fiber: mux_front_port_template only, no demux)
+    profile, _ = WdmProfile.objects.get_or_create(
+        device_type=dt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
+            "grid": WdmGridChoices.CWDM,
+            "fiber_type": WdmFiberTypeChoices.SINGLE_FIBER,
+        },
+    )
+    # Channel FPs are the first num_channels entries in fps (before EXP and 1310)
+    channel_fps = fps[:num_channels]
+    for i, fp_ch in enumerate(channel_fps):
+        pos, label, wl = CWDM_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_ch,
+                "demux_front_port_template": None,
+            },
         )
 
     return dt
@@ -149,6 +197,30 @@ def create_dwdm_mux_dx_type(manufacturer, num_channels=44):
             front_port=fp_demux,
             rear_port=com_rx,
             defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+
+    # WDM Profile + Channel Plans (exclude EXP ports which are the last pair)
+    profile, _ = WdmProfile.objects.get_or_create(
+        device_type=dt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
+            "grid": WdmGridChoices.DWDM_100GHZ,
+            "fiber_type": WdmFiberTypeChoices.DUPLEX,
+        },
+    )
+    channel_mux_fps = mux_fps[:-1]  # exclude EXP
+    channel_demux_fps = demux_fps[:-1]
+    for i, (fp_mux, fp_demux) in enumerate(zip(channel_mux_fps, channel_demux_fps, strict=True)):
+        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_mux,
+                "demux_front_port_template": fp_demux,
+            },
         )
 
     return dt
@@ -225,6 +297,28 @@ def create_roadm_2d_type(manufacturer, num_add_drop=20):
             front_port=fp_drop,
             rear_port=line_east_rx,
             defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+
+    # WDM Profile + Channel Plans (ROADM uses ADD as mux, DROP as demux)
+    profile, _ = WdmProfile.objects.get_or_create(
+        device_type=dt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.ROADM,
+            "grid": WdmGridChoices.DWDM_100GHZ,
+            "fiber_type": WdmFiberTypeChoices.DUPLEX,
+        },
+    )
+    for i, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True)):
+        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_add,
+                "demux_front_port_template": fp_drop,
+            },
         )
 
     return dt
