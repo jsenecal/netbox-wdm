@@ -6,11 +6,23 @@ between WDM nodes, traversing through intermediate devices (patch panels, EDFAs)
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from dcim.models import CableTermination, FrontPort, PortMapping, RearPort
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
 from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
+
+
+@dataclass
+class TraceResult:
+    """Result of tracing a wavelength path."""
+
+    channels: list[WdmChannel]
+    is_complete: bool
+    is_active: bool
+    is_valid: bool
 
 
 def _follow_cable_from_rearport(rear_port: RearPort) -> RearPort | None:
@@ -363,15 +375,8 @@ def _check_far_end_role(far_rp: RearPort) -> bool:
     return lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)
 
 
-def trace_wavelength_path(start_channel: WdmChannel) -> dict[str, list[WdmChannel] | bool]:
-    """Trace a wavelength path starting from a channel.
-
-    Returns dict with:
-        channels: list of WdmChannel in path order
-        is_complete: bool
-        is_active: bool
-        is_valid: bool - False if any hop has a directionality error (TX→TX)
-    """
+def trace_wavelength_path(start_channel: WdmChannel) -> TraceResult:
+    """Trace a wavelength path starting from a channel."""
     from dcim.models import Cable
 
     grid_position = start_channel.grid_position
@@ -421,12 +426,12 @@ def trace_wavelength_path(start_channel: WdmChannel) -> dict[str, list[WdmChanne
         last_has_client = last.mux_front_port_id is not None or last.demux_front_port_id is not None
         is_complete = first_has_client and last_has_client
 
-    return {
-        "channels": channels,
-        "is_complete": is_complete,
-        "is_active": is_active and len(channels) >= 2,
-        "is_valid": is_valid,
-    }
+    return TraceResult(
+        channels=channels,
+        is_complete=is_complete,
+        is_active=is_active and len(channels) >= 2,
+        is_valid=is_valid,
+    )
 
 
 @transaction.atomic
@@ -440,7 +445,7 @@ def rebuild_wavelength_paths_for_node(node: WdmNode) -> None:
             continue
 
         result = trace_wavelength_path(channel)
-        channels = result["channels"]
+        channels = result.channels
 
         if len(channels) < 2:
             channel_pks = [ch.pk for ch in channels]
@@ -457,18 +462,18 @@ def rebuild_wavelength_paths_for_node(node: WdmNode) -> None:
             path = existing_path
             path.grid_position = channels[0].grid_position
             path.wavelength_nm = channels[0].wavelength_nm
-            path.is_complete = result["is_complete"]
-            path.is_active = result["is_active"]
-            path.is_valid = result["is_valid"]
+            path.is_complete = result.is_complete
+            path.is_active = result.is_active
+            path.is_valid = result.is_valid
             path.save()
             path.path_channels.all().delete()
         else:
             path = WdmWavelengthPath.objects.create(
                 grid_position=channels[0].grid_position,
                 wavelength_nm=channels[0].wavelength_nm,
-                is_complete=result["is_complete"],
-                is_active=result["is_active"],
-                is_valid=result["is_valid"],
+                is_complete=result.is_complete,
+                is_active=result.is_active,
+                is_valid=result.is_valid,
             )
 
         for seq, ch in enumerate(channels):

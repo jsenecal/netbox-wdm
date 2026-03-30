@@ -71,9 +71,6 @@ class TestTraceFunction:
         topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
         ch = topo.bundles["mux_a"].channels[0]
         result = trace_wavelength_path(ch)
-        assert "channels" in result
-        assert "is_complete" in result
-        assert "is_active" in result
-        assert len(result["channels"]) == 2
-        assert result["is_complete"] is True
-        assert result["is_active"] is True
+        assert len(result.channels) == 2
+        assert result.is_complete is True
+        assert result.is_active is True
