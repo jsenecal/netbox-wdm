@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from dcim.models import PortMapping, RearPort
@@ -10,6 +11,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from ..dataclasses import CableSegment, CableSegmentItem, ChannelTraceData, path_element_from_channel
 from ..filters import (
     WdmChannelFilterSet,
     WdmChannelPlanFilterSet,
@@ -219,64 +221,38 @@ class WdmChannelViewSet(NetBoxModelViewSet):
 
         if not path_entry:
             return Response(
-                {
-                    "channel_id": channel.pk,
-                    "wavelength_path_id": None,
-                    "wavelength_nm": None,
-                    "grid_position": channel.grid_position,
-                    "is_complete": False,
-                    "is_active": False,
-                    "hops": [],
-                    "cable_segments": [],
-                }
+                asdict(
+                    ChannelTraceData(
+                        channel_id=channel.pk,
+                        wavelength_path_id=None,
+                        wavelength_nm=None,
+                        grid_position=channel.grid_position,
+                        is_complete=False,
+                        is_active=False,
+                        is_valid=False,
+                    )
+                )
             )
 
         wl_path = path_entry.path
 
-        # Build hops
-        hops = []
+        # Build elements
+        elements = []
         for entry in wl_path.path_channels.select_related(
             "channel__wdm_node__device",
             "channel__mux_front_port",
             "channel__demux_front_port",
         ).order_by("sequence"):
-            ch = entry.channel
-            hops.append(
-                {
-                    "sequence": entry.sequence,
-                    "node_id": ch.wdm_node_id,
-                    "node_name": ch.wdm_node.device.name,
-                    "node_url": ch.wdm_node.device.get_absolute_url(),
-                    "channel_id": ch.pk,
-                    "channel_label": ch.label,
-                    "channel_url": ch.get_absolute_url(),
-                    "wavelength_nm": float(ch.wavelength_nm),
-                    "mux_port": {
-                        "id": ch.mux_front_port_id,
-                        "name": ch.mux_front_port.name,
-                        "url": ch.mux_front_port.get_absolute_url(),
-                    }
-                    if ch.mux_front_port
-                    else None,
-                    "demux_port": {
-                        "id": ch.demux_front_port_id,
-                        "name": ch.demux_front_port.name,
-                        "url": ch.demux_front_port.get_absolute_url(),
-                    }
-                    if ch.demux_front_port
-                    else None,
-                    "is_origin": entry.sequence == 0,
-                }
-            )
+            elements.append(path_element_from_channel(entry.channel, entry.sequence))
 
-        # Build cable segments between consecutive hops
-        cable_segments = []
+        # Build cable segments between consecutive elements
+        cable_segments: list[CableSegment] = []
         rp_ct = ContentType.objects.get_for_model(RearPort)
         hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
 
         for i in range(len(hop_entries) - 1):
             from_node = hop_entries[i].channel.wdm_node
-            segment_path = []
+            items: list[CableSegmentItem] = []
 
             tx_lp = (
                 WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"])
@@ -286,28 +262,28 @@ class WdmChannelViewSet(NetBoxModelViewSet):
 
             if tx_lp and tx_lp.rear_port.cable_id:
                 # Source rear port
-                segment_path.append(
-                    {
-                        "type": "rear_port",
-                        "id": tx_lp.rear_port_id,
-                        "name": tx_lp.rear_port.name,
-                        "device": from_node.device.name,
-                        "url": tx_lp.rear_port.get_absolute_url(),
-                    }
+                items.append(
+                    CableSegmentItem(
+                        type="rear_port",
+                        id=tx_lp.rear_port_id,
+                        name=tx_lp.rear_port.name,
+                        device=from_node.device.name,
+                        url=tx_lp.rear_port.get_absolute_url(),
+                    )
                 )
 
                 # Cable
                 try:
                     cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
-                    segment_path.append(
-                        {
-                            "type": "cable",
-                            "id": cable.pk,
-                            "label": cable.label or f"Cable #{cable.pk}",
-                            "status": cable.status,
-                            "color": cable.color or "",
-                            "url": cable.get_absolute_url(),
-                        }
+                    items.append(
+                        CableSegmentItem(
+                            type="cable",
+                            id=cable.pk,
+                            name=cable.label or f"Cable #{cable.pk}",
+                            status=cable.status,
+                            color=cable.color or "",
+                            url=cable.get_absolute_url(),
+                        )
                     )
                 except Cable.DoesNotExist:
                     pass
@@ -320,36 +296,37 @@ class WdmChannelViewSet(NetBoxModelViewSet):
                 if far_term:
                     far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
                     if far_rp:
-                        segment_path.append(
-                            {
-                                "type": "rear_port",
-                                "id": far_rp.pk,
-                                "name": far_rp.name,
-                                "device": far_rp.device.name,
-                                "url": far_rp.get_absolute_url(),
-                            }
+                        items.append(
+                            CableSegmentItem(
+                                type="rear_port",
+                                id=far_rp.pk,
+                                name=far_rp.name,
+                                device=far_rp.device.name,
+                                url=far_rp.get_absolute_url(),
+                            )
                         )
 
             cable_segments.append(
-                {
-                    "from_hop": hop_entries[i].sequence,
-                    "to_hop": hop_entries[i + 1].sequence,
-                    "path": segment_path,
-                }
+                CableSegment(
+                    from_sequence=hop_entries[i].sequence,
+                    to_sequence=hop_entries[i + 1].sequence,
+                    items=items,
+                )
             )
 
-        return Response(
-            {
-                "channel_id": channel.pk,
-                "wavelength_path_id": wl_path.pk,
-                "wavelength_nm": float(wl_path.wavelength_nm),
-                "grid_position": wl_path.grid_position,
-                "is_complete": wl_path.is_complete,
-                "is_active": wl_path.is_active,
-                "hops": hops,
-                "cable_segments": cable_segments,
-            }
+        trace_data = ChannelTraceData(
+            channel_id=channel.pk,
+            wavelength_path_id=wl_path.pk,
+            wavelength_nm=float(wl_path.wavelength_nm),
+            grid_position=wl_path.grid_position,
+            is_complete=wl_path.is_complete,
+            is_active=wl_path.is_active,
+            is_valid=wl_path.is_valid,
+            elements=elements,
+            cable_segments=cable_segments,
         )
+
+        return Response(asdict(trace_data))
 
 
 class WdmCircuitViewSet(NetBoxModelViewSet):
@@ -361,7 +338,7 @@ class WdmCircuitViewSet(NetBoxModelViewSet):
     def stitch(self, request: Any, pk: int | None = None) -> Response:
         """Return the stitched end-to-end wavelength path."""
         circuit = self.get_object()
-        path = circuit.get_stitched_path()
+        elements = circuit.get_stitched_path()
         wp = circuit.wavelength_path
         return Response(
             {
@@ -370,6 +347,6 @@ class WdmCircuitViewSet(NetBoxModelViewSet):
                 "wavelength_nm": float(wp.wavelength_nm) if wp else None,
                 "status": circuit.status,
                 "is_complete": wp.is_complete if wp else False,
-                "hops": path,
+                "elements": [asdict(e) for e in elements],
             }
         )

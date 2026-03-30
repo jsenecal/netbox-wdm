@@ -11,10 +11,10 @@
             <div class="card-body">
                 {% if stitched_path %}
                 <div class="d-flex flex-column align-items-center">
-                    {% for hop in stitched_path %}
+                    {% for element in stitched_path %}
                     {% if not forloop.first %}
                     <div class="d-flex flex-column align-items-center">
-                        {% if hop.demux_connected and prev_hop.mux_connected %}
+                        {% if element.demux_connected and prev_element.mux_connected %}
                         <i class="mdi mdi-arrow-down text-success" style="font-size: 24px;" title="{% trans 'Cable connected' %}"></i>
                         {% else %}
                         <i class="mdi mdi-arrow-down text-danger" style="font-size: 24px;" title="{% trans 'No cable' %}"></i>
@@ -23,23 +23,23 @@
                     {% endif %}
                     <div class="border rounded p-3 text-center" style="min-width: 350px;">
                         <div class="d-flex justify-content-between align-items-center mb-2">
-                            <strong>{{ hop.node_name }}</strong>
-                            <span class="text-muted">{{ hop.channel_label }} - {{ hop.wavelength_nm }} nm</span>
+                            <strong>{{ element.node_name }}</strong>
+                            <span class="text-muted">{{ element.channel_label }} - {{ element.wavelength_nm }} nm</span>
                         </div>
                         <div class="d-flex justify-content-around">
                             <small>
-                                {% if hop.mux_connected %}
+                                {% if element.mux_connected %}
                                 <span class="badge bg-success">MUX <i class="mdi mdi-cable-data"></i></span>
-                                {% elif hop.mux_front_port_id %}
+                                {% elif element.mux_port %}
                                 <span class="badge bg-warning text-dark">MUX <i class="mdi mdi-link-off"></i></span>
                                 {% else %}
                                 <span class="badge bg-secondary">MUX -</span>
                                 {% endif %}
                             </small>
                             <small>
-                                {% if hop.demux_connected %}
+                                {% if element.demux_connected %}
                                 <span class="badge bg-success">DEMUX <i class="mdi mdi-cable-data"></i></span>
-                                {% elif hop.demux_front_port_id %}
+                                {% elif element.demux_port %}
                                 <span class="badge bg-warning text-dark">DEMUX <i class="mdi mdi-link-off"></i></span>
                                 {% else %}
                                 <span class="badge bg-secondary">DEMUX -</span>
@@ -47,7 +47,7 @@
                             </small>
                         </div>
                     </div>
-                    {% with hop as prev_hop %}{% endwith %}
+                    {% with element as prev_element %}{% endwith %}
                     {% endfor %}
                 </div>
                 {% else %}

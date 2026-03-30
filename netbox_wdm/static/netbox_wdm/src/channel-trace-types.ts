@@ -4,7 +4,7 @@ export interface PortInfo {
   url: string;
 }
 
-export interface HopData {
+export interface PathElement {
   sequence: number;
   node_id: number;
   node_name: string;
@@ -17,33 +17,33 @@ export interface HopData {
   demux_port: PortInfo | null;
   mux_connected: boolean;
   demux_connected: boolean;
-  is_origin: boolean;
 }
 
-export interface CableSegmentElement {
+export interface CableSegmentItem {
   type: 'rear_port' | 'cable' | 'front_port';
   id: number;
   name: string;
+  url: string;
   device?: string;
   label?: string;
   status?: string;
   color?: string;
-  url: string;
 }
 
 export interface CableSegment {
-  from_hop: number;
-  to_hop: number;
-  path: CableSegmentElement[];
+  from_sequence: number;
+  to_sequence: number;
+  items: CableSegmentItem[];
 }
 
 export interface TraceData {
   channel_id: number;
-  wavelength_path_id: number;
-  wavelength_nm: number;
+  wavelength_path_id: number | null;
+  wavelength_nm: number | null;
   grid_position: number;
   is_complete: boolean;
   is_active: boolean;
-  hops: HopData[];
+  is_valid: boolean;
+  elements: PathElement[];
   cable_segments: CableSegment[];
 }

@@ -1,4 +1,4 @@
-import type { TraceData, HopData, CableSegment, CableSegmentElement } from './channel-trace-types';
+import type { TraceData, PathElement, CableSegment, CableSegmentItem } from './channel-trace-types';
 
 declare const d3: any;
 
@@ -47,7 +47,7 @@ function dbg(...args: unknown[]): void {
 
 // ── Interfaces for internal layout ──────────────────────────────
 interface LayoutNode {
-  hop: HopData;
+  element: PathElement;
   x: number;
   y: number;
   width: number;
@@ -55,7 +55,7 @@ interface LayoutNode {
 }
 
 interface LayoutCableElem {
-  elem: CableSegmentElement;
+  item: CableSegmentItem;
   x: number;
   y: number;
   width: number;
@@ -83,12 +83,12 @@ function computeLayout(data: TraceData): Layout {
   let curY = MARGIN.top;
   const centerX = MARGIN.left;
 
-  for (let i = 0; i < data.hops.length; i++) {
-    const hop = data.hops[i];
+  for (let i = 0; i < data.elements.length; i++) {
+    const element = data.elements[i];
 
     // Place node
     nodes.push({
-      hop,
+      element,
       x: centerX,
       y: curY,
       width: NODE_WIDTH,
@@ -96,16 +96,16 @@ function computeLayout(data: TraceData): Layout {
     });
     curY += NODE_HEIGHT;
 
-    // Place cable segment between this hop and next
-    const seg = data.cable_segments.find((s) => s.from_hop === hop.sequence);
-    if (seg && seg.path.length > 0) {
+    // Place cable segment between this element and next
+    const seg = data.cable_segments.find((s) => s.from_sequence === element.sequence);
+    if (seg && seg.items.length > 0) {
       curY += ELEM_GAP;
       const lineFromY = curY;
       const elems: LayoutCableElem[] = [];
 
-      for (const elem of seg.path) {
+      for (const item of seg.items) {
         elems.push({
-          elem,
+          item,
           x: centerX + (NODE_WIDTH - 200) / 2,
           y: curY,
           width: 200,
@@ -116,7 +116,7 @@ function computeLayout(data: TraceData): Layout {
 
       const lineToY = curY - ELEM_GAP;
       cables.push({ segment: seg, elements: elems, lineFromY, lineToY });
-    } else if (i < data.hops.length - 1) {
+    } else if (i < data.elements.length - 1) {
       // Gap between nodes even if no cable data
       curY += ELEM_GAP * 2;
     }
@@ -164,9 +164,9 @@ function hideTooltip(tooltip: any): void {
 }
 
 // ── Cable element color ──────────────────────────────────────────
-function cableColor(elem: CableSegmentElement): string {
-  if (elem.color) {
-    return elem.color.startsWith('#') ? elem.color : `#${elem.color}`;
+function cableColor(item: CableSegmentItem): string {
+  if (item.color) {
+    return item.color.startsWith('#') ? item.color : `#${item.color}`;
   }
   return colors().cableLine;
 }
@@ -227,9 +227,9 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
     for (const le of cable.elements) {
       const group = g.append('g').attr('transform', `translate(${le.x}, ${le.y})`).style('cursor', 'pointer');
 
-      const isCable = le.elem.type === 'cable';
-      const fill = isCable ? cableColor(le.elem) : c.portFill;
-      const stroke = isCable ? cableColor(le.elem) : c.portStroke;
+      const isCable = le.item.type === 'cable';
+      const fill = isCable ? cableColor(le.item) : c.portFill;
+      const stroke = isCable ? cableColor(le.item) : c.portStroke;
 
       group
         .append('rect')
@@ -242,8 +242,8 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
         .attr('stroke-width', 1);
 
       // Icon prefix
-      const icon = isCable ? '\u2500\u2500' : le.elem.type === 'rear_port' ? '\u25c9' : '\u25cb';
-      const label = `${icon}  ${le.elem.name}`;
+      const icon = isCable ? '\u2500\u2500' : le.item.type === 'rear_port' ? '\u25c9' : '\u25cb';
+      const label = `${icon}  ${le.item.name}`;
 
       group
         .append('text')
@@ -251,7 +251,7 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
         .attr('y', le.height / 2 + 1)
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'middle')
-        .attr('fill', isCable ? cableColor(le.elem) : c.text)
+        .attr('fill', isCable ? cableColor(le.item) : c.text)
         .attr('font-size', '11px')
         .attr('font-family', 'system-ui, sans-serif')
         .text(label);
@@ -259,31 +259,31 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
       // Tooltip
       group
         .on('mouseover', (event: MouseEvent) => {
-          const lines: string[] = [`<strong>${le.elem.name}</strong>`];
-          if (le.elem.device) lines.push(`Device: ${le.elem.device}`);
-          if (le.elem.label) lines.push(`Label: ${le.elem.label}`);
-          if (le.elem.status) lines.push(`Status: ${le.elem.status}`);
-          lines.push(`Type: ${le.elem.type.replace('_', ' ')}`);
+          const lines: string[] = [`<strong>${le.item.name}</strong>`];
+          if (le.item.device) lines.push(`Device: ${le.item.device}`);
+          if (le.item.label) lines.push(`Label: ${le.item.label}`);
+          if (le.item.status) lines.push(`Status: ${le.item.status}`);
+          lines.push(`Type: ${le.item.type.replace('_', ' ')}`);
           showTooltip(tooltip, lines.join('<br>'), event);
         })
         .on('mousemove', (event: MouseEvent) => {
-          const lines: string[] = [`<strong>${le.elem.name}</strong>`];
-          if (le.elem.device) lines.push(`Device: ${le.elem.device}`);
-          if (le.elem.label) lines.push(`Label: ${le.elem.label}`);
-          if (le.elem.status) lines.push(`Status: ${le.elem.status}`);
-          lines.push(`Type: ${le.elem.type.replace('_', ' ')}`);
+          const lines: string[] = [`<strong>${le.item.name}</strong>`];
+          if (le.item.device) lines.push(`Device: ${le.item.device}`);
+          if (le.item.label) lines.push(`Label: ${le.item.label}`);
+          if (le.item.status) lines.push(`Status: ${le.item.status}`);
+          lines.push(`Type: ${le.item.type.replace('_', ' ')}`);
           showTooltip(tooltip, lines.join('<br>'), event);
         })
         .on('mouseout', () => hideTooltip(tooltip))
         .on('click', () => {
-          if (le.elem.url) window.location.href = le.elem.url;
+          if (le.item.url) window.location.href = le.item.url;
         });
     }
   }
 
   // ── Draw nodes ────────────────────────────────────────────
   for (const ln of layout.nodes) {
-    const isCurrent = ln.hop.channel_id === currentChannelId;
+    const isCurrent = ln.element.channel_id === currentChannelId;
     const group = g.append('g').attr('transform', `translate(${ln.x}, ${ln.y})`).style('cursor', 'pointer');
 
     // Node background
@@ -305,7 +305,7 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
       .attr('font-size', '13px')
       .attr('font-weight', '600')
       .attr('font-family', 'system-ui, sans-serif')
-      .text(ln.hop.node_name);
+      .text(ln.element.node_name);
 
     // Channel label + wavelength (middle line)
     group
@@ -315,12 +315,12 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
       .attr('fill', c.textMuted)
       .attr('font-size', '11px')
       .attr('font-family', 'system-ui, sans-serif')
-      .text(`${ln.hop.channel_label}  \u2022  ${ln.hop.wavelength_nm} nm`);
+      .text(`${ln.element.channel_label}  \u2022  ${ln.element.wavelength_nm} nm`);
 
     // Port info (bottom line)
     const portParts: string[] = [];
-    if (ln.hop.mux_port) portParts.push(`MUX: ${ln.hop.mux_port.name}`);
-    if (ln.hop.demux_port) portParts.push(`DEMUX: ${ln.hop.demux_port.name}`);
+    if (ln.element.mux_port) portParts.push(`MUX: ${ln.element.mux_port.name}`);
+    if (ln.element.demux_port) portParts.push(`DEMUX: ${ln.element.demux_port.name}`);
     if (portParts.length > 0) {
       group
         .append('text')
@@ -333,13 +333,13 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
     }
 
     // MUX connection status dot
-    if (ln.hop.mux_port) {
+    if (ln.element.mux_port) {
       group
         .append('circle')
         .attr('cx', ln.width - 40)
         .attr('cy', 20)
         .attr('r', 5)
-        .attr('fill', ln.hop.mux_connected ? c.connectedDot : c.disconnectedDot);
+        .attr('fill', ln.element.mux_connected ? c.connectedDot : c.disconnectedDot);
 
       group
         .append('text')
@@ -352,13 +352,13 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
     }
 
     // DEMUX connection status dot
-    if (ln.hop.demux_port) {
+    if (ln.element.demux_port) {
       group
         .append('circle')
         .attr('cx', ln.width - 40)
         .attr('cy', 38)
         .attr('r', 5)
-        .attr('fill', ln.hop.demux_connected ? c.connectedDot : c.disconnectedDot);
+        .attr('fill', ln.element.demux_connected ? c.connectedDot : c.disconnectedDot);
 
       group
         .append('text')
@@ -371,7 +371,7 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
     }
 
     // Origin badge
-    if (ln.hop.is_origin) {
+    if (ln.element.sequence === 0) {
       group
         .append('rect')
         .attr('x', ln.width - 72)
@@ -398,27 +398,27 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
     group
       .on('mouseover', (event: MouseEvent) => {
         const lines: string[] = [
-          `<strong>${ln.hop.node_name}</strong>`,
-          `Channel: ${ln.hop.channel_label}`,
-          `Wavelength: ${ln.hop.wavelength_nm} nm`,
+          `<strong>${ln.element.node_name}</strong>`,
+          `Channel: ${ln.element.channel_label}`,
+          `Wavelength: ${ln.element.wavelength_nm} nm`,
         ];
-        if (ln.hop.mux_port) lines.push(`MUX: ${ln.hop.mux_port.name} (${ln.hop.mux_connected ? 'connected' : 'disconnected'})`);
-        if (ln.hop.demux_port) lines.push(`DEMUX: ${ln.hop.demux_port.name} (${ln.hop.demux_connected ? 'connected' : 'disconnected'})`);
+        if (ln.element.mux_port) lines.push(`MUX: ${ln.element.mux_port.name} (${ln.element.mux_connected ? 'connected' : 'disconnected'})`);
+        if (ln.element.demux_port) lines.push(`DEMUX: ${ln.element.demux_port.name} (${ln.element.demux_connected ? 'connected' : 'disconnected'})`);
         showTooltip(tooltip, lines.join('<br>'), event);
       })
       .on('mousemove', (event: MouseEvent) => {
         const lines: string[] = [
-          `<strong>${ln.hop.node_name}</strong>`,
-          `Channel: ${ln.hop.channel_label}`,
-          `Wavelength: ${ln.hop.wavelength_nm} nm`,
+          `<strong>${ln.element.node_name}</strong>`,
+          `Channel: ${ln.element.channel_label}`,
+          `Wavelength: ${ln.element.wavelength_nm} nm`,
         ];
-        if (ln.hop.mux_port) lines.push(`MUX: ${ln.hop.mux_port.name} (${ln.hop.mux_connected ? 'connected' : 'disconnected'})`);
-        if (ln.hop.demux_port) lines.push(`DEMUX: ${ln.hop.demux_port.name} (${ln.hop.demux_connected ? 'connected' : 'disconnected'})`);
+        if (ln.element.mux_port) lines.push(`MUX: ${ln.element.mux_port.name} (${ln.element.mux_connected ? 'connected' : 'disconnected'})`);
+        if (ln.element.demux_port) lines.push(`DEMUX: ${ln.element.demux_port.name} (${ln.element.demux_connected ? 'connected' : 'disconnected'})`);
         showTooltip(tooltip, lines.join('<br>'), event);
       })
       .on('mouseout', () => hideTooltip(tooltip))
       .on('click', () => {
-        if (ln.hop.channel_url) window.location.href = ln.hop.channel_url;
+        if (ln.element.channel_url) window.location.href = ln.element.channel_url;
       });
   }
 
@@ -489,13 +489,13 @@ function init(): void {
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">No trace data available.</div>';
     return;
   }
-  if (!data.hops || data.hops.length === 0) {
+  if (!data.elements || data.elements.length === 0) {
     container.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">This channel has no hops to display.</div>';
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">This channel has no elements to display.</div>';
     return;
   }
 
-  dbg('Initializing trace visualization', { channel_id: data.channel_id, hops: data.hops.length, currentId });
+  dbg('Initializing trace visualization', { channel_id: data.channel_id, elements: data.elements.length, currentId });
 
   render(container, tooltipEl, data, currentId ?? data.channel_id);
 }

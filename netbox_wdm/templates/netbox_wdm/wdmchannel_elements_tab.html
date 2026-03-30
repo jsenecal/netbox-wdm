@@ -1,0 +1,69 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load plugins %}
+{% load i18n %}
+
+{% block content %}
+{% if elements %}
+<div class="row mb-3">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">
+                {% trans "Wavelength Path Elements" %}
+                <span class="badge bg-primary ms-2">{{ elements|length }}</span>
+            </h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>{% trans "Device" %}</th>
+                        <th>{% trans "Channel" %}</th>
+                        <th>{% trans "Wavelength (nm)" %}</th>
+                        <th>{% trans "MUX Port" %}</th>
+                        <th>{% trans "DEMUX Port" %}</th>
+                        <th>{% trans "Status" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for element in elements %}
+                    <tr{% if element.channel_id == object.pk %} class="table-active"{% endif %}>
+                        <td>{{ element.sequence }}</td>
+                        <td><a href="{{ element.node_url }}">{{ element.node_name }}</a></td>
+                        <td><a href="{{ element.channel_url }}">{{ element.channel_label }}</a></td>
+                        <td>{{ element.wavelength_nm }}</td>
+                        <td>
+                            {% if element.mux_port %}
+                                <a href="{{ element.mux_port.url }}">{{ element.mux_port.name }}</a>
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if element.demux_port %}
+                                <a href="{{ element.demux_port.url }}">{{ element.demux_port.name }}</a>
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if element.mux_connected and element.demux_connected %}
+                                <span class="badge bg-success">{% trans "Connected" %}</span>
+                            {% elif element.mux_connected or element.demux_connected %}
+                                <span class="badge bg-warning text-dark">{% trans "Partial" %}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{% trans "Disconnected" %}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    {% trans "This channel is not part of a discovered wavelength path." %}
+</div>
+{% endif %}
+{% endblock %}

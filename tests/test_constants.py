@@ -2,8 +2,8 @@ import pytest
 
 from netbox_wdm.wdm_constants import (
     CWDM_CHANNELS,
-    DWDM_100GHZ_CHANNELS,
     DWDM_50GHZ_CHANNELS,
+    DWDM_100GHZ_CHANNELS,
     WDM_GRIDS,
 )
 

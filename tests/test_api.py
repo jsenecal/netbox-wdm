@@ -583,10 +583,10 @@ class TestStitchAPI:
         assert response.data["service_id"] == circuit.pk
         assert response.data["service_name"] == "Test Circuit"
         assert response.data["is_complete"] is False
-        assert response.data["hops"] == []
+        assert response.data["elements"] == []
 
     def test_stitch_with_channels(self, api_client, channel, wdm_node):
-        """A circuit with a wavelength path returns hops in sequence order."""
+        """A circuit with a wavelength path returns elements in sequence order."""
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm="1560.61", is_complete=True, is_active=True
         )
@@ -598,17 +598,17 @@ class TestStitchAPI:
         )
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data["hops"]) == 1
-        hop = response.data["hops"][0]
-        assert hop["channel_id"] == channel.pk
-        assert hop["channel_label"] == channel.label
-        assert hop["node_id"] == wdm_node.pk
+        assert len(response.data["elements"]) == 1
+        element = response.data["elements"][0]
+        assert element["channel_id"] == channel.pk
+        assert element["channel_label"] == channel.label
+        assert element["node_id"] == wdm_node.pk
 
     def test_stitch_response_shape(self, api_client, circuit):
         """Verify top-level keys are always present."""
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        for key in ("service_id", "service_name", "wavelength_nm", "status", "is_complete", "hops"):
+        for key in ("service_id", "service_name", "wavelength_nm", "status", "is_complete", "elements"):
             assert key in response.data
 
     def test_stitch_wavelength_value(self, api_client, channel):
@@ -642,11 +642,11 @@ class TestWdmChannelTraceAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["channel_id"] == channel.pk
         assert response.data["wavelength_path_id"] is None
-        assert response.data["hops"] == []
+        assert response.data["elements"] == []
         assert response.data["cable_segments"] == []
 
     def test_trace_with_path(self, api_client, wdm_node, channel):
-        """Channel on a wavelength path returns hop data."""
+        """Channel on a wavelength path returns element data."""
         path = WdmWavelengthPath.objects.create(
             grid_position=1, wavelength_nm="1560.61", is_complete=True, is_active=True
         )
@@ -656,12 +656,12 @@ class TestWdmChannelTraceAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["wavelength_path_id"] == path.pk
         assert response.data["wavelength_nm"] == 1560.61
-        assert len(response.data["hops"]) == 1
-        hop = response.data["hops"][0]
-        assert hop["channel_id"] == channel.pk
-        assert hop["node_name"] == wdm_node.device.name
-        assert "node_url" in hop
-        assert "channel_url" in hop
+        assert len(response.data["elements"]) == 1
+        element = response.data["elements"][0]
+        assert element["channel_id"] == channel.pk
+        assert element["node_name"] == wdm_node.device.name
+        assert "node_url" in element
+        assert "channel_url" in element
 
     def test_trace_response_shape(self, api_client, channel):
         """Verify all top-level keys are present."""
@@ -674,7 +674,8 @@ class TestWdmChannelTraceAPI:
             "grid_position",
             "is_complete",
             "is_active",
-            "hops",
+            "is_valid",
+            "elements",
             "cable_segments",
         ):
             assert key in response.data

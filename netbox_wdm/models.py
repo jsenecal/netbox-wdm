@@ -17,6 +17,7 @@ from .choices import (
     WdmLineRoleChoices,
     WdmNodeTypeChoices,
 )
+from .dataclasses import PathElement, path_element_from_channel
 
 
 class WdmProfile(NetBoxModel):
@@ -484,30 +485,16 @@ class WdmWavelengthPath(NetBoxModel):
             "wavelength_path_entries__sequence"
         )
 
-    def get_stitched_path(self) -> list[dict[str, Any]]:
-        """Return the stitched end-to-end path as an ordered list of hop dicts."""
-        hops: list[dict[str, Any]] = []
+    def get_stitched_path(self) -> list[PathElement]:
+        """Return the stitched end-to-end path as an ordered list of PathElement dataclasses."""
+        elements: list[PathElement] = []
         for entry in self.path_channels.select_related(
             "channel__wdm_node__device",
             "channel__mux_front_port",
             "channel__demux_front_port",
         ).order_by("sequence"):
-            ch = entry.channel
-            hops.append(
-                {
-                    "type": "wdm_node",
-                    "node_id": ch.wdm_node_id,
-                    "node_name": ch.wdm_node.device.name,
-                    "channel_id": ch.pk,
-                    "channel_label": ch.label,
-                    "wavelength_nm": float(ch.wavelength_nm),
-                    "mux_front_port_id": ch.mux_front_port_id,
-                    "mux_connected": bool(ch.mux_front_port and ch.mux_front_port.cable_id),
-                    "demux_front_port_id": ch.demux_front_port_id,
-                    "demux_connected": bool(ch.demux_front_port and ch.demux_front_port.cable_id),
-                }
-            )
-        return hops
+            elements.append(path_element_from_channel(entry.channel, entry.sequence))
+        return elements
 
 
 class WdmWavelengthPathChannel(models.Model):
@@ -613,8 +600,8 @@ class WdmCircuit(NetBoxModel):
                     self.wavelength_path = None
                     super().save(update_fields=["wavelength_path"])
 
-    def get_stitched_path(self) -> list[dict[str, Any]]:
-        """Return the stitched end-to-end path as an ordered list of hop dicts."""
+    def get_stitched_path(self) -> list[PathElement]:
+        """Return the stitched end-to-end path as an ordered list of PathElement dataclasses."""
         if self.wavelength_path:
             return self.wavelength_path.get_stitched_path()
         return []
