@@ -181,11 +181,12 @@ class WdmWavelengthPathTable(NetBoxTable):
     nodes = tables.Column(verbose_name=_("Nodes"), empty_values=(), orderable=False)
     is_complete = columns.BooleanColumn(verbose_name=_("Complete"))
     is_active = columns.BooleanColumn(verbose_name=_("Active"))
+    is_valid = columns.BooleanColumn(verbose_name=_("Valid"))
 
     class Meta(NetBoxTable.Meta):
         model = WdmWavelengthPath
-        fields = ("id", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
-        default_columns = ("wavelength_nm", "grid_position", "nodes", "is_complete", "is_active")
+        fields = ("id", "wavelength_nm", "grid_position", "nodes", "is_complete", "is_active", "is_valid")
+        default_columns = ("wavelength_nm", "grid_position", "nodes", "is_complete", "is_active", "is_valid")
         exclude = ("pk", "actions")
 
     def render_wavelength_nm(self, record, value):

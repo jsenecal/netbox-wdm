@@ -450,6 +450,11 @@ class WdmWavelengthPath(NetBoxModel):
         default=False,
         verbose_name=_("is active"),
     )
+    is_valid = models.BooleanField(
+        default=True,
+        verbose_name=_("is valid"),
+        help_text=_("False if the path has directionality errors (e.g. TX-to-TX cabling)."),
+    )
 
     class Meta:
         ordering = ("wavelength_nm",)

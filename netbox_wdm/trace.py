@@ -331,6 +331,22 @@ def _find_origin(node, grid_position):
         current = prev_node
 
 
+def _check_far_end_role(far_rp):
+    """Check if the far-end rear port has the correct role for receiving (RX or BIDI).
+
+    Returns True if valid (RX/BIDI), False if invalid (TX — indicates TX-to-TX cabling).
+    Returns True if no WdmLinePort exists (non-WDM device, passthrough).
+    """
+    from .choices import WdmLineRoleChoices
+
+    try:
+        lp = WdmLinePort.objects.get(rear_port=far_rp)
+    except WdmLinePort.DoesNotExist:
+        return True  # Not a WDM line port — no role to check
+
+    return lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)
+
+
 def trace_wavelength_path(start_channel):
     """Trace a wavelength path starting from a channel.
 
@@ -338,6 +354,7 @@ def trace_wavelength_path(start_channel):
         channels: list of WdmChannel in path order
         is_complete: bool
         is_active: bool
+        is_valid: bool - False if any hop has a directionality error (TX→TX)
     """
     from dcim.models import Cable
 
@@ -347,6 +364,7 @@ def trace_wavelength_path(start_channel):
     channels = []
     visited = set()
     is_active = True
+    is_valid = True
     current = origin
 
     while current is not None and current.pk not in visited:
@@ -369,9 +387,13 @@ def trace_wavelength_path(start_channel):
         if cable.status != "connected":
             is_active = False
 
-        next_node, _ = _get_far_end_node(tx_rp)
+        next_node, far_rp = _get_far_end_node(tx_rp)
         if next_node is None:
             break
+
+        # Check directionality: far-end should be RX or BIDI, not TX
+        if far_rp and not _check_far_end_role(far_rp):
+            is_valid = False
 
         current = next_node
 
@@ -387,6 +409,7 @@ def trace_wavelength_path(start_channel):
         "channels": channels,
         "is_complete": is_complete,
         "is_active": is_active and len(channels) >= 2,
+        "is_valid": is_valid,
     }
 
 
@@ -420,6 +443,7 @@ def rebuild_wavelength_paths_for_node(node):
             path.wavelength_nm = channels[0].wavelength_nm
             path.is_complete = result["is_complete"]
             path.is_active = result["is_active"]
+            path.is_valid = result["is_valid"]
             path.save()
             path.path_channels.all().delete()
         else:
@@ -428,6 +452,7 @@ def rebuild_wavelength_paths_for_node(node):
                 wavelength_nm=channels[0].wavelength_nm,
                 is_complete=result["is_complete"],
                 is_active=result["is_active"],
+                is_valid=result["is_valid"],
             )
 
         for seq, ch in enumerate(channels):
