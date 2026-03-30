@@ -1,11 +1,13 @@
 """Device instance builders. Create devices with WDM nodes, line ports, and channels."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
-from dcim.models import Device, RearPort
+from dcim.models import Device, DeviceRole, DeviceType, RearPort, Site
 
 from netbox_wdm.choices import WdmGridChoices, WdmLineDirectionChoices, WdmLineRoleChoices, WdmNodeTypeChoices
-from netbox_wdm.models import WdmLinePort, WdmNode
+from netbox_wdm.models import WdmChannel, WdmLinePort, WdmNode
 
 
 @dataclass
@@ -14,11 +16,13 @@ class WdmDeviceBundle:
 
     device: Device
     node: WdmNode
-    line_ports: dict  # keyed by role: "tx", "rx", "bidi"
-    channels: list  # list of WdmChannel
+    line_ports: dict[str, WdmLinePort]
+    channels: list[WdmChannel]
 
 
-def create_duplex_mux(site, device_type, role, name, grid=WdmGridChoices.CWDM):
+def create_duplex_mux(
+    site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.CWDM
+) -> WdmDeviceBundle:
     """Create a duplex MUX device with WDM node, line ports, and channels."""
     device = Device.objects.create(name=name, site=site, device_type=device_type, role=role)
     node, _ = WdmNode.objects.get_or_create(
@@ -41,7 +45,9 @@ def create_duplex_mux(site, device_type, role, name, grid=WdmGridChoices.CWDM):
     return WdmDeviceBundle(device=device, node=node, line_ports={"tx": lp_tx, "rx": lp_rx}, channels=channels)
 
 
-def create_sf_mux(site, device_type, role, name, grid=WdmGridChoices.CWDM):
+def create_sf_mux(
+    site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.CWDM
+) -> WdmDeviceBundle:
     """Create a single-fiber MUX device."""
     device = Device.objects.create(name=name, site=site, device_type=device_type, role=role)
     node, _ = WdmNode.objects.get_or_create(
@@ -58,7 +64,9 @@ def create_sf_mux(site, device_type, role, name, grid=WdmGridChoices.CWDM):
     return WdmDeviceBundle(device=device, node=node, line_ports={"bidi": lp_bidi}, channels=channels)
 
 
-def create_roadm(site, device_type, role, name, grid=WdmGridChoices.DWDM_100GHZ):
+def create_roadm(
+    site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.DWDM_100GHZ
+) -> WdmDeviceBundle:
     """Create a 2-degree ROADM."""
     device = Device.objects.create(name=name, site=site, device_type=device_type, role=role)
     node, _ = WdmNode.objects.get_or_create(
@@ -83,6 +91,6 @@ def create_roadm(site, device_type, role, name, grid=WdmGridChoices.DWDM_100GHZ)
     return WdmDeviceBundle(device=device, node=node, line_ports=line_ports, channels=channels)
 
 
-def create_patch_panel(site, device_type, role, name):
+def create_patch_panel(site: Site, device_type: DeviceType, role: DeviceRole, name: str) -> Device:
     """Create a fiber patch panel device. Returns the Device (no WDM node)."""
     return Device.objects.create(name=name, site=site, device_type=device_type, role=role)

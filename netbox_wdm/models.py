@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.urls import reverse
@@ -51,10 +55,10 @@ class WdmProfile(NetBoxModel):
         verbose_name = _("WDM profile")
         verbose_name_plural = _("WDM profiles")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"WDM Profile: {self.device_type}"
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmprofile", args=[self.pk])
 
 
@@ -116,10 +120,10 @@ class WdmChannelPlan(NetBoxModel):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.label} ({self.wavelength_nm}nm)"
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmchannelplan", args=[self.pk])
 
 
@@ -153,14 +157,14 @@ class WdmNode(NetBoxModel):
         verbose_name = _("WDM node")
         verbose_name_plural = _("WDM nodes")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"WDM: {self.device.name}"
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmnode", args=[self.pk])
 
     @property
-    def is_fixed(self):
+    def is_fixed(self) -> bool:
         """Fixed nodes have hardware-determined channel and port assignments.
 
         Only ROADM nodes allow runtime changes to channels and line ports.
@@ -214,7 +218,7 @@ class WdmNode(NetBoxModel):
 
         return errors
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Save and auto-populate channels from device type profile on creation."""
         is_new = self._state.adding
         with transaction.atomic():
@@ -222,7 +226,7 @@ class WdmNode(NetBoxModel):
             if is_new and self.node_type != WdmNodeTypeChoices.AMPLIFIER:
                 self._auto_populate_channels()
 
-    def _auto_populate_channels(self):
+    def _auto_populate_channels(self) -> None:
         """Create WdmChannel rows from the device type's WDM profile channel plans."""
         from dcim.models import FrontPort
 
@@ -300,13 +304,13 @@ class WdmLinePort(NetBoxModel):
 
     FIXED_FIELDS = ("rear_port", "direction", "role")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.direction}: {self.rear_port}"
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmlineport", args=[self.pk])
 
-    def _check_fixed_fields(self):
+    def _check_fixed_fields(self) -> None:
         """Check that fixed fields haven't changed on a fixed node."""
         if not self.pk or not self.wdm_node.is_fixed:
             return
@@ -316,12 +320,12 @@ class WdmLinePort(NetBoxModel):
             if getattr(self, attr) != getattr(db_obj, attr):
                 raise ValidationError(_("Cannot modify %(field)s on a fixed WDM node.") % {"field": field})
 
-    def clean(self):
+    def clean(self) -> None:
         """On fixed nodes, line port configuration cannot be changed after creation."""
         super().clean()
         self._check_fixed_fields()
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Enforce fixed node constraints at save time.
 
         Allows initial creation (from auto-populate) but blocks modifications
@@ -391,26 +395,26 @@ class WdmChannel(NetBoxModel):
     FIXED_FIELDS = ("mux_front_port", "demux_front_port")
 
     @property
-    def label(self):
+    def label(self) -> str:
         """ITU channel label derived from the node's grid and this channel's position."""
         from .wdm_constants import get_channel_info
 
         return get_channel_info(self.wdm_node.grid, self.grid_position)[0]
 
     @property
-    def wavelength_nm(self):
+    def wavelength_nm(self) -> float:
         """Wavelength in nm derived from the node's grid and this channel's position."""
         from .wdm_constants import get_channel_info
 
         return get_channel_info(self.wdm_node.grid, self.grid_position)[1]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.label} ({self.wavelength_nm}nm)"
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmchannel", args=[self.pk])
 
-    def _check_fixed_fields(self):
+    def _check_fixed_fields(self) -> None:
         """Check that fixed fields haven't changed on a fixed node."""
         if not self.pk or not self.wdm_node.is_fixed:
             return
@@ -422,12 +426,12 @@ class WdmChannel(NetBoxModel):
                     _("Cannot modify %(field)s on a fixed WDM node. Only status can be changed.") % {"field": field}
                 )
 
-    def clean(self):
+    def clean(self) -> None:
         """On fixed nodes, only status may be changed after creation."""
         super().clean()
         self._check_fixed_fields()
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Enforce fixed node constraints at save time."""
         self._check_fixed_fields()
         super().save(*args, **kwargs)
@@ -461,10 +465,10 @@ class WdmWavelengthPath(NetBoxModel):
         verbose_name = _("WDM wavelength path")
         verbose_name_plural = _("WDM wavelength paths")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"WavelengthPath {self.pk} ({self.wavelength_nm}nm)"
 
-    def get_display_label(self):
+    def get_display_label(self) -> str:
         """Rich label with node names for UI display. Queries the database."""
         node_names = list(
             self.path_channels.select_related("channel__wdm_node__device")
@@ -474,15 +478,15 @@ class WdmWavelengthPath(NetBoxModel):
         nodes_str = " \u2192 ".join(node_names) if node_names else "empty"
         return f"{self.wavelength_nm}nm: {nodes_str}"
 
-    def get_channels(self):
+    def get_channels(self) -> models.QuerySet[WdmChannel]:
         """Return channels in sequence order."""
         return WdmChannel.objects.filter(wavelength_path_entries__path=self).order_by(
             "wavelength_path_entries__sequence"
         )
 
-    def get_stitched_path(self):
+    def get_stitched_path(self) -> list[dict[str, Any]]:
         """Return the stitched end-to-end path as an ordered list of hop dicts."""
-        hops = []
+        hops: list[dict[str, Any]] = []
         for entry in self.path_channels.select_related(
             "channel__wdm_node__device",
             "channel__mux_front_port",
@@ -538,7 +542,7 @@ class WdmWavelengthPathChannel(models.Model):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.path} #{self.sequence}: {self.channel}"
 
 
@@ -581,17 +585,17 @@ class WdmCircuit(NetBoxModel):
         verbose_name = _("WDM circuit")
         verbose_name_plural = _("WDM circuits")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
-    def get_absolute_url(self):
+    def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmcircuit", args=[self.pk])
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._original_status = self.status if self.pk else None
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Save and handle lifecycle transitions."""
         is_new = self._state.adding
         old_status = self._original_status
@@ -609,7 +613,7 @@ class WdmCircuit(NetBoxModel):
                     self.wavelength_path = None
                     super().save(update_fields=["wavelength_path"])
 
-    def get_stitched_path(self):
+    def get_stitched_path(self) -> list[dict[str, Any]]:
         """Return the stitched end-to-end path as an ordered list of hop dicts."""
         if self.wavelength_path:
             return self.wavelength_path.get_stitched_path()

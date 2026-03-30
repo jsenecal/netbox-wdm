@@ -4,14 +4,16 @@ Discovers end-to-end wavelength paths by following cable connections
 between WDM nodes, traversing through intermediate devices (patch panels, EDFAs).
 """
 
+from __future__ import annotations
+
 from dcim.models import CableTermination, FrontPort, PortMapping, RearPort
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
-from .models import WdmChannel, WdmLinePort, WdmWavelengthPath, WdmWavelengthPathChannel
+from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
 
 
-def _follow_cable_from_rearport(rear_port):
+def _follow_cable_from_rearport(rear_port: RearPort) -> RearPort | None:
     """Follow a cable from a rear port to its paired far-end rear port.
 
     Handles multi-termination trunk cables by matching position in the ordered
@@ -20,14 +22,17 @@ def _follow_cable_from_rearport(rear_port):
     Returns the far-end RearPort or None.
     """
     fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=rear_port.pk)
-    if not fresh_rp.cable_id:
+    if not fresh_rp.cable_id:  # type: ignore[attr-defined]
         return None
 
     rp_ct = ContentType.objects.get_for_model(RearPort)
 
     # Get all terminations for this cable, ordered by PK (creation order = position)
     all_terms = list(
-        CableTermination.objects.filter(cable_id=fresh_rp.cable_id, termination_type=rp_ct).order_by("cable_end", "pk")
+        CableTermination.objects.filter(
+            cable_id=fresh_rp.cable_id,
+            termination_type=rp_ct,  # type: ignore[attr-defined]
+        ).order_by("cable_end", "pk")
     )
 
     # Find which side and position our rear port is on
@@ -64,20 +69,21 @@ def _follow_cable_from_rearport(rear_port):
         return None
 
 
-def _follow_frontport_cable(front_port):
+def _follow_frontport_cable(front_port: FrontPort) -> FrontPort | None:
     """Follow a cable from a front port to its paired far-end front port.
 
     Handles multi-termination cables by matching position.
     Returns the far-end FrontPort or None.
     """
-    if not front_port.cable_id:
+    if not front_port.cable_id:  # type: ignore[attr-defined]
         return None
 
     fp_ct = ContentType.objects.get_for_model(FrontPort)
     all_terms = list(
-        CableTermination.objects.filter(cable_id=front_port.cable_id, termination_type=fp_ct).order_by(
-            "cable_end", "pk"
-        )
+        CableTermination.objects.filter(
+            cable_id=front_port.cable_id,
+            termination_type=fp_ct,  # type: ignore[attr-defined]
+        ).order_by("cable_end", "pk")
     )
 
     a_terms = [t for t in all_terms if t.cable_end == "A"]
@@ -110,13 +116,13 @@ def _follow_frontport_cable(front_port):
         return None
 
 
-def _follow_cable_from_rearport_to_frontport(rear_port):
+def _follow_cable_from_rearport_to_frontport(rear_port: RearPort) -> FrontPort | None:
     """Follow a cable from a rear port to a far-end front port (patch cable pattern).
 
     Returns the far-end FrontPort or None.
     """
     fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=rear_port.pk)
-    if not fresh_rp.cable_id:
+    if not fresh_rp.cable_id:  # type: ignore[attr-defined]
         return None
 
     rp_ct = ContentType.objects.get_for_model(RearPort)
@@ -124,10 +130,16 @@ def _follow_cable_from_rearport_to_frontport(rear_port):
 
     # Find which side the rear port is on
     rp_terms = list(
-        CableTermination.objects.filter(cable_id=fresh_rp.cable_id, termination_type=rp_ct).order_by("cable_end", "pk")
+        CableTermination.objects.filter(
+            cable_id=fresh_rp.cable_id,
+            termination_type=rp_ct,  # type: ignore[attr-defined]
+        ).order_by("cable_end", "pk")
     )
     fp_terms = list(
-        CableTermination.objects.filter(cable_id=fresh_rp.cable_id, termination_type=fp_ct).order_by("cable_end", "pk")
+        CableTermination.objects.filter(
+            cable_id=fresh_rp.cable_id,
+            termination_type=fp_ct,  # type: ignore[attr-defined]
+        ).order_by("cable_end", "pk")
     )
 
     if not fp_terms:
@@ -163,7 +175,7 @@ def _follow_cable_from_rearport_to_frontport(rear_port):
         return None
 
 
-def _resolve_rearport_cable(current_rp, visited):
+def _resolve_rearport_cable(current_rp: RearPort, visited: set[int]) -> RearPort | None:
     """Follow a cable from a RearPort to the next RearPort.
 
     Handles both direct trunk cables (RP→RP) and patch cables through
@@ -209,7 +221,7 @@ def _resolve_rearport_cable(current_rp, visited):
             return None
 
         exit_fp = pm_exit.front_port
-        if not exit_fp.cable_id:
+        if not exit_fp.cable_id:  # type: ignore[attr-defined]
             return None
 
         # Follow FrontPort cable — could go to RearPort (patch cable out)
@@ -224,7 +236,11 @@ def _resolve_rearport_cable(current_rp, visited):
         # Check CableTermination for RearPort on far end of exit_fp's cable
         rp_ct = ContentType.objects.get_for_model(RearPort)
         fp_ct = ContentType.objects.get_for_model(FrontPort)
-        all_terms = list(CableTermination.objects.filter(cable_id=exit_fp.cable_id).order_by("cable_end", "pk"))
+        all_terms = list(
+            CableTermination.objects.filter(
+                cable_id=exit_fp.cable_id  # type: ignore[attr-defined]
+            ).order_by("cable_end", "pk")
+        )
         my_side = None
         for t in all_terms:
             if t.termination_type == fp_ct and t.termination_id == exit_fp.pk:
@@ -241,7 +257,7 @@ def _resolve_rearport_cable(current_rp, visited):
     return None
 
 
-def _get_far_end_node(rear_port):
+def _get_far_end_node(rear_port: RearPort) -> tuple[WdmNode | None, RearPort | None]:
     """Follow cables from rear_port through intermediate devices until reaching a WDM node.
 
     Supports:
@@ -277,7 +293,7 @@ def _get_far_end_node(rear_port):
     return None, None
 
 
-def _get_tx_rear_port(node):
+def _get_tx_rear_port(node: WdmNode) -> RearPort | None:
     """Get the TX or BIDI line port's rear port for outbound tracing."""
     from .choices import WdmLineRoleChoices
 
@@ -289,7 +305,7 @@ def _get_tx_rear_port(node):
     return lp.rear_port if lp else None
 
 
-def _get_rx_rear_port(node):
+def _get_rx_rear_port(node: WdmNode) -> RearPort | None:
     """Get the RX or BIDI line port's rear port for inbound tracing."""
     from .choices import WdmLineRoleChoices
 
@@ -301,7 +317,7 @@ def _get_rx_rear_port(node):
     return lp.rear_port if lp else None
 
 
-def _find_origin(node, grid_position):
+def _find_origin(node: WdmNode, grid_position: int) -> WdmNode:
     """Walk backwards via RX ports to find the origin node for a grid position.
 
     Only considers a node as a predecessor if its TX port connects to
@@ -331,7 +347,7 @@ def _find_origin(node, grid_position):
         current = prev_node
 
 
-def _check_far_end_role(far_rp):
+def _check_far_end_role(far_rp: RearPort) -> bool:
     """Check if the far-end rear port has the correct role for receiving (RX or BIDI).
 
     Returns True if valid (RX/BIDI), False if invalid (TX — indicates TX-to-TX cabling).
@@ -347,7 +363,7 @@ def _check_far_end_role(far_rp):
     return lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)
 
 
-def trace_wavelength_path(start_channel):
+def trace_wavelength_path(start_channel: WdmChannel) -> dict[str, list[WdmChannel] | bool]:
     """Trace a wavelength path starting from a channel.
 
     Returns dict with:
@@ -380,10 +396,10 @@ def trace_wavelength_path(start_channel):
             break
 
         fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=tx_rp.pk)
-        if not fresh_rp.cable_id:
+        if not fresh_rp.cable_id:  # type: ignore[attr-defined]
             break
 
-        cable = Cable.objects.get(pk=fresh_rp.cable_id)
+        cable = Cable.objects.get(pk=fresh_rp.cable_id)  # type: ignore[attr-defined]
         if cable.status != "connected":
             is_active = False
 
@@ -414,7 +430,7 @@ def trace_wavelength_path(start_channel):
 
 
 @transaction.atomic
-def rebuild_wavelength_paths_for_node(node):
+def rebuild_wavelength_paths_for_node(node: WdmNode) -> None:
     """Rebuild all WdmWavelengthPath records involving channels on this node."""
     grid_positions = WdmChannel.objects.filter(wdm_node=node).values_list("grid_position", flat=True).distinct()
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from netbox.api.serializers import NetBoxModelSerializer
 from rest_framework import serializers
 

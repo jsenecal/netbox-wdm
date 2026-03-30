@@ -3,6 +3,8 @@
 Used by both the sample data management command and the test suite.
 """
 
+from __future__ import annotations
+
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
 from .dcim import create_device_roles, create_manufacturer, create_site
 from .device_types import (

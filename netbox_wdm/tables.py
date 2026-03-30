@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 import django_tables2 as tables
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
@@ -28,7 +32,7 @@ class WdmProfileTable(NetBoxTable):
         fields = ("pk", "id", "name", "device_type", "node_type", "grid", "fiber_type", "description", "actions")
         default_columns = ("pk", "name", "device_type", "node_type", "grid", "fiber_type", "actions")
 
-    def render_name(self, record):
+    def render_name(self, record: Any) -> str:
         return str(record)
 
 
@@ -79,7 +83,7 @@ class WdmNodeTable(NetBoxTable):
         fields = ("pk", "id", "name", "device", "node_type", "grid", "description", "actions")
         default_columns = ("pk", "name", "node_type", "grid", "actions")
 
-    def render_name(self, record):
+    def render_name(self, record: Any) -> str:
         return str(record)
 
 
@@ -189,14 +193,14 @@ class WdmWavelengthPathTable(NetBoxTable):
         default_columns = ("wavelength_nm", "grid_position", "nodes", "is_complete", "is_active", "is_valid")
         exclude = ("pk", "actions")
 
-    def render_wavelength_nm(self, record, value):
+    def render_wavelength_nm(self, record: Any, value: Any) -> Any:
         first_entry = record.path_channels.order_by("sequence").select_related("channel").first()
         if first_entry:
             url = first_entry.channel.get_absolute_url()
             return format_html('<a href="{}">{}</a>', url, value)
         return value
 
-    def render_nodes(self, record):
+    def render_nodes(self, record: Any) -> Any:
         from django.utils.html import format_html_join
 
         entries = record.path_channels.select_related("channel__wdm_node__device").order_by("sequence")

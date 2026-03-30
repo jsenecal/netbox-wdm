@@ -1,5 +1,7 @@
 """ITU grid constants for WDM channel plans."""
 
+from __future__ import annotations
+
 _SPEED_OF_LIGHT_KMS = 299792.458
 
 CWDM_CHANNELS: tuple[tuple[int, str, float], ...] = tuple(

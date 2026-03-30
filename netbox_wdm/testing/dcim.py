@@ -1,19 +1,21 @@
 """DCIM foundation factories: sites, manufacturers, device roles."""
 
+from __future__ import annotations
+
 from dcim.models import DeviceRole, Manufacturer, Site
 
 
-def create_site(name, slug=None):
+def create_site(name: str, slug: str | None = None) -> Site:
     slug = slug or name.lower().replace(" ", "-")
     return Site.objects.create(name=name, slug=slug)
 
 
-def create_manufacturer(name="WDM Vendor", slug=None):
+def create_manufacturer(name: str = "WDM Vendor", slug: str | None = None) -> Manufacturer:
     slug = slug or name.lower().replace(" ", "-")
     return Manufacturer.objects.create(name=name, slug=slug)
 
 
-def create_device_roles():
+def create_device_roles() -> dict[str, DeviceRole]:
     """Create standard WDM device roles. Returns dict keyed by slug."""
     roles = {}
     for name, slug in [

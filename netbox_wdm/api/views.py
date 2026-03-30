@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from dcim.models import PortMapping, RearPort
 from django.db import transaction
 from django.db.models import Q
@@ -44,7 +48,7 @@ class WdmChannelPlanViewSet(NetBoxModelViewSet):
     filterset_class = WdmChannelPlanFilterSet
 
 
-def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) -> dict:
+def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | None]]) -> dict[str, int]:
     """Apply channel-to-port mapping changes. Uses bulk operations.
 
     desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
@@ -120,7 +124,7 @@ def _apply_mapping(wdm_node, desired_mapping: dict[int, dict[str, int | None]]) 
     return {"added": added, "removed": removed, "changed": changed}
 
 
-def _retrace_affected_paths(wdm_node, line_ports):
+def _retrace_affected_paths(wdm_node: Any, line_ports: list[Any]) -> None:
     """Retrace CablePaths that traverse cables connected to the node's line ports."""
     from dcim.models import CablePath, CableTermination
     from django.contrib.contenttypes.models import ContentType
@@ -153,7 +157,7 @@ class WdmNodeViewSet(NetBoxModelViewSet):
     filterset_class = WdmNodeFilterSet
 
     @action(detail=True, methods=["post"], url_path="apply-mapping")
-    def apply_mapping(self, request, pk=None):
+    def apply_mapping(self, request: Any, pk: int | None = None) -> Response:
         """Apply channel-to-port mapping changes atomically."""
         node = self.get_object()
 
@@ -201,7 +205,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
     filterset_class = WdmChannelFilterSet
 
     @action(detail=True, methods=["get"], url_path="trace")
-    def trace(self, request, pk=None):
+    def trace(self, request: Any, pk: int | None = None) -> Response:
         """Return the full wavelength path trace for this channel."""
         from dcim.models import Cable, CableTermination
         from django.contrib.contenttypes.models import ContentType
@@ -268,9 +272,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
         # Build cable segments between consecutive hops
         cable_segments = []
         rp_ct = ContentType.objects.get_for_model(RearPort)
-        hop_entries = list(
-            wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence")
-        )
+        hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
 
         for i in range(len(hop_entries) - 1):
             from_node = hop_entries[i].channel.wdm_node
@@ -316,9 +318,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
                 ).exclude(termination_id=tx_lp.rear_port_id)
                 far_term = far_terms.first()
                 if far_term:
-                    far_rp = (
-                        RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
-                    )
+                    far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
                     if far_rp:
                         segment_path.append(
                             {
@@ -358,7 +358,7 @@ class WdmCircuitViewSet(NetBoxModelViewSet):
     filterset_class = WdmCircuitFilterSet
 
     @action(detail=True, methods=["get"], url_path="stitch")
-    def stitch(self, request, pk=None):
+    def stitch(self, request: Any, pk: int | None = None) -> Response:
         """Return the stitched end-to-end wavelength path."""
         circuit = self.get_object()
         path = circuit.get_stitched_path()

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import django_filters
 from dcim.models import Device
 from django.db import models

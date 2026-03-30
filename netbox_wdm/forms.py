@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Any
+
 from dcim.models import Device, DeviceType, FrontPort, FrontPortTemplate, RearPort
 from django import forms
 from django.utils.translation import gettext_lazy as _
@@ -150,7 +154,7 @@ class WdmLinePortForm(NetBoxModelForm):
         model = WdmLinePort
         fields = ("wdm_node", "rear_port", "direction", "role", "tags")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         if self.instance.pk and self.instance.wdm_node.is_fixed:
             for field_name in WdmLinePort.FIXED_FIELDS:
@@ -191,7 +195,7 @@ class WdmChannelForm(NetBoxModelForm):
             "tags",
         )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         if self.instance.pk and self.instance.wdm_node.is_fixed:
             for field_name in ("mux_front_port", "demux_front_port"):

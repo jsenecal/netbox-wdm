@@ -1,6 +1,8 @@
 """Device type factories: create DeviceTypes with port templates, PortTemplateMappings, and WDM profiles."""
 
-from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, RearPortTemplate
+from __future__ import annotations
+
+from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, Manufacturer, RearPortTemplate
 from dcim.models.device_component_templates import PortTemplateMapping
 
 from netbox_wdm.choices import WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
@@ -8,7 +10,7 @@ from netbox_wdm.models import WdmChannelPlan, WdmProfile
 from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_100GHZ_CHANNELS
 
 
-def create_cwdm_mux_dx_type(manufacturer, num_channels=8):
+def create_cwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 8) -> DeviceType:
     """CWDM duplex MUX: CH{n}-MUX/DEMUX + EXP + 1310 front ports, COM-TX/RX rear ports."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -92,7 +94,7 @@ def create_cwdm_mux_dx_type(manufacturer, num_channels=8):
     return dt
 
 
-def create_cwdm_mux_sf_type(manufacturer, num_channels=8):
+def create_cwdm_mux_sf_type(manufacturer: Manufacturer, num_channels: int = 8) -> DeviceType:
     """CWDM single-fiber (BiDi) MUX: CH{n} + EXP + 1310 front ports, single COM rear port."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -149,7 +151,7 @@ def create_cwdm_mux_sf_type(manufacturer, num_channels=8):
     return dt
 
 
-def create_dwdm_mux_dx_type(manufacturer, num_channels=44):
+def create_dwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 44) -> DeviceType:
     """DWDM duplex MUX: DWDM label-based front ports + EXP, COM-TX/RX rear ports."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -226,7 +228,7 @@ def create_dwdm_mux_dx_type(manufacturer, num_channels=44):
     return dt
 
 
-def create_edfa_type(manufacturer):
+def create_edfa_type(manufacturer: Manufacturer) -> DeviceType:
     """EDFA amplifier: LINE-IN front port, LINE-OUT rear port with pass-through mapping."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -249,7 +251,7 @@ def create_edfa_type(manufacturer):
     return dt
 
 
-def create_roadm_2d_type(manufacturer, num_add_drop=20):
+def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> DeviceType:
     """2-degree ROADM: ADD/DROP front ports, LINE-{dir}-TX/RX rear ports."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -324,7 +326,7 @@ def create_roadm_2d_type(manufacturer, num_add_drop=20):
     return dt
 
 
-def create_fiber_pp_type(manufacturer, num_ports=24):
+def create_fiber_pp_type(manufacturer: Manufacturer, num_ports: int = 24) -> DeviceType:
     """Fiber patch panel: 1:1 front-to-rear pass-through ports."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,
@@ -347,7 +349,7 @@ def create_fiber_pp_type(manufacturer, num_ports=24):
     return dt
 
 
-def create_router_type(manufacturer, num_interfaces=8):
+def create_router_type(manufacturer: Manufacturer, num_interfaces: int = 8) -> DeviceType:
     """Simple router DeviceType with Ethernet interfaces."""
     dt, _ = DeviceType.objects.get_or_create(
         manufacturer=manufacturer,

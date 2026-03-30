@@ -9,10 +9,14 @@ Topologies:
 3. dwdm_mux_to_roadm   - DWDM-MUX <-> PP pair <-> ROADM
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
+from dcim.models import Cable, Device, DeviceRole, DeviceType, Site
+
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
-from .devices import create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
+from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
 
 
 @dataclass
@@ -20,12 +24,14 @@ class Topology:
     """Container for a complete topology's objects."""
 
     name: str
-    bundles: dict  # keyed by role name, value is WdmDeviceBundle
-    patch_panels: list  # list of Device
-    cables: list  # all Cable objects
+    bundles: dict[str, WdmDeviceBundle]
+    patch_panels: list[Device]
+    cables: list[Cable]
 
 
-def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
+def duplex_mux_pair(
+    site: Site, dt_mux: DeviceType, dt_pp: DeviceType, roles: dict[str, DeviceRole], name_prefix: str = ""
+) -> Topology:
     """Create a duplex MUX pair topology with patch panel interconnect.
 
     Creates 2 duplex MUX devices and 2 patch panels, linked by 6 cables
@@ -69,7 +75,9 @@ def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
     )
 
 
-def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
+def sf_mux_pair(
+    site: Site, dt_sf_mux: DeviceType, dt_pp: DeviceType, roles: dict[str, DeviceRole], name_prefix: str = ""
+) -> Topology:
     """Create a single-fiber MUX pair topology with patch panel interconnect.
 
     Creates 2 SF MUX devices and 2 patch panels, linked by 3 cables
@@ -111,7 +119,14 @@ def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
     )
 
 
-def dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix=""):
+def dwdm_mux_to_roadm(
+    site: Site,
+    dt_dwdm: DeviceType,
+    dt_roadm: DeviceType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    name_prefix: str = "",
+) -> Topology:
     """Create a DWDM MUX to ROADM topology with patch panel interconnect.
 
     Creates 1 DWDM MUX device and 1 ROADM device with 2 patch panels,

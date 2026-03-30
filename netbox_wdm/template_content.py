@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from django.contrib.contenttypes.models import ContentType
 from netbox.plugins import PluginTemplateExtension
 
@@ -7,7 +9,7 @@ from .models import WdmNode, WdmWavelengthPathChannel
 class DeviceWdmNodePanel(PluginTemplateExtension):
     models = ["dcim.device"]
 
-    def right_page(self):
+    def right_page(self) -> str:
         device = self.context["object"]
         wdm_node = WdmNode.objects.filter(device=device).first()
         if wdm_node:
@@ -28,7 +30,7 @@ class CableWdmCircuitsPanel(PluginTemplateExtension):
 
     models = ["dcim.cable"]
 
-    def right_page(self):
+    def right_page(self) -> str:
         from dcim.models import CableTermination, FrontPort, RearPort
 
         cable = self.context["object"]

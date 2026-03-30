@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+from typing import Any
 
 from dcim.models import DeviceType, FrontPort
 from django.urls import reverse
@@ -104,7 +107,7 @@ class WdmProfileChannelPlansView(generic.ObjectChildrenView):
         weight=500,
     )
 
-    def get_children(self, request, parent):
+    def get_children(self, request: Any, parent: Any) -> Any:
         return self.child_model.objects.restrict(request.user, "view").filter(profile=parent)
 
 
@@ -121,7 +124,7 @@ class WdmProfileInstancesView(generic.ObjectChildrenView):
         weight=510,
     )
 
-    def get_children(self, request, parent):
+    def get_children(self, request: Any, parent: Any) -> Any:
         return (
             self.child_model.objects.restrict(request.user, "view")
             .filter(device__device_type=parent.device_type)
@@ -162,7 +165,7 @@ class WdmNodeListView(generic.ObjectListView):
 class WdmNodeView(generic.ObjectView):
     queryset = WdmNode.objects.select_related("device")
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         channels = list(instance.channels.select_related("mux_front_port", "demux_front_port"))
         total = len(channels)
 
@@ -253,7 +256,7 @@ class WdmNodeChannelsView(generic.ObjectChildrenView):
         weight=500,
     )
 
-    def get_children(self, request, parent):
+    def get_children(self, request: Any, parent: Any) -> Any:
         return (
             self.child_model.objects.restrict(request.user, "view")
             .filter(wdm_node=parent)
@@ -275,7 +278,7 @@ class WdmNodeLinePortsView(generic.ObjectChildrenView):
         weight=510,
     )
 
-    def get_children(self, request, parent):
+    def get_children(self, request: Any, parent: Any) -> Any:
         return self.child_model.objects.restrict(request.user, "view").filter(wdm_node=parent)
 
 
@@ -291,7 +294,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
         weight=600,
     )
 
-    def get(self, request, *args, **kwargs):
+    def get(self, request: Any, *args: Any, **kwargs: Any) -> Any:
         instance = self.get_object(**kwargs)
         if instance.node_type != WdmNodeTypeChoices.ROADM:
             from django.http import Http404
@@ -299,10 +302,10 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
             raise Http404
         return super().get(request, *args, **kwargs)
 
-    def get_template_name(self):
+    def get_template_name(self) -> str:
         return "netbox_wdm/wdmnode_wavelength_editor.html"
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         channels = list(
             instance.channels.select_related("mux_front_port", "demux_front_port").order_by("grid_position")
         )
@@ -420,10 +423,10 @@ class WdmChannelElementsView(generic.ObjectView):
         weight=510,
     )
 
-    def get_template_name(self):
+    def get_template_name(self) -> str:
         return "netbox_wdm/wdmchannel_elements_tab.html"
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         path_entry = WdmWavelengthPathChannel.objects.filter(channel=instance).select_related("path").first()
         if not path_entry:
             return {"hops": []}
@@ -477,10 +480,10 @@ class WdmChannelTraceView(generic.ObjectView):
         weight=500,
     )
 
-    def get_template_name(self):
+    def get_template_name(self) -> str:
         return "netbox_wdm/wdmchannel_trace_tab.html"
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         from dcim.models import Cable, CableTermination, RearPort
         from django.contrib.contenttypes.models import ContentType
 
@@ -657,10 +660,10 @@ class WdmCircuitTraceView(generic.ObjectView):
         weight=500,
     )
 
-    def get_template_name(self):
+    def get_template_name(self) -> str:
         return "netbox_wdm/wdmcircuit_trace_tab.html"
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         from dcim.models import CablePath
 
         stitched_path = instance.get_stitched_path()
@@ -717,10 +720,10 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
         weight=1100,
     )
 
-    def get_template_name(self):
+    def get_template_name(self) -> str:
         return "netbox_wdm/devicetype_wdm_tab.html"
 
-    def get_extra_context(self, request, instance):
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         profile = WdmProfile.objects.filter(device_type=instance).first()
         channel_plans = []
         if profile:
