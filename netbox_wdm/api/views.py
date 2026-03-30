@@ -194,6 +194,27 @@ class WdmNodeViewSet(NetBoxModelViewSet):
         result["last_updated"] = str(node.last_updated)
         return Response(result)
 
+    @action(detail=True, methods=["post"], url_path="sync-ports")
+    def sync_ports(self, request: Any, pk: int | None = None) -> Response:
+        """Sync port mappings to match the WDM channel grid.
+
+        Default is dry run. Pass ?dry_run=false to apply changes.
+        """
+        from ..port_sync import apply_sync, compute_sync_diff
+
+        node = self.get_object()
+        dry_run = request.query_params.get("dry_run", "true").lower() != "false"
+
+        if dry_run:
+            diff = compute_sync_diff(node)
+            return Response({"port_sync_valid": node.port_sync_valid, "dry_run": True, **diff})
+
+        with transaction.atomic():
+            result = apply_sync(node)
+
+        node.refresh_from_db()
+        return Response({"port_sync_valid": node.port_sync_valid, "dry_run": False, **result})
+
 
 class WdmLinePortViewSet(NetBoxModelViewSet):
     queryset = WdmLinePort.objects.select_related("wdm_node", "rear_port").prefetch_related("tags")

@@ -135,3 +135,104 @@ class TestApplySync:
         result = apply_sync(bundle.node)
         assert result["changes"]["port_mappings"]["create"] == 0
         assert result["changes"]["port_mappings"]["delete"] == 0
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSignalInvalidation:
+    def _setup_synced_node(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Helper: create a node and sync it."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        apply_sync(bundle.node)
+        bundle.node.refresh_from_db()
+        assert bundle.node.port_sync_valid is True
+        return bundle
+
+    def test_portmapping_delete_invalidates(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Deleting a PortMapping sets port_sync_valid to False."""
+        bundle = self._setup_synced_node(wdm_site, dt_cwdm_dx, wdm_roles)
+        node = bundle.node
+        line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
+        channel_fp_ids = set()
+        for ch in node.channels.all():
+            if ch.mux_front_port_id:
+                channel_fp_ids.add(ch.mux_front_port_id)
+            if ch.demux_front_port_id:
+                channel_fp_ids.add(ch.demux_front_port_id)
+        pm = PortMapping.objects.filter(
+            device=node.device, rear_port_id__in=line_port_rp_ids, front_port_id__in=channel_fp_ids
+        ).first()
+        pm.delete()
+        node.refresh_from_db()
+        assert node.port_sync_valid is False
+
+    def test_portmapping_create_invalidates(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Creating an extra PortMapping sets port_sync_valid to False."""
+        bundle = self._setup_synced_node(wdm_site, dt_cwdm_dx, wdm_roles)
+        node = bundle.node
+        first_lp = node.line_ports.select_related("rear_port").first()
+        # Use a demux front port (RX side) with the TX rear port to create a rogue mapping.
+        # front_port_position=999 avoids the unique constraint on (front_port, front_port_position).
+        # rear_port_position=999 avoids the unique constraint on (rear_port, rear_port_position).
+        PortMapping.objects.create(
+            device=node.device,
+            front_port_id=bundle.channels[0].mux_front_port_id,
+            rear_port=first_lp.rear_port,
+            front_port_position=999,
+            rear_port_position=999,
+        )
+        node.refresh_from_db()
+        assert node.port_sync_valid is False
+
+
+from django.test import RequestFactory
+from rest_framework.test import force_authenticate
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+@pytest.mark.django_db
+class TestSyncPortsAPI:
+    def _get_view(self):
+        from netbox_wdm.api.views import WdmNodeViewSet
+        return WdmNodeViewSet.as_view({"post": "sync_ports"})
+
+    def _make_request(self, node, query_params=None):
+        factory = RequestFactory()
+        url = f"/api/plugins/wdm/wdm-nodes/{node.pk}/sync-ports/"
+        if query_params:
+            url += "?" + "&".join(f"{k}={v}" for k, v in query_params.items())
+        request = factory.post(url)
+        user = User.objects.create_superuser("testadmin", "admin@test.com", "testpass")
+        force_authenticate(request, user=user)
+        view = self._get_view()
+        return view(request, pk=node.pk)
+
+    def test_dry_run_default(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Default request is dry run — no changes applied."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        # Delete mappings to create drift
+        PortMapping.objects.filter(device=bundle.node.device).delete()
+        response = self._make_request(bundle.node)
+        assert response.status_code == 200
+        assert response.data["dry_run"] is True
+        # Mappings should NOT have been recreated
+        assert not check_port_sync(bundle.node)
+
+    def test_dry_run_false_applies(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """dry_run=false actually applies changes."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        PortMapping.objects.filter(device=bundle.node.device).delete()
+        response = self._make_request(bundle.node, {"dry_run": "false"})
+        assert response.status_code == 200
+        assert response.data["dry_run"] is False
+        assert response.data["changes"]["port_mappings"]["create"] > 0
+        assert check_port_sync(bundle.node)
+
+    def test_response_includes_warnings(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Response includes warnings section."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        response = self._make_request(bundle.node)
+        assert "warnings" in response.data
+        assert "cable_paths_affected" in response.data["warnings"]
+        assert "wavelength_services" in response.data["warnings"]
