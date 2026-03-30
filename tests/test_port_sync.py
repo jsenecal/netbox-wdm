@@ -236,3 +236,38 @@ class TestSyncPortsAPI:
         assert "warnings" in response.data
         assert "cable_paths_affected" in response.data["warnings"]
         assert "wavelength_services" in response.data["warnings"]
+
+
+from django.core.management import call_command
+from io import StringIO
+
+
+@pytest.mark.django_db
+class TestSyncPortsCommand:
+    def test_sync_command_applies(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Command applies sync and prints report."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        PortMapping.objects.filter(device=bundle.node.device).delete()
+        out = StringIO()
+        call_command("wdm_sync_ports", str(bundle.node.pk), stdout=out)
+        output = out.getvalue()
+        assert "Port mappings created" in output
+        assert check_port_sync(bundle.node)
+
+    def test_sync_command_dry_run(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Command with --dry-run prints report but doesn't apply."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        PortMapping.objects.filter(device=bundle.node.device).delete()
+        out = StringIO()
+        call_command("wdm_sync_ports", str(bundle.node.pk), dry_run=True, stdout=out)
+        output = out.getvalue()
+        assert "DRY RUN" in output
+        assert not check_port_sync(bundle.node)
+
+    def test_sync_command_invalid_pk(self):
+        """Command with invalid pk raises CommandError."""
+        from django.core.management.base import CommandError
+
+        out = StringIO()
+        with pytest.raises(CommandError):
+            call_command("wdm_sync_ports", "99999", stdout=out)
