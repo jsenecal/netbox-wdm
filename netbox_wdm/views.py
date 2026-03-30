@@ -202,6 +202,7 @@ class WdmNodeView(generic.ObjectView):
         pct = lambda n: round(n / total * 100) if total else 0  # noqa: E731
 
         return {
+            "port_sync_valid": instance.port_sync_valid,
             "channel_count": total,
             "line_port_count": instance.line_ports.count(),
             "channel_stats": {

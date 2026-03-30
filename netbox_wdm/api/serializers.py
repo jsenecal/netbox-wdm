@@ -64,13 +64,15 @@ class WdmNodeSerializer(NetBoxModelSerializer):
             "device",
             "node_type",
             "grid",
+            "expected_port_hash",
+            "port_sync_valid",
             "description",
             "tags",
             "custom_fields",
             "created",
             "last_updated",
         )
-        brief_fields = ("id", "url", "display", "node_type", "grid")
+        brief_fields = ("id", "url", "display", "node_type", "grid", "port_sync_valid")
 
 
 class WdmLinePortSerializer(NetBoxModelSerializer):

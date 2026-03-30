@@ -4,6 +4,21 @@
 {% load i18n %}
 
 {% block content %}
+{% if not port_sync_valid %}
+<div class="alert alert-warning d-flex align-items-center justify-content-between mb-3" role="alert">
+    <div>
+        <i class="mdi mdi-alert-circle-outline me-1"></i>
+        {% trans "Port mappings are out of sync with the channel grid." %}
+    </div>
+    <form method="post" action="{% url 'plugins-api:netbox_wdm-api:wdmnode-sync-ports' object.pk %}?dry_run=false"
+          style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-warning">
+            <i class="mdi mdi-sync me-1"></i>{% trans "Sync Now" %}
+        </button>
+    </form>
+</div>
+{% endif %}
 <div class="row mb-3">
     <div class="col col-md-6">
         <div class="card">
