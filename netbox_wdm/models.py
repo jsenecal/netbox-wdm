@@ -151,6 +151,16 @@ class WdmNode(NetBoxModel):
         verbose_name=_("grid"),
     )
     description = models.TextField(blank=True, verbose_name=_("description"))
+    expected_port_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name=_("expected port hash"),
+    )
+    port_sync_valid = models.BooleanField(
+        default=True,
+        verbose_name=_("port sync valid"),
+    )
 
     clone_fields = ("node_type", "grid")
 
