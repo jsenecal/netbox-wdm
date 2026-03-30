@@ -143,13 +143,13 @@ def _follow_cable_from_rearport_to_frontport(rear_port: RearPort) -> FrontPort |
     # Find which side the rear port is on
     rp_terms = list(
         CableTermination.objects.filter(
-            cable_id=fresh_rp.cable_id, # pyright: ignore[reportAttributeAccessIssue]
+            cable_id=fresh_rp.cable_id,  # pyright: ignore[reportAttributeAccessIssue]
             termination_type=rp_ct,  # type: ignore[attr-defined]
         ).order_by("cable_end", "pk")
     )
     fp_terms = list(
         CableTermination.objects.filter(
-            cable_id=fresh_rp.cable_id, # pyright: ignore[reportAttributeAccessIssue]
+            cable_id=fresh_rp.cable_id,  # pyright: ignore[reportAttributeAccessIssue]
             termination_type=fp_ct,  # type: ignore[attr-defined]
         ).order_by("cable_end", "pk")
     )
@@ -349,7 +349,7 @@ def _find_origin(node: WdmNode, grid_position: int) -> WdmNode:
 
         # Verify the far-end rear port is actually a TX port (forward direction)
         tx_rp = _get_tx_rear_port(prev_node)
-        if tx_rp is None or far_rp.pk != tx_rp.pk: # pyright: ignore[reportOptionalMemberAccess]
+        if tx_rp is None or far_rp.pk != tx_rp.pk:  # pyright: ignore[reportOptionalMemberAccess]
             return current  # Not a forward link — this node is the origin
 
         if not WdmChannel.objects.filter(wdm_node=prev_node, grid_position=grid_position).exists():

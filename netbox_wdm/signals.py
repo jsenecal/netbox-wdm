@@ -38,6 +38,32 @@ def _rebuild_nodes(nodes: set[Any]) -> None:
         transaction.on_commit(lambda n=node: rebuild_wavelength_paths_for_node(n))
 
 
+def _recheck_port_sync(nodes: set[Any]) -> None:
+    """Schedule port sync hash recomputation for a set of WdmNode instances on transaction commit.
+
+    Uses WdmNode.objects.filter(pk=n.pk).update(...) to avoid triggering the WdmNode
+    post_save signal (which would cause infinite recursion).
+    """
+    from .models import WdmNode
+    from .port_sync import check_port_sync, compute_expected_port_hash
+
+    for node in nodes:
+
+        def _do_recheck(n: Any = node) -> None:
+            try:
+                fresh = WdmNode.objects.get(pk=n.pk)
+            except WdmNode.DoesNotExist:
+                return
+            expected_hash = compute_expected_port_hash(fresh)
+            in_sync = check_port_sync(fresh)
+            WdmNode.objects.filter(pk=fresh.pk).update(
+                expected_port_hash=expected_hash,
+                port_sync_valid=in_sync,
+            )
+
+        transaction.on_commit(_do_recheck)
+
+
 def _cable_trace_paths(sender: type, instance: Any, **kwargs: Any) -> None:
     """Rebuild wavelength paths for WDM nodes connected via this cable's rear port terminations."""
     from dcim.models import CableTermination, RearPort
@@ -78,23 +104,22 @@ def _cable_post_delete(sender: type, instance: Any, **kwargs: Any) -> None:
         _rebuild_nodes(nodes)
 
 
-def _channel_post_save(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild wavelength paths when a channel is created or updated."""
-    _rebuild_nodes({instance.wdm_node})
-
-
-def _channel_post_delete(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild wavelength paths when a channel is deleted."""
-    _rebuild_nodes({instance.wdm_node})
+def _channel_changed(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Rebuild wavelength paths and recheck port sync when a channel is created, updated, or deleted."""
+    nodes = {instance.wdm_node}
+    _rebuild_nodes(nodes)
+    _recheck_port_sync(nodes)
 
 
 def _lineport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild wavelength paths when a line port changes."""
-    _rebuild_nodes({instance.wdm_node})
+    """Rebuild wavelength paths and recheck port sync when a line port changes."""
+    nodes = {instance.wdm_node}
+    _rebuild_nodes(nodes)
+    _recheck_port_sync(nodes)
 
 
 def _portmapping_changed(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild wavelength paths when a port mapping changes."""
+    """Rebuild wavelength paths and recheck port sync when a port mapping changes."""
     from .models import WdmNode
 
     try:
@@ -102,12 +127,38 @@ def _portmapping_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     except WdmNode.DoesNotExist:
         return
 
-    _rebuild_nodes({node})
+    nodes = {node}
+    _rebuild_nodes(nodes)
+    _recheck_port_sync(nodes)
+
+
+def _frontport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Recheck port sync when a FrontPort is created, updated, or deleted."""
+    from .models import WdmNode
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    _recheck_port_sync({node})
+
+
+def _rearport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Recheck port sync when a RearPort is created, updated, or deleted."""
+    from .models import WdmNode
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    _recheck_port_sync({node})
 
 
 def connect_signals() -> None:
     """Connect device signals. Called from AppConfig.ready()."""
-    from dcim.models import Cable, Device, PortMapping
+    from dcim.models import Cable, Device, FrontPort, PortMapping, RearPort
     from dcim.models.cables import trace_paths
 
     from .models import WdmChannel, WdmLinePort
@@ -115,9 +166,13 @@ def connect_signals() -> None:
     post_save.connect(_device_post_save, sender=Device, dispatch_uid="wdm_device_post_save")
     trace_paths.connect(_cable_trace_paths, sender=Cable, dispatch_uid="wdm_cable_trace_paths")
     post_delete.connect(_cable_post_delete, sender=Cable, dispatch_uid="wdm_cable_post_delete")
-    post_save.connect(_channel_post_save, sender=WdmChannel, dispatch_uid="wdm_channel_post_save")
-    post_delete.connect(_channel_post_delete, sender=WdmChannel, dispatch_uid="wdm_channel_post_delete")
+    post_save.connect(_channel_changed, sender=WdmChannel, dispatch_uid="wdm_channel_post_save")
+    post_delete.connect(_channel_changed, sender=WdmChannel, dispatch_uid="wdm_channel_post_delete")
     post_save.connect(_lineport_changed, sender=WdmLinePort, dispatch_uid="wdm_lineport_post_save")
     post_delete.connect(_lineport_changed, sender=WdmLinePort, dispatch_uid="wdm_lineport_post_delete")
     post_save.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_save")
     post_delete.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_delete")
+    post_save.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_save")
+    post_delete.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
+    post_save.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
+    post_delete.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")

@@ -29,8 +29,8 @@ class Command(BaseCommand):
 
         try:
             node = WdmNode.objects.select_related("device").get(pk=pk)
-        except WdmNode.DoesNotExist:
-            raise CommandError(f"WdmNode with pk={pk} does not exist.")
+        except WdmNode.DoesNotExist as err:
+            raise CommandError(f"WdmNode with pk={pk} does not exist.") from err
 
         self.stdout.write(f"WDM Node: {node} (device: {node.device.name})")
         self.stdout.write(f"Current port_sync_valid: {node.port_sync_valid}")

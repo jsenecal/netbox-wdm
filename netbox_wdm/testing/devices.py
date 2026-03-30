@@ -29,6 +29,12 @@ def create_duplex_mux(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.TERMINAL_MUX, "grid": grid},
     )
+    # In transaction=True test mode, on_commit fires immediately during Device.save(),
+    # causing _auto_populate_channels to run before FrontPorts exist. Detect and repair
+    # by deleting channels with null FP IDs and re-running auto-population.
+    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+        node.channels.all().delete()
+        node._auto_populate_channels()
     com_tx = RearPort.objects.get(device=device, name="COM-TX")
     com_rx = RearPort.objects.get(device=device, name="COM-RX")
     lp_tx, _ = WdmLinePort.objects.get_or_create(
