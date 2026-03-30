@@ -43,8 +43,8 @@ def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
     """
     p = f"{name_prefix}" if name_prefix else ""
 
-    mux_a = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}DX-MUX-A")
-    mux_b = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}DX-MUX-B")
+    mux_a = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}MUX-A")
+    mux_b = create_duplex_mux(site, dt_mux, roles["wdm-mux"], f"{p}MUX-B")
 
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
     pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
@@ -56,7 +56,7 @@ def duplex_mux_pair(site, dt_mux, dt_pp, roles, name_prefix=""):
         pp_b_device=pp_b,
         device_b_rx_rp=mux_b.line_ports["rx"].rear_port,
         device_b_tx_rp=mux_b.line_ports["tx"].rear_port,
-        label_prefix=f"{p}DX".strip(),
+        label_prefix=p.strip("-") if p else "DX",
     )
 
     cables = list(tx_cables) + list(rx_cables)
@@ -87,8 +87,8 @@ def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
     """
     p = f"{name_prefix}" if name_prefix else ""
 
-    mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}SF-MUX-A")
-    mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}SF-MUX-B")
+    mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-A")
+    mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-B")
 
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
     pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
@@ -98,7 +98,7 @@ def sf_mux_pair(site, dt_sf_mux, dt_pp, roles, name_prefix=""):
         pp_a_device=pp_a,
         pp_b_device=pp_b,
         device_b_rearport=mux_b.line_ports["bidi"].rear_port,
-        label_prefix=f"{p}SF".strip(),
+        label_prefix=p.strip("-") if p else "SF",
     )
 
     cables = list(cables_tuple)
@@ -131,7 +131,7 @@ def dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix=""):
     """
     p = f"{name_prefix}" if name_prefix else ""
 
-    mux = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}DWDM-MUX", grid="dwdm_100ghz")
+    mux = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX", grid="dwdm_100ghz")
     roadm = create_roadm(site, dt_roadm, roles["wdm-roadm"], f"{p}ROADM")
 
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
@@ -144,7 +144,7 @@ def dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix=""):
         pp_b_device=pp_b,
         device_b_rx_rp=roadm.line_ports["line_east_rx"].rear_port,
         device_b_tx_rp=roadm.line_ports["line_east_tx"].rear_port,
-        label_prefix=f"{p}DWDM-ROADM".strip(),
+        label_prefix=p.strip("-") if p else "DWDM",
     )
 
     cables = list(tx_cables) + list(rx_cables)
