@@ -10,13 +10,22 @@
         <i class="mdi mdi-alert-circle-outline me-1"></i>
         {% trans "Port mappings are out of sync with the channel grid." %}
     </div>
-    <form method="post" action="{% url 'plugins-api:netbox_wdm-api:wdmnode-sync-ports' object.pk %}?dry_run=false"
-          style="display:inline;">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-sm btn-warning">
-            <i class="mdi mdi-sync me-1"></i>{% trans "Sync Now" %}
-        </button>
-    </form>
+    <button type="button" class="btn btn-sm btn-warning" id="wdm-sync-now"
+            data-url="{% url 'plugins-api:netbox_wdm-api:wdmnode-sync-ports' object.pk %}?dry_run=false">
+        <i class="mdi mdi-sync me-1"></i>{% trans "Sync Now" %}
+    </button>
+    <script>
+    document.getElementById('wdm-sync-now').addEventListener('click', function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="mdi mdi-loading mdi-spin me-1"></i>Syncing...';
+        fetch(btn.dataset.url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/json'},
+        }).then(function() { location.reload(); })
+          .catch(function() { location.reload(); });
+    });
+    </script>
 </div>
 {% endif %}
 <div class="row mb-3">
