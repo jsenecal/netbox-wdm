@@ -118,8 +118,8 @@ class WdmChannelTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
-    label = tables.Column(linkify=True, verbose_name=_("Label"))
-    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
+    label = tables.Column(linkify=True, verbose_name=_("Label"), order_by="grid_position")
+    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"), order_by="-grid_position")
     mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
     demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
     status = tables.Column(verbose_name=_("Status"))
@@ -155,9 +155,9 @@ class WdmNodeChannelTable(NetBoxTable):
     """Channel table for the WDM Node detail page — no node column, label links to channel detail."""
 
     pk = columns.ToggleColumn()
-    label = tables.Column(linkify=True, verbose_name=_("Label"))
+    label = tables.Column(linkify=True, verbose_name=_("Label"), order_by="grid_position")
     grid_position = tables.Column(verbose_name=_("Grid Position"))
-    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"))
+    wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"), order_by="-grid_position")
     mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
     demux_front_port = tables.Column(linkify=True, verbose_name=_("DEMUX Front Port"))
     status = tables.Column(verbose_name=_("Status"))
