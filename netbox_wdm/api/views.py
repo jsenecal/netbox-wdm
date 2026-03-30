@@ -317,7 +317,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
         trace_data = ChannelTraceData(
             channel_id=channel.pk,
             wavelength_path_id=wl_path.pk,
-            wavelength_nm=float(wl_path.wavelength_nm),
+            wavelength_nm=wl_path.wavelength_nm,
             grid_position=wl_path.grid_position,
             is_complete=wl_path.is_complete,
             is_active=wl_path.is_active,
@@ -344,7 +344,7 @@ class WdmCircuitViewSet(NetBoxModelViewSet):
             {
                 "service_id": circuit.pk,
                 "service_name": circuit.name,
-                "wavelength_nm": float(wp.wavelength_nm) if wp else None,
+                "wavelength_nm": wp.wavelength_nm if wp else None,
                 "status": circuit.status,
                 "is_complete": wp.is_complete if wp else False,
                 "elements": [asdict(e) for e in elements],

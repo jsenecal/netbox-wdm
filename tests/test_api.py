@@ -1,5 +1,7 @@
 """Tests for WDM REST API endpoints."""
 
+from decimal import Decimal
+
 import pytest
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from rest_framework import status
@@ -623,7 +625,7 @@ class TestStitchAPI:
         )
         response = api_client.get(f"/api/plugins/wdm/wdm-circuits/{circuit.pk}/stitch/")
         assert response.status_code == status.HTTP_200_OK
-        assert abs(response.data["wavelength_nm"] - 1560.61) < 0.01
+        assert response.data["wavelength_nm"] == Decimal("1560.61")
 
 
 # ---------------------------------------------------------------------------
@@ -655,7 +657,7 @@ class TestWdmChannelTraceAPI:
         response = api_client.get(self._url(channel.pk))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["wavelength_path_id"] == path.pk
-        assert response.data["wavelength_nm"] == 1560.61
+        assert response.data["wavelength_nm"] == Decimal("1560.61")
         assert len(response.data["elements"]) == 1
         element = response.data["elements"][0]
         assert element["channel_id"] == channel.pk

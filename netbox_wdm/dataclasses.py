@@ -7,6 +7,7 @@ untyped dict[str, Any] patterns.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 
 @dataclass
@@ -29,7 +30,7 @@ class PathElement:
     channel_id: int
     channel_label: str
     channel_url: str
-    wavelength_nm: float
+    wavelength_nm: Decimal
     mux_port: PortInfo | None
     demux_port: PortInfo | None
     mux_connected: bool
@@ -51,7 +52,7 @@ def path_element_from_channel(channel: object, sequence: int) -> PathElement:
         channel_id=ch.pk,
         channel_label=ch.label,
         channel_url=ch.get_absolute_url(),
-        wavelength_nm=float(ch.wavelength_nm),
+        wavelength_nm=ch.wavelength_nm,
         mux_port=PortInfo(
             id=ch.mux_front_port_id,
             name=ch.mux_front_port.name,
@@ -100,7 +101,7 @@ class ChannelTraceData:
 
     channel_id: int
     wavelength_path_id: int | None
-    wavelength_nm: float | None
+    wavelength_nm: Decimal | None
     grid_position: int
     is_complete: bool
     is_active: bool

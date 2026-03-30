@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from netbox_wdm.wdm_constants import (
@@ -16,17 +18,17 @@ class TestCwdmChannels:
         pos, label, wl = CWDM_CHANNELS[0]
         assert pos == 1
         assert label == "CWDM-1270"
-        assert wl == 1270.0
+        assert wl == Decimal("1270")
 
     def test_last_channel(self):
         pos, label, wl = CWDM_CHANNELS[-1]
         assert pos == 18
         assert label == "CWDM-1610"
-        assert wl == 1610.0
+        assert wl == Decimal("1610")
 
     def test_spacing(self):
         for i in range(1, len(CWDM_CHANNELS)):
-            assert CWDM_CHANNELS[i][2] - CWDM_CHANNELS[i - 1][2] == 20.0
+            assert CWDM_CHANNELS[i][2] - CWDM_CHANNELS[i - 1][2] == Decimal("20")
 
     def test_positions_sequential(self):
         positions = [ch[0] for ch in CWDM_CHANNELS]
@@ -41,7 +43,7 @@ class TestDwdm100GhzChannels:
         pos, label, wl = DWDM_100GHZ_CHANNELS[0]
         assert pos == 1
         assert label == "C21"
-        assert isinstance(wl, float)
+        assert isinstance(wl, Decimal)
 
     def test_last_channel(self):
         pos, label, wl = DWDM_100GHZ_CHANNELS[-1]
@@ -102,7 +104,7 @@ class TestWdmGrids:
         for pos, label, wl in WDM_GRIDS[grid_key]:
             assert isinstance(pos, int)
             assert isinstance(label, str)
-            assert isinstance(wl, float)
+            assert isinstance(wl, Decimal)
             assert pos > 0
             assert len(label) > 0
             assert wl > 0

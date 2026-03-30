@@ -94,7 +94,7 @@ class WdmLinePortSerializer(NetBoxModelSerializer):
 
 class WdmChannelSerializer(NetBoxModelSerializer):
     label = serializers.CharField(read_only=True)
-    wavelength_nm = serializers.FloatField(read_only=True)
+    wavelength_nm = serializers.DecimalField(max_digits=8, decimal_places=2, read_only=True)
 
     class Meta:
         model = WdmChannel

@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from dcim.models import DeviceType, FrontPort
+from django.core.serializers.json import DjangoJSONEncoder
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from netbox.object_actions import BulkDelete, DeleteObject, EditObject
@@ -334,7 +335,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
                 {
                     "id": ch.pk,
                     "grid_position": ch.grid_position,
-                    "wavelength_nm": float(ch.wavelength_nm),
+                    "wavelength_nm": ch.wavelength_nm,
                     "label": ch.label,
                     "mux_front_port_id": ch.mux_front_port_id,
                     "mux_front_port_name": ch.mux_front_port.name if ch.mux_front_port else None,
@@ -364,7 +365,7 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
             "channels": channel_data,
             "availablePorts": port_data,
         }
-        return {"editor_config_json": json.dumps(config)}
+        return {"editor_config_json": json.dumps(config, cls=DjangoJSONEncoder)}
 
 
 # ---- WdmLinePort ----
@@ -545,7 +546,7 @@ class WdmChannelTraceView(generic.ObjectView):
         trace_data = ChannelTraceData(
             channel_id=instance.pk,
             wavelength_path_id=wl_path.pk,
-            wavelength_nm=float(wl_path.wavelength_nm),
+            wavelength_nm=wl_path.wavelength_nm,
             grid_position=wl_path.grid_position,
             is_complete=wl_path.is_complete,
             is_active=wl_path.is_active,
@@ -556,7 +557,7 @@ class WdmChannelTraceView(generic.ObjectView):
 
         return {
             "trace_data": trace_data,
-            "trace_data_json": json.dumps(asdict(trace_data)),
+            "trace_data_json": json.dumps(asdict(trace_data), cls=DjangoJSONEncoder),
         }
 
 

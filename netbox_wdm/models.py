@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -403,7 +404,7 @@ class WdmChannel(NetBoxModel):
         return get_channel_info(self.wdm_node.grid, self.grid_position)[0]
 
     @property
-    def wavelength_nm(self) -> float:
+    def wavelength_nm(self) -> Decimal:
         """Wavelength in nm derived from the node's grid and this channel's position."""
         from .wdm_constants import get_channel_info
 
