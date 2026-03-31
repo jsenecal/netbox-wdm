@@ -9,6 +9,7 @@ router.register("wdm-channel-plans", views.WdmChannelPlanViewSet)
 router.register("wdm-nodes", views.WdmNodeViewSet)
 router.register("wdm-line-ports", views.WdmLinePortViewSet)
 router.register("wdm-channels", views.WdmChannelViewSet)
+router.register("wdm-wavelength-paths", views.WdmWavelengthPathViewSet)
 router.register("wdm-circuits", views.WdmCircuitViewSet)
 
 urlpatterns = router.urls

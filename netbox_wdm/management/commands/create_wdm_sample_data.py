@@ -222,9 +222,11 @@ class Command(BaseCommand):
             if not origin_channel:
                 return None
             # Find the path where this origin channel is at sequence 0
-            entry = WdmWavelengthPathChannel.objects.filter(
-                channel=origin_channel, sequence=0
-            ).select_related("path").first()
+            entry = (
+                WdmWavelengthPathChannel.objects.filter(channel=origin_channel, sequence=0)
+                .select_related("path")
+                .first()
+            )
             return entry.path if entry else None
 
         def find_tx_rx_pair(channel, node_a, node_b):

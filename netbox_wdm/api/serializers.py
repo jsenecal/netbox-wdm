@@ -10,6 +10,7 @@ from ..models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
 )
 
 
@@ -117,6 +118,26 @@ class WdmChannelSerializer(NetBoxModelSerializer):
             "last_updated",
         )
         brief_fields = ("id", "url", "display", "label", "wavelength_nm", "status")
+
+
+class WdmWavelengthPathSerializer(NetBoxModelSerializer):
+    class Meta:
+        model = WdmWavelengthPath
+        fields = (
+            "id",
+            "url",
+            "display",
+            "grid_position",
+            "wavelength_nm",
+            "is_complete",
+            "is_active",
+            "is_valid",
+            "tags",
+            "custom_fields",
+            "created",
+            "last_updated",
+        )
+        brief_fields = ("id", "url", "display", "wavelength_nm", "is_complete", "is_active")
 
 
 class WdmCircuitSerializer(NetBoxModelSerializer):

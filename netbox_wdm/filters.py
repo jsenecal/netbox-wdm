@@ -20,6 +20,7 @@ from .models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
 )
 
 
@@ -92,6 +93,17 @@ class WdmChannelFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     class Meta:
         model = WdmChannel
         fields = ("id", "wdm_node", "status", "grid_position")
+
+
+class WdmWavelengthPathFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
+    is_complete = django_filters.BooleanFilter()
+    is_active = django_filters.BooleanFilter()
+    is_valid = django_filters.BooleanFilter()
+    search_fields = ("wavelength_nm",)
+
+    class Meta:
+        model = WdmWavelengthPath
+        fields = ("id", "grid_position", "wavelength_nm", "is_complete", "is_active", "is_valid")
 
 
 class WdmCircuitFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):

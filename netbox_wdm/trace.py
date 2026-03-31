@@ -450,12 +450,8 @@ def rebuild_wavelength_paths_for_node(node: WdmNode) -> None:
         if len(channels) < 2:
             channel_pks = [ch.pk for ch in channels]
             # Only delete paths whose exact sequence matches these channels
-            for candidate in WdmWavelengthPath.objects.filter(
-                path_channels__channel__pk__in=channel_pks
-            ).distinct():
-                candidate_pks = list(
-                    candidate.path_channels.order_by("sequence").values_list("channel_id", flat=True)
-                )
+            for candidate in WdmWavelengthPath.objects.filter(path_channels__channel__pk__in=channel_pks).distinct():
+                candidate_pks = list(candidate.path_channels.order_by("sequence").values_list("channel_id", flat=True))
                 if set(candidate_pks) <= set(channel_pks):
                     candidate.path_channels.all().delete()
                     candidate.delete()
@@ -466,12 +462,8 @@ def rebuild_wavelength_paths_for_node(node: WdmNode) -> None:
         # Find an existing path with the same channels in the same sequence order.
         # This preserves both directions for duplex (e.g., [A,B] and [B,A] are distinct).
         existing_path = None
-        for candidate in WdmWavelengthPath.objects.filter(
-            path_channels__channel__pk__in=channel_pks
-        ).distinct():
-            candidate_pks = list(
-                candidate.path_channels.order_by("sequence").values_list("channel_id", flat=True)
-            )
+        for candidate in WdmWavelengthPath.objects.filter(path_channels__channel__pk__in=channel_pks).distinct():
+            candidate_pks = list(candidate.path_channels.order_by("sequence").values_list("channel_id", flat=True))
             if candidate_pks == channel_pks:
                 existing_path = candidate
                 break

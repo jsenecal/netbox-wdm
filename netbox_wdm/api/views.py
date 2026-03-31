@@ -19,6 +19,7 @@ from ..filters import (
     WdmLinePortFilterSet,
     WdmNodeFilterSet,
     WdmProfileFilterSet,
+    WdmWavelengthPathFilterSet,
 )
 from ..models import (
     WdmChannel,
@@ -27,6 +28,7 @@ from ..models import (
     WdmLinePort,
     WdmNode,
     WdmProfile,
+    WdmWavelengthPath,
 )
 from .serializers import (
     WdmChannelPlanSerializer,
@@ -35,6 +37,7 @@ from .serializers import (
     WdmLinePortSerializer,
     WdmNodeSerializer,
     WdmProfileSerializer,
+    WdmWavelengthPathSerializer,
 )
 
 
@@ -348,6 +351,12 @@ class WdmChannelViewSet(NetBoxModelViewSet):
         )
 
         return Response(asdict(trace_data))
+
+
+class WdmWavelengthPathViewSet(NetBoxModelViewSet):
+    queryset = WdmWavelengthPath.objects.prefetch_related("tags")
+    serializer_class = WdmWavelengthPathSerializer
+    filterset_class = WdmWavelengthPathFilterSet
 
 
 class WdmCircuitViewSet(NetBoxModelViewSet):

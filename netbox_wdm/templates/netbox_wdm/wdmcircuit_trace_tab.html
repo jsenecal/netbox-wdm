@@ -7,28 +7,20 @@
 {% block content %}
 {% if trace_data_list %}
 <link rel="stylesheet" href="{% static 'netbox_wdm/css/channel-trace.css' %}">
-{% for trace_data in trace_data_list %}
 <div class="row mb-3">
     <div class="col">
         <div class="card">
             <h5 class="card-header">
-                {% trans "Wavelength Path Trace" %}
-                <span class="badge text-bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
-                {% if trace_data.is_active %}
-                <span class="badge text-bg-success ms-1">{% trans "Active" %}</span>
-                {% endif %}
-                {% if trace_data.is_complete %}
-                <span class="badge text-bg-info ms-1">{% trans "Complete" %}</span>
-                {% endif %}
+                {% trans "Circuit Trace" %}
+                <span class="badge text-bg-primary ms-2">{{ trace_data_list|length }} {% trans "path(s)" %}</span>
             </h5>
             <div class="card-body p-0">
-                <div id="channel-trace-container-{{ forloop.counter0 }}" class="wdm-trace-container" style="height: 600px;"></div>
-                <div id="channel-trace-tooltip-{{ forloop.counter0 }}" class="wdm-trace-tooltip"></div>
+                <div id="circuit-trace-container" class="wdm-trace-container" style="height: 700px;"></div>
+                <div id="circuit-trace-tooltip" class="wdm-trace-tooltip"></div>
             </div>
         </div>
     </div>
 </div>
-{% endfor %}
 {% else %}
 <div class="alert alert-info">
     {% trans "This circuit has no wavelength paths assigned." %}
@@ -43,18 +35,14 @@
 window.CIRCUIT_TRACE_DATA_LIST = {{ trace_data_list_json|safe }};
 </script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'netbox_wdm/dist/channel-trace.min.js' %}"></script>
+<script src="{% static 'netbox_wdm/dist/circuit-trace.min.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var dataList = window.CIRCUIT_TRACE_DATA_LIST;
-    for (var i = 0; i < dataList.length; i++) {
-        window.renderChannelTrace(
-            '#channel-trace-container-' + i,
-            '#channel-trace-tooltip-' + i,
-            dataList[i],
-            dataList[i].channel_id
-        );
-    }
+    window.renderCircuitTrace(
+        '#circuit-trace-container',
+        '#circuit-trace-tooltip',
+        window.CIRCUIT_TRACE_DATA_LIST
+    );
 });
 </script>
 {% endif %}

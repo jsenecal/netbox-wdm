@@ -445,13 +445,155 @@ class WdmChannelElementsView(generic.ObjectView):
         return {"elements": elements}
 
 
-def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> ChannelTraceData:
-    """Build ChannelTraceData for a WdmWavelengthPath, reusable by channel and circuit trace views."""
-    from dcim.models import Cable, CableTermination, RearPort
+def _trace_cable_segment(from_node: Any) -> list[CableSegmentItem]:
+    """Trace the full cable chain from a node's TX/BIDI rear port to the next WDM node.
+
+    Follows through patch panels and intermediate devices, collecting every port and cable.
+    Returns a list of CableSegmentItem entries in order.
+    """
+    from dcim.models import Cable, CableTermination, FrontPort, PortMapping, RearPort
     from django.contrib.contenttypes.models import ContentType
 
     from .models import WdmLinePort
 
+    items: list[CableSegmentItem] = []
+    rp_ct = ContentType.objects.get_for_model(RearPort)
+    fp_ct = ContentType.objects.get_for_model(FrontPort)
+
+    tx_lp = WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port").first()
+    if not tx_lp or not tx_lp.rear_port.cable_id:
+        return items
+
+    def _add_rp(rp: RearPort) -> None:
+        items.append(
+            CableSegmentItem(type="rear_port", id=rp.pk, name=rp.name, device=rp.device.name, url=rp.get_absolute_url())
+        )
+
+    def _add_fp(fp: FrontPort) -> None:
+        items.append(
+            CableSegmentItem(
+                type="front_port", id=fp.pk, name=fp.name, device=fp.device.name, url=fp.get_absolute_url()
+            )
+        )
+
+    def _add_cable(cable: Cable) -> None:
+        items.append(
+            CableSegmentItem(
+                type="cable",
+                id=cable.pk,
+                name=cable.label or f"Cable #{cable.pk}",
+                status=cable.status,
+                color=cable.color or "",
+                url=cable.get_absolute_url(),
+            )
+        )
+
+    def _follow_cable_far_end(cable_id: int, local_id: int, local_ct: Any) -> tuple[Any | None, str]:
+        """Find the far-end termination of a cable. Returns (object, type_str) or (None, '')."""
+        far_terms = CableTermination.objects.filter(cable_id=cable_id).exclude(
+            termination_type=local_ct, termination_id=local_id
+        )
+        for ft in far_terms:
+            if ft.termination_type == rp_ct:
+                rp = RearPort.objects.filter(pk=ft.termination_id).select_related("device").first()
+                if rp:
+                    return rp, "rear_port"
+            elif ft.termination_type == fp_ct:
+                fp = FrontPort.objects.filter(pk=ft.termination_id).select_related("device").first()
+                if fp:
+                    return fp, "front_port"
+        # Same-type far end
+        same_terms = CableTermination.objects.filter(cable_id=cable_id, termination_type=local_ct).exclude(
+            termination_id=local_id
+        )
+        for st in same_terms:
+            if local_ct == rp_ct:
+                rp = RearPort.objects.filter(pk=st.termination_id).select_related("device").first()
+                if rp:
+                    return rp, "rear_port"
+            elif local_ct == fp_ct:
+                fp = FrontPort.objects.filter(pk=st.termination_id).select_related("device").first()
+                if fp:
+                    return fp, "front_port"
+        return None, ""
+
+    # Start: source rear port
+    current_rp = RearPort.objects.select_related("device").get(pk=tx_lp.rear_port_id)
+    _add_rp(current_rp)
+
+    visited_ports: set[int] = {current_rp.pk}
+    for _hop in range(20):  # max hops
+        fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=current_rp.pk)
+        if not fresh_rp.cable_id:
+            break
+
+        cable = Cable.objects.get(pk=fresh_rp.cable_id)
+        _add_cable(cable)
+
+        far_obj, far_type = _follow_cable_far_end(fresh_rp.cable_id, fresh_rp.pk, rp_ct)
+        if far_obj is None:
+            break
+
+        if far_type == "rear_port":
+            _add_rp(far_obj)
+            if far_obj.pk in visited_ports:
+                break
+            visited_ports.add(far_obj.pk)
+            # Check if this is a WDM node — if so, we're done
+            if WdmLinePort.objects.filter(rear_port=far_obj).exists():
+                break
+            # Intermediate device: follow PortMapping RP → FP, then FP's cable
+            pm = PortMapping.objects.filter(rear_port=far_obj).select_related("front_port__device").first()
+            if not pm or not pm.front_port.cable_id:
+                break
+            _add_fp(pm.front_port)
+            exit_fp = pm.front_port
+            exit_cable = Cable.objects.get(pk=exit_fp.cable_id)
+            _add_cable(exit_cable)
+            far2, far2_type = _follow_cable_far_end(exit_cable.pk, exit_fp.pk, fp_ct)
+            if far2 is None:
+                break
+            if far2_type == "rear_port":
+                _add_rp(far2)
+                if far2.pk in visited_ports:
+                    break
+                visited_ports.add(far2.pk)
+                if WdmLinePort.objects.filter(rear_port=far2).exists():
+                    break
+                current_rp = far2
+                continue
+            elif far2_type == "front_port":
+                _add_fp(far2)
+                pm2 = PortMapping.objects.filter(front_port=far2).select_related("rear_port__device").first()
+                if pm2:
+                    _add_rp(pm2.rear_port)
+                    if pm2.rear_port.pk in visited_ports:
+                        break
+                    visited_ports.add(pm2.rear_port.pk)
+                    current_rp = pm2.rear_port
+                    continue
+                break
+        elif far_type == "front_port":
+            _add_fp(far_obj)
+            pm = PortMapping.objects.filter(front_port=far_obj).select_related("rear_port__device").first()
+            if not pm:
+                break
+            _add_rp(pm.rear_port)
+            if pm.rear_port.pk in visited_ports:
+                break
+            visited_ports.add(pm.rear_port.pk)
+            if WdmLinePort.objects.filter(rear_port=pm.rear_port).exists():
+                break
+            current_rp = pm.rear_port
+            continue
+
+        break
+
+    return items
+
+
+def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> ChannelTraceData:
+    """Build ChannelTraceData for a WdmWavelengthPath, reusable by channel and circuit trace views."""
     elements = []
     for entry in wl_path.path_channels.select_related(
         "channel__wdm_node__device",
@@ -461,59 +603,10 @@ def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> C
         elements.append(path_element_from_channel(entry.channel, entry.sequence))
 
     cable_segments: list[CableSegment] = []
-    rp_ct = ContentType.objects.get_for_model(RearPort)
     hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
     for i in range(len(hop_entries) - 1):
         from_node = hop_entries[i].channel.wdm_node
-        items: list[CableSegmentItem] = []
-
-        tx_lp = (
-            WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port").first()
-        )
-
-        if tx_lp and tx_lp.rear_port.cable_id:
-            items.append(
-                CableSegmentItem(
-                    type="rear_port",
-                    id=tx_lp.rear_port_id,
-                    name=tx_lp.rear_port.name,
-                    device=from_node.device.name,
-                    url=tx_lp.rear_port.get_absolute_url(),
-                )
-            )
-
-            try:
-                cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
-                items.append(
-                    CableSegmentItem(
-                        type="cable",
-                        id=cable.pk,
-                        name=cable.label or f"Cable #{cable.pk}",
-                        status=cable.status,
-                        color=cable.color or "",
-                        url=cable.get_absolute_url(),
-                    )
-                )
-            except Cable.DoesNotExist:
-                pass
-
-            far_terms = CableTermination.objects.filter(
-                cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
-            ).exclude(termination_id=tx_lp.rear_port_id)
-            far_term = far_terms.first()
-            if far_term:
-                far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
-                if far_rp:
-                    items.append(
-                        CableSegmentItem(
-                            type="rear_port",
-                            id=far_rp.pk,
-                            name=far_rp.name,
-                            device=far_rp.device.name,
-                            url=far_rp.get_absolute_url(),
-                        )
-                    )
-
+        items = _trace_cable_segment(from_node)
         cable_segments.append(
             CableSegment(
                 from_sequence=hop_entries[i].sequence,
