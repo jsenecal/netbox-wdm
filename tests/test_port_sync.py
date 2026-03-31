@@ -271,3 +271,47 @@ class TestSyncPortsCommand:
         out = StringIO()
         with pytest.raises(CommandError):
             call_command("wdm_sync_ports", "99999", stdout=out)
+
+
+@pytest.mark.django_db
+class TestRehashPortsCommand:
+    def test_rehash_computes_hashes(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Command computes hashes for all nodes."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        # Ensure hash is empty (default)
+        from netbox_wdm.models import WdmNode
+
+        WdmNode.objects.filter(pk=bundle.node.pk).update(expected_port_hash="")
+        out = StringIO()
+        call_command("wdm_rehash_ports", stdout=out)
+        bundle.node.refresh_from_db()
+        assert bundle.node.expected_port_hash != ""
+        assert bundle.node.port_sync_valid is True
+
+    def test_rehash_missing_only(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """--missing-only only processes nodes with empty hashes."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        # Set a non-empty hash so --missing-only skips it
+        from netbox_wdm.models import WdmNode
+
+        WdmNode.objects.filter(pk=bundle.node.pk).update(expected_port_hash="fakehash")
+        out = StringIO()
+        call_command("wdm_rehash_ports", missing_only=True, stdout=out)
+        output = out.getvalue()
+        assert "No nodes to process" in output
+        bundle.node.refresh_from_db()
+        assert bundle.node.expected_port_hash == "fakehash"
+
+    def test_rehash_detects_out_of_sync(self, wdm_site, dt_cwdm_dx, wdm_roles):
+        """Command reports nodes that are out of sync."""
+        bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
+        from netbox_wdm.models import WdmNode
+
+        WdmNode.objects.filter(pk=bundle.node.pk).update(expected_port_hash="")
+        PortMapping.objects.filter(device=bundle.node.device).delete()
+        out = StringIO()
+        call_command("wdm_rehash_ports", stdout=out)
+        output = out.getvalue()
+        assert "out of sync" in output
+        bundle.node.refresh_from_db()
+        assert bundle.node.port_sync_valid is False
