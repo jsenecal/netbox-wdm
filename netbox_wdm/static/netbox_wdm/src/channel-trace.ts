@@ -468,38 +468,55 @@ function render(container: HTMLElement, tooltipEl: HTMLElement, data: TraceData,
   fitView();
 }
 
-// ── Entry point ──────────────────────────────────────────────────
-function init(): void {
-  const container = document.getElementById('channel-trace-container');
-  const tooltipEl = document.getElementById('channel-trace-tooltip');
-  const data = (window as any).CHANNEL_TRACE_DATA as TraceData | undefined;
-  const currentId = (window as any).CHANNEL_TRACE_CURRENT_ID as number | undefined;
+// ── Public API for rendering into arbitrary containers ───────────
+function renderChannelTrace(
+  containerSelector: string,
+  tooltipSelector: string,
+  data: TraceData,
+  currentChannelId: number,
+): void {
+  const container = document.querySelector(containerSelector) as HTMLElement | null;
+  const tooltipEl = document.querySelector(tooltipSelector) as HTMLElement | null;
 
   if (!container) {
-    dbg('Container #channel-trace-container not found');
+    dbg(`Container ${containerSelector} not found`);
     return;
   }
   if (!tooltipEl) {
-    dbg('Tooltip #channel-trace-tooltip not found');
+    dbg(`Tooltip ${tooltipSelector} not found`);
     return;
   }
-  if (!data) {
-    dbg('No CHANNEL_TRACE_DATA on window');
+  if (!data || !data.elements || data.elements.length === 0) {
     container.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">No trace data available.</div>';
     return;
   }
-  if (!data.elements || data.elements.length === 0) {
-    container.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">This channel has no elements to display.</div>';
+
+  dbg('Rendering trace', { containerSelector, elements: data.elements.length, currentChannelId });
+  render(container, tooltipEl, data, currentChannelId);
+}
+
+// Expose on window for use from inline <script> tags
+(window as any).renderChannelTrace = renderChannelTrace;
+
+// ── Entry point (single-channel page) ───────────────────────────
+function init(): void {
+  const data = (window as any).CHANNEL_TRACE_DATA as TraceData | undefined;
+  const currentId = (window as any).CHANNEL_TRACE_CURRENT_ID as number | undefined;
+
+  if (!data) {
+    dbg('No CHANNEL_TRACE_DATA on window');
     return;
   }
 
-  dbg('Initializing trace visualization', { channel_id: data.channel_id, elements: data.elements.length, currentId });
-
-  render(container, tooltipEl, data, currentId ?? data.channel_id);
+  renderChannelTrace(
+    '#channel-trace-container',
+    '#channel-trace-tooltip',
+    data,
+    currentId ?? data.channel_id,
+  );
 }
 
 document.addEventListener('DOMContentLoaded', init);
 
-export { init, render };
+export { init, render, renderChannelTrace };

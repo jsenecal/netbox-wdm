@@ -100,7 +100,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Wavelength paths: {WdmWavelengthPath.objects.count()}")
 
         # -- WDM circuits --
-        self._create_circuits(tag, topo1)
+        self._create_circuits(tag, topo1, topo2)
 
         self.stdout.write(self.style.SUCCESS("\nSample data created successfully."))
         self._print_summary()
@@ -137,8 +137,7 @@ class Command(BaseCommand):
         Cable.objects.filter(tags=tag).delete()
 
         # Then WDM objects in dependency order
-        # Clear circuit -> wavelength_path FKs before deleting paths
-        WdmCircuit.objects.filter(tags=tag).update(wavelength_path=None)
+        # M2M wavelength_paths will be auto-cleared when circuits are deleted
         # Delete wavelength path channels and paths for tagged nodes
         WdmWavelengthPathChannel.objects.filter(channel__wdm_node__tags=tag).delete()
         WdmWavelengthPath.objects.filter(path_channels__isnull=True).delete()
@@ -210,46 +209,86 @@ class Command(BaseCommand):
     # WDM Circuits
     # ================================================================
 
-    def _create_circuits(self, tag, topo):
-        from netbox_wdm.models import WdmCircuit, WdmWavelengthPath
+    def _create_circuits(self, tag, topo_dx, topo_sf):
+        from netbox_wdm.models import WdmChannel, WdmCircuit
 
-        bundle = topo.bundles.get("mux_a")
-        if not bundle:
-            self.stdout.write(self.style.WARNING("  Skipping circuits: no mux_a bundle"))
-            return
+        def find_path_from(channel, origin_node):
+            """Find the wavelength path that starts from origin_node for this channel's wavelength."""
+            from netbox_wdm.models import WdmWavelengthPathChannel
 
-        channels = list(bundle.node.channels.order_by("grid_position"))
-        if not channels:
-            self.stdout.write(self.style.WARNING("  Skipping circuits: no channels"))
-            return
-
-        def find_path(channel):
-            return WdmWavelengthPath.objects.filter(
-                wavelength_nm=channel.wavelength_nm,
-                path_channels__channel=channel,
+            origin_channel = WdmChannel.objects.filter(
+                wdm_node=origin_node, grid_position=channel.grid_position
             ).first()
+            if not origin_channel:
+                return None
+            # Find the path where this origin channel is at sequence 0
+            entry = WdmWavelengthPathChannel.objects.filter(
+                channel=origin_channel, sequence=0
+            ).select_related("path").first()
+            return entry.path if entry else None
 
-        circuits_spec = [
-            ("CWDM-East-West-Active-1", "active", 0),
-            ("CWDM-East-West-Active-2", "active", 1),
-            ("CWDM-East-West-Staged", "staged", 2),
-            ("CWDM-East-West-Fault", "active", 3),
-            ("CWDM-East-West-Planned", "planned", 4),
-        ]
-        for name, status, ch_idx in circuits_spec:
-            if ch_idx < len(channels):
-                path = find_path(channels[ch_idx])
-                ckt, created = WdmCircuit.objects.get_or_create(
-                    name=name,
-                    defaults={
-                        "status": status,
-                        "wavelength_path": path,
-                    },
-                )
-                if created:
-                    self._tag(ckt, tag)
-                    wl = path.wavelength_nm if path else channels[ch_idx].wavelength_nm
-                    self.stdout.write(f"  Circuit: {name} ({status}, {wl}nm)")
+        def find_tx_rx_pair(channel, node_a, node_b):
+            """Find both directional paths for a wavelength: A→B (TX) and B→A (RX from A's perspective)."""
+            tx = find_path_from(channel, node_a)
+            rx = find_path_from(channel, node_b)
+            return tx, rx
+
+        def make_circuit(name, status, paths, tag):
+            ckt, created = WdmCircuit.objects.get_or_create(name=name, defaults={"status": status})
+            if created:
+                ckt.wavelength_paths.add(*[p for p in paths if p])
+                self._tag(ckt, tag)
+                labels = [p.get_display_label() for p in paths if p]
+                self.stdout.write(f"  Circuit: {name} ({status}, {len(labels)} path(s))")
+                for lbl in labels:
+                    self.stdout.write(f"    {lbl}")
+
+        # -- Duplex mux circuits (TX+RX pairs) --
+        dx_a = topo_dx.bundles.get("mux_a")
+        dx_b = topo_dx.bundles.get("mux_b")
+        if dx_a and dx_b:
+            dx_channels = list(dx_a.node.channels.order_by("grid_position"))
+            node_a, node_b = dx_a.node, dx_b.node
+
+            # Bidirectional single-wavelength circuits
+            bidi_spec = [
+                ("CWDM-DX-Active", "active", 0),
+                ("CWDM-DX-Staged", "staged", 1),
+                ("CWDM-DX-Fault", "active", 2),
+                ("CWDM-DX-Planned", "planned", 3),
+            ]
+            for name, ckt_status, ch_idx in bidi_spec:
+                if ch_idx < len(dx_channels):
+                    tx, rx = find_tx_rx_pair(dx_channels[ch_idx], node_a, node_b)
+                    make_circuit(name, ckt_status, [tx, rx], tag)
+
+            # Multi-path bonded circuit (4 wavelengths, both directions each)
+            bonded_paths = []
+            for i in range(4, min(8, len(dx_channels))):
+                tx, rx = find_tx_rx_pair(dx_channels[i], node_a, node_b)
+                if tx:
+                    bonded_paths.append(tx)
+                if rx:
+                    bonded_paths.append(rx)
+            if bonded_paths:
+                make_circuit("CWDM-DX-4x-Bonded", "active", bonded_paths, tag)
+
+        # -- Single-fiber mux circuits (TX+RX pairs) --
+        sf_a = topo_sf.bundles.get("mux_a")
+        sf_b = topo_sf.bundles.get("mux_b")
+        if sf_a and sf_b:
+            sf_channels = list(sf_a.node.channels.order_by("grid_position"))
+            sf_node_a, sf_node_b = sf_a.node, sf_b.node
+            sf_paths = []
+            for i in range(2):
+                if i < len(sf_channels):
+                    tx, rx = find_tx_rx_pair(sf_channels[i], sf_node_a, sf_node_b)
+                    if tx:
+                        sf_paths.append(tx)
+                    if rx:
+                        sf_paths.append(rx)
+            if sf_paths:
+                make_circuit("CWDM-SF-2x-Bonded", "active", sf_paths, tag)
 
     # ================================================================
     # Summary
@@ -292,9 +331,13 @@ class Command(BaseCommand):
             )
 
         self.stdout.write("\n--- Circuits ---")
-        for ckt in WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG):
-            wl = ckt.wavelength_path.wavelength_nm if ckt.wavelength_path else "N/A"
-            self.stdout.write(f"  {ckt.name}: {ckt.status} ({wl}nm)")
+        for ckt in WdmCircuit.objects.filter(tags__slug=SAMPLE_TAG).prefetch_related("wavelength_paths"):
+            paths = list(ckt.wavelength_paths.all())
+            if paths:
+                wls = ", ".join(str(p.wavelength_nm) for p in paths)
+                self.stdout.write(f"  {ckt.name}: {ckt.status} ({len(paths)} path(s): {wls}nm)")
+            else:
+                self.stdout.write(f"  {ckt.name}: {ckt.status} (no paths)")
 
         self.stdout.write("\n--- Cables ---")
         for cable in Cable.objects.filter(tags__slug=SAMPLE_TAG):

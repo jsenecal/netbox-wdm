@@ -9,7 +9,7 @@
             <td>
                 <a href="{{ svc.get_absolute_url }}">{{ svc.name }}</a>
             </td>
-            <td>{% if svc.wavelength_path %}{{ svc.wavelength_path }}{% else %}&mdash;{% endif %}</td>
+            <td>{% for path in svc.wavelength_paths.all %}{{ path }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td>
             <td>
                 {% if svc.status == "active" %}
                 <span class="badge text-bg-success">{{ svc.get_status_display }}</span>

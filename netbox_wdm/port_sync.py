@@ -281,7 +281,9 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
     path_ids = (
         WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids).values_list("path_id", flat=True).distinct()
     )
-    affected_circuits = list(WdmCircuit.objects.filter(wavelength_path_id__in=path_ids).values("id", "name"))
+    affected_circuits = list(
+        WdmCircuit.objects.filter(wavelength_paths__id__in=path_ids).distinct().values("id", "name")
+    )
 
     return {
         "warnings": {

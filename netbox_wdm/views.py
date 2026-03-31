@@ -445,6 +445,106 @@ class WdmChannelElementsView(generic.ObjectView):
         return {"elements": elements}
 
 
+def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> ChannelTraceData:
+    """Build ChannelTraceData for a WdmWavelengthPath, reusable by channel and circuit trace views."""
+    from dcim.models import Cable, CableTermination, RearPort
+    from django.contrib.contenttypes.models import ContentType
+
+    from .models import WdmLinePort
+
+    elements = []
+    for entry in wl_path.path_channels.select_related(
+        "channel__wdm_node__device",
+        "channel__mux_front_port",
+        "channel__demux_front_port",
+    ).order_by("sequence"):
+        elements.append(path_element_from_channel(entry.channel, entry.sequence))
+
+    cable_segments: list[CableSegment] = []
+    rp_ct = ContentType.objects.get_for_model(RearPort)
+    hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
+    for i in range(len(hop_entries) - 1):
+        from_node = hop_entries[i].channel.wdm_node
+        items: list[CableSegmentItem] = []
+
+        tx_lp = (
+            WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port").first()
+        )
+
+        if tx_lp and tx_lp.rear_port.cable_id:
+            items.append(
+                CableSegmentItem(
+                    type="rear_port",
+                    id=tx_lp.rear_port_id,
+                    name=tx_lp.rear_port.name,
+                    device=from_node.device.name,
+                    url=tx_lp.rear_port.get_absolute_url(),
+                )
+            )
+
+            try:
+                cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
+                items.append(
+                    CableSegmentItem(
+                        type="cable",
+                        id=cable.pk,
+                        name=cable.label or f"Cable #{cable.pk}",
+                        status=cable.status,
+                        color=cable.color or "",
+                        url=cable.get_absolute_url(),
+                    )
+                )
+            except Cable.DoesNotExist:
+                pass
+
+            far_terms = CableTermination.objects.filter(
+                cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
+            ).exclude(termination_id=tx_lp.rear_port_id)
+            far_term = far_terms.first()
+            if far_term:
+                far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
+                if far_rp:
+                    items.append(
+                        CableSegmentItem(
+                            type="rear_port",
+                            id=far_rp.pk,
+                            name=far_rp.name,
+                            device=far_rp.device.name,
+                            url=far_rp.get_absolute_url(),
+                        )
+                    )
+
+        cable_segments.append(
+            CableSegment(
+                from_sequence=hop_entries[i].sequence,
+                to_sequence=hop_entries[i + 1].sequence,
+                items=items,
+            )
+        )
+
+    return ChannelTraceData(
+        channel_id=channel_id or (elements[0].channel_id if elements else 0),
+        wavelength_path_id=wl_path.pk,
+        wavelength_nm=wl_path.wavelength_nm,
+        grid_position=wl_path.grid_position,
+        is_complete=wl_path.is_complete,
+        is_active=wl_path.is_active,
+        is_valid=wl_path.is_valid,
+        elements=elements,
+        cable_segments=cable_segments,
+    )
+
+
+def _serialize_trace_context(trace_data: ChannelTraceData) -> dict[str, Any]:
+    """Serialize ChannelTraceData into template context with JSON."""
+    from dataclasses import asdict
+
+    return {
+        "trace_data": trace_data,
+        "trace_data_json": json.dumps(asdict(trace_data), cls=DjangoJSONEncoder),
+    }
+
+
 @register_model_view(WdmChannel, "trace", path="trace")
 class WdmChannelTraceView(generic.ObjectView):
     queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
@@ -459,107 +559,14 @@ class WdmChannelTraceView(generic.ObjectView):
         return "netbox_wdm/wdmchannel_trace_tab.html"
 
     def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
-        from dataclasses import asdict
-
-        from dcim.models import Cable, CableTermination, RearPort
-        from django.contrib.contenttypes.models import ContentType
-
-        from .models import WdmLinePort, WdmWavelengthPathChannel
+        from .models import WdmWavelengthPathChannel
 
         path_entry = WdmWavelengthPathChannel.objects.filter(channel=instance).select_related("path").first()
         if not path_entry:
             return {"trace_data": None, "trace_data_json": "null"}
 
-        wl_path = path_entry.path
-        elements = []
-        for entry in wl_path.path_channels.select_related(
-            "channel__wdm_node__device",
-            "channel__mux_front_port",
-            "channel__demux_front_port",
-        ).order_by("sequence"):
-            elements.append(path_element_from_channel(entry.channel, entry.sequence))
-
-        # Cable segments between consecutive elements
-        cable_segments: list[CableSegment] = []
-        rp_ct = ContentType.objects.get_for_model(RearPort)
-        hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
-        for i in range(len(hop_entries) - 1):
-            from_node = hop_entries[i].channel.wdm_node
-            items: list[CableSegmentItem] = []
-
-            tx_lp = (
-                WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"])
-                .select_related("rear_port")
-                .first()
-            )
-
-            if tx_lp and tx_lp.rear_port.cable_id:
-                items.append(
-                    CableSegmentItem(
-                        type="rear_port",
-                        id=tx_lp.rear_port_id,
-                        name=tx_lp.rear_port.name,
-                        device=from_node.device.name,
-                        url=tx_lp.rear_port.get_absolute_url(),
-                    )
-                )
-
-                try:
-                    cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
-                    items.append(
-                        CableSegmentItem(
-                            type="cable",
-                            id=cable.pk,
-                            name=cable.label or f"Cable #{cable.pk}",
-                            status=cable.status,
-                            color=cable.color or "",
-                            url=cable.get_absolute_url(),
-                        )
-                    )
-                except Cable.DoesNotExist:
-                    pass
-
-                far_terms = CableTermination.objects.filter(
-                    cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
-                ).exclude(termination_id=tx_lp.rear_port_id)
-                far_term = far_terms.first()
-                if far_term:
-                    far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
-                    if far_rp:
-                        items.append(
-                            CableSegmentItem(
-                                type="rear_port",
-                                id=far_rp.pk,
-                                name=far_rp.name,
-                                device=far_rp.device.name,
-                                url=far_rp.get_absolute_url(),
-                            )
-                        )
-
-            cable_segments.append(
-                CableSegment(
-                    from_sequence=hop_entries[i].sequence,
-                    to_sequence=hop_entries[i + 1].sequence,
-                    items=items,
-                )
-            )
-
-        trace_data = ChannelTraceData(
-            channel_id=instance.pk,
-            wavelength_path_id=wl_path.pk,
-            wavelength_nm=wl_path.wavelength_nm,
-            grid_position=wl_path.grid_position,
-            is_complete=wl_path.is_complete,
-            is_active=wl_path.is_active,
-            is_valid=wl_path.is_valid,
-            elements=elements,
-            cable_segments=cable_segments,
-        )
-
-        return {
-            "trace_data": trace_data,
-            "trace_data_json": json.dumps(asdict(trace_data), cls=DjangoJSONEncoder),
-        }
+        trace_data = _build_trace_data_for_path(path_entry.path, channel_id=instance.pk)
+        return _serialize_trace_context(trace_data)
 
 
 @register_model_view(WdmChannel, "edit")
@@ -598,12 +605,12 @@ class WdmCircuitListView(generic.ObjectListView):
 
 @register_model_view(WdmCircuit)
 class WdmCircuitView(generic.ObjectView):
-    queryset = WdmCircuit.objects.select_related("tenant")
+    queryset = WdmCircuit.objects.select_related("tenant").prefetch_related("wavelength_paths")
 
 
 @register_model_view(WdmCircuit, "trace", path="trace")
 class WdmCircuitTraceView(generic.ObjectView):
-    queryset = WdmCircuit.objects.select_related("tenant")
+    queryset = WdmCircuit.objects.select_related("tenant").prefetch_related("wavelength_paths")
     tab = ViewTab(
         label=_("Trace"),
         permission="netbox_wdm.view_wdmcircuit",
@@ -614,8 +621,17 @@ class WdmCircuitTraceView(generic.ObjectView):
         return "netbox_wdm/wdmcircuit_trace_tab.html"
 
     def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
-        stitched_path = instance.get_stitched_path()
-        return {"stitched_path": stitched_path}
+        from dataclasses import asdict
+
+        paths = instance.wavelength_paths.all()
+        if not paths.exists():
+            return {"trace_data_list": [], "trace_data_list_json": "[]"}
+
+        trace_data_list = [_build_trace_data_for_path(p) for p in paths]
+        return {
+            "trace_data_list": trace_data_list,
+            "trace_data_list_json": json.dumps([asdict(td) for td in trace_data_list], cls=DjangoJSONEncoder),
+        }
 
 
 @register_model_view(WdmCircuit, "edit")

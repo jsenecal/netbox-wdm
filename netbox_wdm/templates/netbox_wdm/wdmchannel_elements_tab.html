@@ -10,7 +10,7 @@
         <div class="card">
             <h5 class="card-header">
                 {% trans "Wavelength Path Elements" %}
-                <span class="badge bg-primary ms-2">{{ elements|length }}</span>
+                <span class="badge text-bg-primary ms-2">{{ elements|length }}</span>
             </h5>
             <table class="table table-hover">
                 <thead>
@@ -47,11 +47,11 @@
                         </td>
                         <td>
                             {% if element.mux_connected and element.demux_connected %}
-                                <span class="badge bg-success">{% trans "Connected" %}</span>
+                                <span class="badge text-bg-success">{% trans "Connected" %}</span>
                             {% elif element.mux_connected or element.demux_connected %}
-                                <span class="badge bg-warning text-dark">{% trans "Partial" %}</span>
+                                <span class="badge text-bg-warning">{% trans "Partial" %}</span>
                             {% else %}
-                                <span class="badge bg-secondary">{% trans "Disconnected" %}</span>
+                                <span class="badge text-bg-secondary">{% trans "Disconnected" %}</span>
                             {% endif %}
                         </td>
                     </tr>

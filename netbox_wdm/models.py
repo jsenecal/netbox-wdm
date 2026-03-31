@@ -557,13 +557,11 @@ class WdmCircuit(NetBoxModel):
         db_index=True,
         verbose_name=_("status"),
     )
-    wavelength_path = models.ForeignKey(
+    wavelength_paths = models.ManyToManyField(
         to="netbox_wdm.WdmWavelengthPath",
-        on_delete=models.SET_NULL,
         blank=True,
-        null=True,
         related_name="circuits",
-        verbose_name=_("wavelength path"),
+        verbose_name=_("wavelength paths"),
     )
     tenant = models.ForeignKey(
         to="tenancy.Tenant",
@@ -603,16 +601,17 @@ class WdmCircuit(NetBoxModel):
 
         if not is_new and old_status != self.status:
             if self.status == WdmCircuitStatusChoices.DECOMMISSIONED:
-                if self.wavelength_path:
-                    channel_ids = WdmWavelengthPathChannel.objects.filter(path=self.wavelength_path).values_list(
+                paths = list(self.wavelength_paths.all())
+                if paths:
+                    channel_ids = WdmWavelengthPathChannel.objects.filter(path__in=paths).values_list(
                         "channel_id", flat=True
                     )
                     WdmChannel.objects.filter(pk__in=channel_ids).update(status=WdmChannelStatusChoices.AVAILABLE)
-                    self.wavelength_path = None
-                    super().save(update_fields=["wavelength_path"])
+                    self.wavelength_paths.clear()
 
-    def get_stitched_path(self) -> list[PathElement]:
-        """Return the stitched end-to-end path as an ordered list of PathElement dataclasses."""
-        if self.wavelength_path:
-            return self.wavelength_path.get_stitched_path()
-        return []
+    def get_stitched_paths(self) -> list[tuple[WdmWavelengthPath, list[PathElement]]]:
+        """Return the stitched paths as a list of (path, elements) tuples."""
+        result = []
+        for path in self.wavelength_paths.all():
+            result.append((path, path.get_stitched_path()))
+        return result

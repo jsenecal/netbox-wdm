@@ -579,13 +579,12 @@ class TestStitchAPI:
         return f"/api/plugins/wdm/wdm-circuits/{circuit_pk}/stitch/"
 
     def test_stitch_empty_circuit(self, api_client, circuit):
-        """A circuit with no wavelength path returns is_complete=False."""
+        """A circuit with no wavelength paths returns empty paths list."""
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
         assert response.data["service_id"] == circuit.pk
         assert response.data["service_name"] == "Test Circuit"
-        assert response.data["is_complete"] is False
-        assert response.data["elements"] == []
+        assert response.data["paths"] == []
 
     def test_stitch_with_channels(self, api_client, channel, wdm_node):
         """A circuit with a wavelength path returns elements in sequence order."""
@@ -596,12 +595,14 @@ class TestStitchAPI:
         circuit = WdmCircuit.objects.create(
             name="Stitch Test Circuit",
             status=WdmCircuitStatusChoices.PLANNED,
-            wavelength_path=path,
         )
+        circuit.wavelength_paths.add(path)
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        assert len(response.data["elements"]) == 1
-        element = response.data["elements"][0]
+        assert len(response.data["paths"]) == 1
+        path_data = response.data["paths"][0]
+        assert len(path_data["elements"]) == 1
+        element = path_data["elements"][0]
         assert element["channel_id"] == channel.pk
         assert element["channel_label"] == channel.label
         assert element["node_id"] == wdm_node.pk
@@ -610,7 +611,7 @@ class TestStitchAPI:
         """Verify top-level keys are always present."""
         response = api_client.get(self._url(circuit.pk))
         assert response.status_code == status.HTTP_200_OK
-        for key in ("service_id", "service_name", "wavelength_nm", "status", "is_complete", "elements"):
+        for key in ("service_id", "service_name", "status", "paths"):
             assert key in response.data
 
     def test_stitch_wavelength_value(self, api_client, channel):
@@ -621,11 +622,11 @@ class TestStitchAPI:
         circuit = WdmCircuit.objects.create(
             name="WL Value Circuit",
             status=WdmCircuitStatusChoices.PLANNED,
-            wavelength_path=path,
         )
+        circuit.wavelength_paths.add(path)
         response = api_client.get(f"/api/plugins/wdm/wdm-circuits/{circuit.pk}/stitch/")
         assert response.status_code == status.HTTP_200_OK
-        assert response.data["wavelength_nm"] == Decimal("1560.61")
+        assert response.data["paths"][0]["wavelength_nm"] == Decimal("1560.61")
 
 
 # ---------------------------------------------------------------------------

@@ -351,23 +351,29 @@ class WdmChannelViewSet(NetBoxModelViewSet):
 
 
 class WdmCircuitViewSet(NetBoxModelViewSet):
-    queryset = WdmCircuit.objects.select_related("tenant").prefetch_related("tags")
+    queryset = WdmCircuit.objects.select_related("tenant").prefetch_related("tags", "wavelength_paths")
     serializer_class = WdmCircuitSerializer
     filterset_class = WdmCircuitFilterSet
 
     @action(detail=True, methods=["get"], url_path="stitch")
     def stitch(self, request: Any, pk: int | None = None) -> Response:
-        """Return the stitched end-to-end wavelength path."""
+        """Return the stitched end-to-end wavelength paths."""
         circuit = self.get_object()
-        elements = circuit.get_stitched_path()
-        wp = circuit.wavelength_path
+        stitched = circuit.get_stitched_paths()
         return Response(
             {
                 "service_id": circuit.pk,
                 "service_name": circuit.name,
-                "wavelength_nm": wp.wavelength_nm if wp else None,
                 "status": circuit.status,
-                "is_complete": wp.is_complete if wp else False,
-                "elements": [asdict(e) for e in elements],
+                "paths": [
+                    {
+                        "wavelength_path_id": wp.pk,
+                        "wavelength_nm": wp.wavelength_nm,
+                        "is_complete": wp.is_complete,
+                        "is_active": wp.is_active,
+                        "elements": [asdict(e) for e in elements],
+                    }
+                    for wp, elements in stitched
+                ],
             }
         )

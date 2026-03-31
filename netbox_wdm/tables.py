@@ -217,11 +217,11 @@ class WdmCircuitTable(NetBoxTable):
     pk = columns.ToggleColumn()
     name = tables.Column(linkify=True, verbose_name=_("Name"))
     status = tables.Column(verbose_name=_("Status"))
-    wavelength_path = tables.Column(verbose_name=_("Wavelength Path"))
+    wavelength_paths = columns.ManyToManyColumn(verbose_name=_("Wavelength Paths"))
     tenant = tables.Column(linkify=True, verbose_name=_("Tenant"))
     actions = columns.ActionsColumn()
 
     class Meta(NetBoxTable.Meta):
         model = WdmCircuit
-        fields = ("pk", "id", "name", "status", "wavelength_path", "tenant", "description", "actions")
-        default_columns = ("pk", "name", "status", "wavelength_path", "tenant", "actions")
+        fields = ("pk", "id", "name", "status", "wavelength_paths", "tenant", "description", "actions")
+        default_columns = ("pk", "name", "status", "wavelength_paths", "tenant", "actions")

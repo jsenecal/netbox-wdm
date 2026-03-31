@@ -2,61 +2,60 @@
 {% load helpers %}
 {% load plugins %}
 {% load i18n %}
+{% load static %}
 
 {% block content %}
+{% if trace_data_list %}
+<link rel="stylesheet" href="{% static 'netbox_wdm/css/channel-trace.css' %}">
+{% for trace_data in trace_data_list %}
 <div class="row mb-3">
-    <div class="col col-md-8 mx-auto">
+    <div class="col">
         <div class="card">
-            <h5 class="card-header">{% trans "Wavelength Path Trace" %}</h5>
-            <div class="card-body">
-                {% if stitched_path %}
-                <div class="d-flex flex-column align-items-center">
-                    {% for element in stitched_path %}
-                    {% if not forloop.first %}
-                    <div class="d-flex flex-column align-items-center">
-                        {% if element.demux_connected and prev_element.mux_connected %}
-                        <i class="mdi mdi-arrow-down text-success" style="font-size: 24px;" title="{% trans 'Cable connected' %}"></i>
-                        {% else %}
-                        <i class="mdi mdi-arrow-down text-danger" style="font-size: 24px;" title="{% trans 'No cable' %}"></i>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                    <div class="border rounded p-3 text-center" style="min-width: 350px;">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <strong>{{ element.node_name }}</strong>
-                            <span class="text-muted">{{ element.channel_label }} - {{ element.wavelength_nm }} nm</span>
-                        </div>
-                        <div class="d-flex justify-content-around">
-                            <small>
-                                {% if element.mux_connected %}
-                                <span class="badge bg-success">MUX <i class="mdi mdi-cable-data"></i></span>
-                                {% elif element.mux_port %}
-                                <span class="badge bg-warning text-dark">MUX <i class="mdi mdi-link-off"></i></span>
-                                {% else %}
-                                <span class="badge bg-secondary">MUX -</span>
-                                {% endif %}
-                            </small>
-                            <small>
-                                {% if element.demux_connected %}
-                                <span class="badge bg-success">DEMUX <i class="mdi mdi-cable-data"></i></span>
-                                {% elif element.demux_port %}
-                                <span class="badge bg-warning text-dark">DEMUX <i class="mdi mdi-link-off"></i></span>
-                                {% else %}
-                                <span class="badge bg-secondary">DEMUX -</span>
-                                {% endif %}
-                            </small>
-                        </div>
-                    </div>
-                    {% with element as prev_element %}{% endwith %}
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="text-muted text-center py-4">
-                    {% trans "No path segments assigned" %}
-                </div>
+            <h5 class="card-header">
+                {% trans "Wavelength Path Trace" %}
+                <span class="badge text-bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
+                {% if trace_data.is_active %}
+                <span class="badge text-bg-success ms-1">{% trans "Active" %}</span>
                 {% endif %}
+                {% if trace_data.is_complete %}
+                <span class="badge text-bg-info ms-1">{% trans "Complete" %}</span>
+                {% endif %}
+            </h5>
+            <div class="card-body p-0">
+                <div id="channel-trace-container-{{ forloop.counter0 }}" class="wdm-trace-container" style="height: 600px;"></div>
+                <div id="channel-trace-tooltip-{{ forloop.counter0 }}" class="wdm-trace-tooltip"></div>
             </div>
         </div>
     </div>
 </div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info">
+    {% trans "This circuit has no wavelength paths assigned." %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block javascript %}
+{{ block.super }}
+{% if trace_data_list %}
+<script>
+window.CIRCUIT_TRACE_DATA_LIST = {{ trace_data_list_json|safe }};
+</script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{% static 'netbox_wdm/dist/channel-trace.min.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var dataList = window.CIRCUIT_TRACE_DATA_LIST;
+    for (var i = 0; i < dataList.length; i++) {
+        window.renderChannelTrace(
+            '#channel-trace-container-' + i,
+            '#channel-trace-tooltip-' + i,
+            dataList[i],
+            dataList[i].channel_id
+        );
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

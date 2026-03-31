@@ -12,12 +12,12 @@
         <div class="card">
             <h5 class="card-header">
                 {% trans "Wavelength Path Trace" %}
-                <span class="badge bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
+                <span class="badge text-bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
                 {% if trace_data.is_active %}
-                <span class="badge bg-success ms-1">{% trans "Active" %}</span>
+                <span class="badge text-bg-success ms-1">{% trans "Active" %}</span>
                 {% endif %}
                 {% if trace_data.is_complete %}
-                <span class="badge bg-info ms-1">{% trans "Complete" %}</span>
+                <span class="badge text-bg-info ms-1">{% trans "Complete" %}</span>
                 {% endif %}
             </h5>
             <div class="card-body p-0">

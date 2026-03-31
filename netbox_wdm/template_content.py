@@ -82,7 +82,7 @@ class CableWdmCircuitsPanel(PluginTemplateExtension):
 
         from .models import WdmCircuit
 
-        circuits = list(WdmCircuit.objects.filter(wavelength_path_id__in=path_ids).order_by("name"))
+        circuits = list(WdmCircuit.objects.filter(wavelength_paths__id__in=path_ids).distinct().order_by("name"))
         if not circuits:
             return ""
 
