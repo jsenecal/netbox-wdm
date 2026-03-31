@@ -41,6 +41,7 @@ class Command(BaseCommand):
             create_site,
             duplex_mux_pair,
             dwdm_mux_to_roadm,
+            mux_roadm_mux,
             sf_mux_pair,
         )
 
@@ -68,9 +69,11 @@ class Command(BaseCommand):
         topo1 = duplex_mux_pair(site, dt_cwdm_dx, dt_pp, roles, name_prefix="CWDM-DX-")
         topo2 = sf_mux_pair(site, dt_cwdm_sf, dt_pp, roles, name_prefix="CWDM-SF-")
         topo3 = dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix="DWDM-")
+        topo4 = mux_roadm_mux(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix="PASS-")
 
         # Tag all topology objects
-        for topo in [topo1, topo2, topo3]:
+        all_topos = [topo1, topo2, topo3, topo4]
+        for topo in all_topos:
             for bundle in topo.bundles.values():
                 self._tag(bundle.device, tag)
                 self._tag(bundle.node, tag)
@@ -81,9 +84,8 @@ class Command(BaseCommand):
             for cable in topo.cables:
                 self._tag(cable, tag)
 
-        self.stdout.write(f"  Topology 1: {topo1.name} ({len(topo1.cables)} cables)")
-        self.stdout.write(f"  Topology 2: {topo2.name} ({len(topo2.cables)} cables)")
-        self.stdout.write(f"  Topology 3: {topo3.name} ({len(topo3.cables)} cables)")
+        for i, topo in enumerate(all_topos, 1):
+            self.stdout.write(f"  Topology {i}: {topo.name} ({len(topo.cables)} cables)")
 
         # -- Configure channel statuses --
         self._configure_channel_statuses(topo1)
@@ -91,7 +93,7 @@ class Command(BaseCommand):
         # -- Rebuild wavelength paths (signals use on_commit, which won't fire inside atomic) --
         from netbox_wdm.trace import rebuild_wavelength_paths_for_node
 
-        for topo in [topo1, topo2, topo3]:
+        for topo in all_topos:
             for bundle in topo.bundles.values():
                 rebuild_wavelength_paths_for_node(bundle.node)
 
@@ -100,7 +102,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Wavelength paths: {WdmWavelengthPath.objects.count()}")
 
         # -- WDM circuits --
-        self._create_circuits(tag, topo1, topo2)
+        self._create_circuits(tag, topo1, topo2, topo4)
 
         self.stdout.write(self.style.SUCCESS("\nSample data created successfully."))
         self._print_summary()
@@ -209,7 +211,7 @@ class Command(BaseCommand):
     # WDM Circuits
     # ================================================================
 
-    def _create_circuits(self, tag, topo_dx, topo_sf):
+    def _create_circuits(self, tag, topo_dx, topo_sf, topo_pass=None):
         from netbox_wdm.models import WdmChannel, WdmCircuit
 
         def find_path_from(channel, origin_node):
@@ -291,6 +293,25 @@ class Command(BaseCommand):
                         sf_paths.append(rx)
             if sf_paths:
                 make_circuit("CWDM-SF-2x-Bonded", "active", sf_paths, tag)
+
+        # -- Pass-through ROADM circuits (MUX-A → ROADM → MUX-B) --
+        if topo_pass:
+            pass_a = topo_pass.bundles.get("mux_a")
+            pass_b = topo_pass.bundles.get("mux_b")
+            if pass_a and pass_b:
+                pass_channels = list(pass_a.node.channels.order_by("grid_position"))
+                pass_node_a, pass_node_b = pass_a.node, pass_b.node
+                # Single pass-through circuit (first 2 wavelengths)
+                pass_paths = []
+                for i in range(min(2, len(pass_channels))):
+                    tx = find_path_from(pass_channels[i], pass_node_a)
+                    rx = find_path_from(pass_channels[i], pass_node_b)
+                    if tx:
+                        pass_paths.append(tx)
+                    if rx:
+                        pass_paths.append(rx)
+                if pass_paths:
+                    make_circuit("DWDM-PassThru", "active", pass_paths, tag)
 
     # ================================================================
     # Summary

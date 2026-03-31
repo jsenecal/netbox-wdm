@@ -166,3 +166,59 @@ def dwdm_mux_to_roadm(
         patch_panels=[pp_a, pp_b],
         cables=list(cables),
     )
+
+
+def mux_roadm_mux(
+    site: Site,
+    dt_dwdm: DeviceType,
+    dt_roadm: DeviceType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    name_prefix: str = "",
+) -> Topology:
+    """Create a MUX → ROADM → MUX pass-through topology.
+
+    MUX-A connects to ROADM EAST side, MUX-B to ROADM WEST side.
+    Wavelengths pass through the ROADM (EAST-RX → WEST-TX).
+
+    Creates 3 devices and 4 patch panels, linked by 6 duplex cables.
+    """
+    p = f"{name_prefix}" if name_prefix else ""
+
+    mux_a = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-A", grid="dwdm_100ghz")
+    roadm = create_roadm(site, dt_roadm, roles["wdm-roadm"], f"{p}ROADM")
+    mux_b = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-B", grid="dwdm_100ghz")
+
+    pp_ea = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-EA")
+    pp_eb = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-EB")
+    pp_wa = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-WA")
+    pp_wb = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-WB")
+
+    # East side: MUX-A ↔ PPs ↔ ROADM EAST
+    east_cables = cable_duplex_through_pp_pair(
+        device_a_tx_rp=mux_a.line_ports["tx"].rear_port,
+        device_a_rx_rp=mux_a.line_ports["rx"].rear_port,
+        pp_a_device=pp_ea,
+        pp_b_device=pp_eb,
+        device_b_rx_rp=roadm.line_ports["line_east_rx"].rear_port,
+        device_b_tx_rp=roadm.line_ports["line_east_tx"].rear_port,
+        label_prefix=f"{p.strip('-')} East".strip(),
+    )
+
+    # West side: ROADM WEST ↔ PPs ↔ MUX-B
+    west_cables = cable_duplex_through_pp_pair(
+        device_a_tx_rp=roadm.line_ports["line_west_tx"].rear_port,
+        device_a_rx_rp=roadm.line_ports["line_west_rx"].rear_port,
+        pp_a_device=pp_wa,
+        pp_b_device=pp_wb,
+        device_b_rx_rp=mux_b.line_ports["rx"].rear_port,
+        device_b_tx_rp=mux_b.line_ports["tx"].rear_port,
+        label_prefix=f"{p.strip('-')} West".strip(),
+    )
+
+    return Topology(
+        name=f"{p}mux-roadm-mux",
+        bundles={"mux_a": mux_a, "roadm": roadm, "mux_b": mux_b},
+        patch_panels=[pp_ea, pp_eb, pp_wa, pp_wb],
+        cables=list(east_cables) + list(west_cables),
+    )

@@ -309,28 +309,40 @@ def _get_far_end_node(rear_port: RearPort) -> tuple[WdmNode | None, RearPort | N
     return None, None
 
 
-def _get_tx_rear_port(node: WdmNode) -> RearPort | None:
-    """Get the TX or BIDI line port's rear port for outbound tracing."""
+def _get_tx_rear_ports(node: WdmNode) -> list[RearPort]:
+    """Get all TX or BIDI line ports' rear ports for outbound tracing."""
     from .choices import WdmLineRoleChoices
 
-    lp = (
-        WdmLinePort.objects.filter(wdm_node=node, role__in=[WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI])
-        .select_related("rear_port")
-        .first()
-    )
-    return lp.rear_port if lp else None
+    return [
+        lp.rear_port
+        for lp in WdmLinePort.objects.filter(
+            wdm_node=node, role__in=[WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI]
+        ).select_related("rear_port")
+    ]
+
+
+def _get_tx_rear_port(node: WdmNode) -> RearPort | None:
+    """Get the TX or BIDI line port's rear port for outbound tracing."""
+    ports = _get_tx_rear_ports(node)
+    return ports[0] if ports else None
+
+
+def _get_rx_rear_ports(node: WdmNode) -> list[RearPort]:
+    """Get all RX or BIDI line ports' rear ports for inbound tracing."""
+    from .choices import WdmLineRoleChoices
+
+    return [
+        lp.rear_port
+        for lp in WdmLinePort.objects.filter(
+            wdm_node=node, role__in=[WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI]
+        ).select_related("rear_port")
+    ]
 
 
 def _get_rx_rear_port(node: WdmNode) -> RearPort | None:
     """Get the RX or BIDI line port's rear port for inbound tracing."""
-    from .choices import WdmLineRoleChoices
-
-    lp = (
-        WdmLinePort.objects.filter(wdm_node=node, role__in=[WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI])
-        .select_related("rear_port")
-        .first()
-    )
-    return lp.rear_port if lp else None
+    ports = _get_rx_rear_ports(node)
+    return ports[0] if ports else None
 
 
 def _find_origin(node: WdmNode, grid_position: int) -> WdmNode:
@@ -338,29 +350,38 @@ def _find_origin(node: WdmNode, grid_position: int) -> WdmNode:
 
     Only considers a node as a predecessor if its TX port connects to
     the current node's RX port (i.e., a forward-direction link).
+    Tries all RX ports on multi-degree nodes (ROADM) to find the
+    predecessor that leads furthest back.
     """
     visited = {node.pk}
     current = node
 
     while True:
-        rx_rp = _get_rx_rear_port(current)
-        if rx_rp is None:
+        rx_rps = _get_rx_rear_ports(current)
+        if not rx_rps:
             return current
 
-        prev_node, far_rp = _get_far_end_node(rx_rp)
-        if prev_node is None or prev_node.pk in visited:
+        found = False
+        for rx_rp in rx_rps:
+            prev_node, far_rp = _get_far_end_node(rx_rp)
+            if prev_node is None or prev_node.pk in visited:
+                continue
+
+            # Verify the far-end rear port is actually a TX port (forward direction)
+            tx_rps = _get_tx_rear_ports(prev_node)
+            if not any(far_rp.pk == trp.pk for trp in tx_rps):  # pyright: ignore[reportOptionalMemberAccess]
+                continue
+
+            if not WdmChannel.objects.filter(wdm_node=prev_node, grid_position=grid_position).exists():
+                continue
+
+            visited.add(prev_node.pk)
+            current = prev_node
+            found = True
+            break
+
+        if not found:
             return current
-
-        # Verify the far-end rear port is actually a TX port (forward direction)
-        tx_rp = _get_tx_rear_port(prev_node)
-        if tx_rp is None or far_rp.pk != tx_rp.pk:  # pyright: ignore[reportOptionalMemberAccess]
-            return current  # Not a forward link — this node is the origin
-
-        if not WdmChannel.objects.filter(wdm_node=prev_node, grid_position=grid_position).exists():
-            return current
-
-        visited.add(prev_node.pk)
-        current = prev_node
 
 
 def _check_far_end_role(far_rp: RearPort) -> bool:
@@ -400,23 +421,30 @@ def trace_wavelength_path(start_channel: WdmChannel) -> TraceResult:
             break
         channels.append(channel)
 
-        tx_rp = _get_tx_rear_port(current)
-        if tx_rp is None:
+        # Try all TX ports — prefer one that reaches an unvisited node
+        # (critical for ROADM pass-through where multiple TX directions exist)
+        tx_rps = _get_tx_rear_ports(current)
+        if not tx_rps:
             break
 
-        fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=tx_rp.pk)
-        if not fresh_rp.cable_id:  # type: ignore[attr-defined]
-            break
+        next_node = None
+        far_rp = None
+        for tx_rp in tx_rps:
+            fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=tx_rp.pk)
+            if not fresh_rp.cable_id:  # type: ignore[attr-defined]
+                continue
+            cable = Cable.objects.get(pk=fresh_rp.cable_id)  # type: ignore[attr-defined]
+            if cable.status != "connected":
+                is_active = False
+            candidate, candidate_rp = _get_far_end_node(tx_rp)
+            if candidate and candidate.pk not in visited:
+                next_node = candidate
+                far_rp = candidate_rp
+                break
 
-        cable = Cable.objects.get(pk=fresh_rp.cable_id)  # type: ignore[attr-defined]
-        if cable.status != "connected":
-            is_active = False
-
-        next_node, far_rp = _get_far_end_node(tx_rp)
         if next_node is None:
             break
 
-        # Check directionality: far-end should be RX or BIDI, not TX
         if far_rp and not _check_far_end_role(far_rp):
             is_valid = False
 

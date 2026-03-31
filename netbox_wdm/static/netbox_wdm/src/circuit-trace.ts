@@ -268,6 +268,28 @@ function buildGraph(dataList: TraceData[]): Graph {
     }
   }
 
+  // Detect cross-segment internal links (ROADM pass-through: last port of
+  // segment N → first port of segment N+1 when both are on the same device)
+  for (const d of sorted) {
+    const segs = d.cable_segments;
+    for (let s = 0; s < segs.length - 1; s++) {
+      const ports1 = segs[s].items.filter((it) => it.type !== 'cable');
+      const ports2 = segs[s + 1].items.filter((it) => it.type !== 'cable');
+      const last = ports1.length ? ports1[ports1.length - 1] : null;
+      const first = ports2.length ? ports2[0] : null;
+      if (last && first && last.device && last.device === first.device && last.id !== first.id) {
+        const dev = deviceMap.get(last.device);
+        if (dev) {
+          const key = `${last.id}-${first.id}`;
+          if (!internalLinkSeen.has(key)) {
+            internalLinkSeen.add(key);
+            dev.internalLinks.push({ fromId: last.id, toId: first.id });
+          }
+        }
+      }
+    }
+  }
+
   // Ensure all WDM nodes are in the order
   for (const d of sorted) {
     for (const el of d.elements) {
@@ -307,10 +329,23 @@ function buildGraph(dataList: TraceData[]): Graph {
     }
   }
 
-  // Channel ports go on the opposite side from the trunk/COM ports
+  // Channel ports go on the opposite side from the trunk/COM ports.
+  // For multi-degree nodes (ROADM with line ports on both sides), omit
+  // channel ports — they clutter pass-through diagrams and the simple
+  // "opposite side" heuristic doesn't work with ports on both edges.
   for (const dev of devices) {
     if (!dev.isWdm) continue;
-    const trunkSide = dev.ports.find((p) => !p.isChannel && p.type === 'rear_port')?.side;
+    const rearPorts = dev.ports.filter((p) => !p.isChannel && p.type === 'rear_port');
+    const rearSides = new Set(rearPorts.map((p) => p.side));
+    if (rearSides.size > 1) {
+      // Multi-degree node — drop channel ports but keep rear-port internal links
+      // (e.g. ROADM pass-through: LINE-EAST-RX → LINE-WEST-TX)
+      const chIds = new Set(dev.ports.filter((p) => p.isChannel).map((p) => p.id));
+      dev.ports = dev.ports.filter((p) => !p.isChannel);
+      dev.internalLinks = dev.internalLinks.filter((il) => !chIds.has(il.fromId) && !chIds.has(il.toId));
+      continue;
+    }
+    const trunkSide = rearPorts[0]?.side;
     if (!trunkSide) continue;
     const chSide = trunkSide === 'right' ? 'left' : 'right';
     for (const p of dev.ports) {
@@ -356,6 +391,8 @@ interface LLine {
   y1: number;
   x2: number;
   y2: number;
+  fromId: number;
+  toId: number;
 }
 
 interface LCable {
@@ -471,7 +508,7 @@ function computeLayout(graph: Graph) {
     for (const pp of cable.portPairs) {
       const from = portLookup.get(pp.from);
       const to = portLookup.get(pp.to);
-      if (from && to) lines.push({ x1: from.absEdgeX, y1: from.absCY, x2: to.absEdgeX, y2: to.absCY });
+      if (from && to) lines.push({ x1: from.absEdgeX, y1: from.absCY, x2: to.absEdgeX, y2: to.absCY, fromId: pp.from, toId: pp.to });
     }
     if (!lines.length) continue;
     const avgX = lines.reduce((s, l) => s + (l.x1 + l.x2) / 2, 0) / lines.length;
@@ -595,6 +632,97 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
     .on('zoom', (ev: any) => g.attr('transform', ev.transform));
   svg.call(zoom);
 
+  // ── Per-wavelength-path port sets for whole-path highlighting ──
+  // Each port in a path maps to that path's port set, so hovering ANY
+  // port on the path highlights the entire path.
+  // Only directionally-meaningful channel ports are included:
+  //   - source element's mux_port  (TX origin)
+  //   - dest element's demux_port  (RX termination)
+  // Other channel ports (source demux, dest mux) are excluded to avoid
+  // highlighting the reverse direction.
+  const portPathMap = new Map<number, Set<number>>();
+  for (const d of valid) {
+    const pathIds = new Set<number>();
+    // Cable segment ports (trunk, PP, COM)
+    for (const seg of d.cable_segments) {
+      for (const item of seg.items) {
+        if (item.type !== 'cable') pathIds.add(item.id);
+      }
+    }
+    // Only the directionally-meaningful channel ports
+    const src = d.elements[0];
+    const dst = d.elements[d.elements.length - 1];
+    if (src?.mux_port) pathIds.add(src.mux_port.id);
+    if (dst?.demux_port) pathIds.add(dst.demux_port.id);
+    // Intermediate elements (ROADM) — include both channel ports if present
+    for (let ei = 1; ei < d.elements.length - 1; ei++) {
+      const el = d.elements[ei];
+      if (el.mux_port) pathIds.add(el.mux_port.id);
+      if (el.demux_port) pathIds.add(el.demux_port.id);
+    }
+    // Map EVERY port in this path so any port can trigger the highlight
+    for (const pid of pathIds) {
+      if (!portPathMap.has(pid)) portPathMap.set(pid, pathIds);
+    }
+  }
+
+  // Global element registries for path highlighting
+  interface HlCableLine {
+    path: any;
+    shadow: any;
+    dot1: any;
+    dot2: any;
+    fromId: number;
+    toId: number;
+  }
+  interface HlInternalLink {
+    path: any;
+    dot1: any;
+    dot2: any;
+    fromId: number;
+    toId: number;
+  }
+  interface HlPortBox {
+    rect: any;
+    portId: number;
+    isChannel: boolean;
+    origStroke: string;
+  }
+  const hlCables: HlCableLine[] = [];
+  const hlInternal: HlInternalLink[] = [];
+  const hlPorts: HlPortBox[] = [];
+
+  function hlPath(startPortId: number, on: boolean) {
+    const ids = on ? portPathMap.get(startPortId) ?? new Set<number>() : new Set<number>();
+    const active = on && ids.size > 1;
+    // Cables
+    for (const el of hlCables) {
+      const match = active && ids.has(el.fromId) && ids.has(el.toId);
+      el.path.attr('stroke-width', match ? 3 : 2).attr('opacity', active && !match ? 0.12 : 1);
+      el.shadow.attr('opacity', active && !match ? 0.02 : 0.1);
+      el.dot1.attr('r', match ? 4 : 3).attr('opacity', active && !match ? 0.15 : 1);
+      el.dot2.attr('r', match ? 4 : 3).attr('opacity', active && !match ? 0.15 : 1);
+    }
+    // Internal links
+    for (const el of hlInternal) {
+      const match = active && ids.has(el.fromId) && ids.has(el.toId);
+      el.path
+        .attr('opacity', match ? 0.85 : active ? 0.1 : 0.3)
+        .attr('stroke-width', match ? 2.5 : 1)
+        .attr('stroke', match ? t.cable : t.internalLink);
+      el.dot1.attr('opacity', match ? 0.9 : active ? 0.1 : 0.3).attr('r', match ? 3 : 2);
+      el.dot2.attr('opacity', match ? 0.9 : active ? 0.1 : 0.3).attr('r', match ? 3 : 2);
+    }
+    // Port boxes
+    for (const el of hlPorts) {
+      const match = active && ids.has(el.portId);
+      el.rect
+        .attr('stroke', match ? t.headerFill : el.origStroke)
+        .attr('stroke-width', match ? 2 : 0.5)
+        .attr('opacity', active && !match ? 0.35 : 1);
+    }
+  }
+
   // ── Cables ────────────────────────────────────────────────
   for (const lc of layout.lCables) {
     const { cable, lines, badgeX, badgeY } = lc;
@@ -603,22 +731,25 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
 
     // Draw each port-pair as a path merging at the badge center
     for (const ln of lines) {
-      const path = cablePathThrough(ln.x1, ln.y1, badgeX, badgeY, ln.x2, ln.y2);
-      cg.append('path')
-        .attr('d', path)
+      const pathD = cablePathThrough(ln.x1, ln.y1, badgeX, badgeY, ln.x2, ln.y2);
+      const shadow = cg
+        .append('path')
+        .attr('d', pathD)
         .attr('fill', 'none')
         .attr('stroke', t.cable)
         .attr('stroke-width', 5)
         .attr('stroke-linecap', 'round')
         .attr('opacity', 0.1);
-      cg.append('path')
-        .attr('d', path)
+      const linePath = cg
+        .append('path')
+        .attr('d', pathD)
         .attr('fill', 'none')
         .attr('stroke', color)
         .attr('stroke-width', 2)
         .attr('stroke-linecap', 'round');
-      cg.append('circle').attr('cx', ln.x1).attr('cy', ln.y1).attr('r', 3).attr('fill', color);
-      cg.append('circle').attr('cx', ln.x2).attr('cy', ln.y2).attr('r', 3).attr('fill', color);
+      const dot1 = cg.append('circle').attr('cx', ln.x1).attr('cy', ln.y1).attr('r', 3).attr('fill', color);
+      const dot2 = cg.append('circle').attr('cx', ln.x2).attr('cy', ln.y2).attr('r', 3).attr('fill', color);
+      hlCables.push({ path: linePath, shadow, dot1, dot2, fromId: ln.fromId, toId: ln.toId });
     }
 
     // Cable badge
@@ -700,8 +831,7 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
       .attr('stroke', t.bodyStroke)
       .attr('stroke-width', 0.5);
 
-    // Internal routing curves — subtle by default, highlighted on port hover
-    const ilElements: { path: any; dot1: any; dot2: any; fromId: number; toId: number }[] = [];
+    // Internal routing curves — registered globally for path highlighting
     for (const il of ld.internalLinks) {
       const dx = (il.x2 - il.x1) / 3;
       const d = `M ${il.x1},${il.y1} C ${il.x1 + dx},${il.y1} ${il.x2 - dx},${il.y2} ${il.x2},${il.y2}`;
@@ -713,34 +843,10 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
         .attr('stroke-width', 1)
         .attr('stroke-dasharray', '4,3')
         .attr('opacity', 0.3);
-      const d1 = dg
-        .append('circle')
-        .attr('cx', il.x1)
-        .attr('cy', il.y1)
-        .attr('r', 2)
-        .attr('fill', t.internalLink)
-        .attr('opacity', 0.3);
-      const d2 = dg
-        .append('circle')
-        .attr('cx', il.x2)
-        .attr('cy', il.y2)
-        .attr('r', 2)
-        .attr('fill', t.internalLink)
-        .attr('opacity', 0.3);
-      ilElements.push({ path: p, dot1: d1, dot2: d2, fromId: il.fromId, toId: il.toId });
+      const d1 = dg.append('circle').attr('cx', il.x1).attr('cy', il.y1).attr('r', 2).attr('fill', t.internalLink).attr('opacity', 0.3);
+      const d2 = dg.append('circle').attr('cx', il.x2).attr('cy', il.y2).attr('r', 2).attr('fill', t.internalLink).attr('opacity', 0.3);
+      hlInternal.push({ path: p, dot1: d1, dot2: d2, fromId: il.fromId, toId: il.toId });
     }
-    // Helper: highlight internal links connected to a port
-    const hlLinks = (portId: number, on: boolean) => {
-      for (const el of ilElements) {
-        const match = el.fromId === portId || el.toId === portId;
-        el.path
-          .attr('opacity', on && match ? 0.85 : 0.3)
-          .attr('stroke-width', on && match ? 2.5 : 1)
-          .attr('stroke', on && match ? t.cable : t.internalLink);
-        el.dot1.attr('opacity', on && match ? 0.9 : 0.3).attr('r', on && match ? 3 : 2);
-        el.dot2.attr('opacity', on && match ? 0.9 : 0.3).attr('r', on && match ? 3 : 2);
-      }
-    };
 
     const nameText = dg
       .append('text')
@@ -775,15 +881,18 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
     // Ports
     const drawPort = (lp: LPort) => {
       const isCh = !!lp.port.isChannel;
+      const origStroke = isCh ? t.chPortStroke : t.portStroke;
       const pg = dg.append('g').attr('transform', `translate(${lp.relX}, ${lp.relY})`).style('cursor', 'pointer');
 
-      pg.append('rect')
+      const rect = pg
+        .append('rect')
         .attr('width', PORT_W)
         .attr('height', PORT_H)
         .attr('rx', 3)
         .attr('fill', isCh ? t.chPortFill : t.portFill)
-        .attr('stroke', isCh ? t.chPortStroke : t.portStroke)
+        .attr('stroke', origStroke)
         .attr('stroke-width', 0.5);
+      hlPorts.push({ rect, portId: lp.port.id, isChannel: isCh, origStroke });
 
       const icon = lp.port.type === 'front_port' ? '\u25cb' : '\u25c9';
       const pText = pg
@@ -805,7 +914,7 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
         .on('mouseover', (ev: MouseEvent) => {
           ev.stopPropagation();
           showTT(tt, portTT, ev, t);
-          hlLinks(lp.port.id, true);
+          hlPath(lp.port.id, true);
         })
         .on('mousemove', (ev: MouseEvent) => {
           ev.stopPropagation();
@@ -813,7 +922,7 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
         })
         .on('mouseout', () => {
           hideTT(tt);
-          hlLinks(lp.port.id, false);
+          hlPath(lp.port.id, false);
         });
     };
 

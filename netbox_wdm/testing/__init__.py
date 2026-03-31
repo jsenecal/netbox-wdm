@@ -17,7 +17,7 @@ from .device_types import (
     create_router_type,
 )
 from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
-from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, sf_mux_pair
+from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, mux_roadm_mux, sf_mux_pair
 
 __all__ = [
     "cable_duplex_through_pp_pair",
@@ -38,6 +38,7 @@ __all__ = [
     "create_site",
     "duplex_mux_pair",
     "dwdm_mux_to_roadm",
+    "mux_roadm_mux",
     "sf_mux_pair",
     "Topology",
     "WdmDeviceBundle",
