@@ -259,10 +259,14 @@ def _resolve_rearport_cable(current_rp: RearPort, visited: set[int]) -> RearPort
                 my_side = t.cable_end
                 break
         if my_side:
+            # Position-match: find exit_fp's index among FP terms on my side
+            my_fp_terms = [t for t in all_terms if t.cable_end == my_side and t.termination_type == fp_ct]
+            my_fp_idx = next((i for i, t in enumerate(my_fp_terms) if t.termination_id == exit_fp.pk), 0)
+
             far_rp_terms = [t for t in all_terms if t.cable_end != my_side and t.termination_type == rp_ct]
-            if far_rp_terms:
+            if my_fp_idx < len(far_rp_terms):
                 try:
-                    return RearPort.objects.get(pk=far_rp_terms[0].termination_id)
+                    return RearPort.objects.get(pk=far_rp_terms[my_fp_idx].termination_id)
                 except RearPort.DoesNotExist:
                     pass
 

@@ -489,11 +489,30 @@ def _trace_cable_segment(from_node: Any) -> list[CableSegmentItem]:
         )
 
     def _follow_cable_far_end(cable_id: int, local_id: int, local_ct: Any) -> tuple[Any | None, str]:
-        """Find the far-end termination of a cable. Returns (object, type_str) or (None, '')."""
-        far_terms = CableTermination.objects.filter(cable_id=cable_id).exclude(
-            termination_type=local_ct, termination_id=local_id
+        """Find the far-end termination of a cable. Returns (object, type_str) or (None, '').
+
+        Uses cable_end (A/B) to find the opposite side and position-index
+        matching so that duplex/multi-strand cables follow the correct fibre.
+        For simplex cables (1 termination per side) this reduces to the
+        single far-end termination.
+        """
+        local_term = CableTermination.objects.filter(
+            cable_id=cable_id, termination_type=local_ct, termination_id=local_id
+        ).first()
+        if not local_term:
+            return None, ""
+
+        far_end = "B" if local_term.cable_end == "A" else "A"
+
+        # Determine position index of local port within its cable end
+        same_end = list(
+            CableTermination.objects.filter(cable_id=cable_id, cable_end=local_term.cable_end).order_by("pk")
         )
-        for ft in far_terms:
+        local_idx = next((i for i, t in enumerate(same_end) if t.pk == local_term.pk), 0)
+
+        far_terms = list(CableTermination.objects.filter(cable_id=cable_id, cable_end=far_end).order_by("pk"))
+
+        def _resolve(ft: Any) -> tuple[Any | None, str]:
             if ft.termination_type == rp_ct:
                 rp = RearPort.objects.filter(pk=ft.termination_id).select_related("device").first()
                 if rp:
@@ -502,19 +521,20 @@ def _trace_cable_segment(from_node: Any) -> list[CableSegmentItem]:
                 fp = FrontPort.objects.filter(pk=ft.termination_id).select_related("device").first()
                 if fp:
                     return fp, "front_port"
-        # Same-type far end
-        same_terms = CableTermination.objects.filter(cable_id=cable_id, termination_type=local_ct).exclude(
-            termination_id=local_id
-        )
-        for st in same_terms:
-            if local_ct == rp_ct:
-                rp = RearPort.objects.filter(pk=st.termination_id).select_related("device").first()
-                if rp:
-                    return rp, "rear_port"
-            elif local_ct == fp_ct:
-                fp = FrontPort.objects.filter(pk=st.termination_id).select_related("device").first()
-                if fp:
-                    return fp, "front_port"
+            return None, ""
+
+        # Position match (same index on the far end)
+        if local_idx < len(far_terms):
+            obj, typ = _resolve(far_terms[local_idx])
+            if obj:
+                return obj, typ
+
+        # Fallback: first available on the far end
+        for ft in far_terms:
+            obj, typ = _resolve(ft)
+            if obj:
+                return obj, typ
+
         return None, ""
 
     # Start: source rear port

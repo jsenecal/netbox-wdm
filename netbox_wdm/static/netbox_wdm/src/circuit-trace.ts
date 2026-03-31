@@ -1,488 +1,888 @@
 /**
- * Circuit trace — 3-tier progressive-zoom visualization.
+ * Circuit trace — horizontal flow diagram inspired by NetBox cable trace.
  *
- * Overview  (scale < 0.6): Large WDM node boxes + simple colored cable lines.
- * Medium   (0.6–1.2):     Port sub-boxes on nodes, lane labels, PP name boxes.
- * Detail   (> 1.2):       Per-λ TX/RX dots, full cable boxes, PP port boxes.
+ * Devices as NetBox-style boxes with teal headers, flowing left-to-right.
+ * Ports flush with device edges; cables fan in/out through a central badge.
+ * Internal routing (PortMapping, mux→COM) shown as faint dotted lines.
+ * Channel front ports shown on the client-facing side of WDM devices.
  */
-import type { TraceData, CableSegmentItem } from './channel-trace-types';
+import type { TraceData } from './channel-trace-types';
 
 declare const d3: any;
 
-// ── Zoom thresholds ─────────────────────────────────────────────
-const TIER_MED = 0.6;
-const TIER_DET = 1.2;
-
-// ── Layout constants ────────────────────────────────────────────
-const NODE_W = 400;
-const NODE_H_OVERVIEW = 80;
-const PORT_BOX_W = 90;
-const PORT_BOX_H = 22;
-const PORT_GAP = 6;
-const PORT_PAD_X = 10;
-const NODE_PAD_TOP = 44;
-const NODE_PAD_BOT = 8;
-const PP_W = 180;
-const PP_H_MED = 32;
-const PP_PAD_TOP = 20;
-const CABLE_H = 22;
-const CABLE_GAP = 4;
-const LANE_GAP = 16;
-const LANE_LABEL_H = 16;
-const SECTION_GAP = 16;
-const LANE_W = 170;
-const MARGIN = { top: 28, right: 40, bottom: 40, left: 40 };
+// ── Constants ───────────────────────────────────────────────────
+const WDM_W = 164;
+const PP_W = 200;
+const PORT_W = 84;
+const PORT_H = 26;
+const PORT_GAP = 4;
+const PORT_INSET = 4;
+const WDM_HEADER_H = 44;
+const PP_HEADER_H = 34;
+const SUBTITLE_H = 16;
+const DEVICE_GAP = 150;
+const MARGIN = { top: 24, right: 40, bottom: 24, left: 40 };
+const FONT = 'system-ui, -apple-system, sans-serif';
+const CORNER_R = 8;
 
 // ── Theme ───────────────────────────────────────────────────────
 function isDark(): boolean {
   const el = document.querySelector('[data-bs-theme]');
-  return el ? el.getAttribute('data-bs-theme') === 'dark' : true;
+  return el ? el.getAttribute('data-bs-theme') === 'dark' : false;
 }
-function C() {
+
+function T() {
   const d = isDark();
   return {
-    nodeFill: d ? '#16213e' : '#f8f9fa',
-    nodeStroke: d ? '#4a5568' : '#dee2e6',
-    ppFill: d ? '#1a2332' : '#f0f1f3',
-    ppStroke: d ? '#3a4a5c' : '#ced4da',
+    headerFill: d ? '#2a7070' : '#3a8a8a',
+    headerText: '#fff',
+    bodyFill: d ? '#1e293b' : '#fff',
+    bodyStroke: d ? '#475569' : '#dee2e6',
+    subtitle: d ? '#94a3b8' : '#868e96',
+    portFill: d ? '#283548' : '#f0f4f8',
+    portStroke: d ? '#475569' : '#ced4da',
+    portText: d ? '#cbd5e1' : '#495057',
+    chPortFill: d ? '#1e2d3d' : '#f4f8ff',
+    chPortStroke: d ? '#3a5068' : '#b8cfe0',
+    cable: d ? '#64748b' : '#adb5bd',
+    badgeBg: d ? '#1e293b' : '#fff',
+    badgeBorder: d ? '#475569' : '#dee2e6',
+    badgeText: d ? '#94a3b8' : '#495057',
+    internalLink: d ? '#475569' : '#ced4da',
     text: d ? '#e2e8f0' : '#212529',
     muted: d ? '#94a3b8' : '#6c757d',
-    cable: d ? '#64748b' : '#adb5bd',
-    portFill: d ? '#1e293b' : '#e9ecef',
-    portStroke: d ? '#475569' : '#ced4da',
     green: '#22c55e',
     red: '#ef4444',
-    ttBg: d ? '#0f172a' : '#ffffff',
+    ttBg: d ? '#0f172a' : '#fff',
     ttBorder: d ? '#334155' : '#dee2e6',
     ttText: d ? '#e2e8f0' : '#212529',
     btnFill: d ? '#1e293b' : '#f8f9fa',
     btnStroke: d ? '#475569' : '#ced4da',
     btnText: d ? '#e2e8f0' : '#212529',
-    laneLabel: d ? '#94a3b8' : '#6c757d',
   };
 }
 
 // ── Data model ──────────────────────────────────────────────────
-interface PortRef { id: number; name: string; url: string; device: string; }
-interface ChInfo { id: number; label: string; wl: number; muxName: string | null; demuxName: string | null; muxConn: boolean; demuxConn: boolean; }
-interface MNode { id: number; name: string; url: string; isWdm: boolean; ports: PortRef[]; channels: ChInfo[]; }
+interface Port {
+  id: number;
+  name: string;
+  url: string;
+  type: string;
+  side: 'left' | 'right';
+  isChannel?: boolean;
+}
 
-interface LaneHop { device: string; ports: CableSegmentItem[]; cables: CableSegmentItem[]; }
-interface CLane { label: string; hops: LaneHop[]; pi: number; firstCableColor: string; }
-interface Section { fromId: number; toId: number; lanes: CLane[]; }
+interface InternalLink {
+  fromId: number;
+  toId: number;
+}
 
-// ── Build merged graph ──────────────────────────────────────────
-function buildGraph(dl: TraceData[]) {
-  const nm = new Map<number, MNode>();
-  const order: number[] = [];
+interface Device {
+  name: string;
+  isWdm: boolean;
+  ports: Port[];
+  url: string;
+  channels: { label: string; wl: number; muxConn: boolean; demuxConn: boolean; hasMux: boolean; hasDemux: boolean }[];
+  internalLinks: InternalLink[];
+}
+
+interface Cable {
+  id: number;
+  name: string;
+  url: string;
+  color: string;
+  status: string;
+  portPairs: { from: number; to: number }[];
+  label: string;
+}
+
+interface Graph {
+  devices: Device[];
+  cables: Cable[];
+}
+
+// ── Build graph from TraceData list ─────────────────────────────
+function buildGraph(dataList: TraceData[]): Graph {
+  const deviceMap = new Map<string, Device>();
+  const deviceOrder: string[] = [];
+  const portSeen = new Set<number>();
+  const cableMap = new Map<number, Cable>();
   const chSeen = new Set<number>();
-  const sorted = [...dl].sort((a, b) => b.elements.length - a.elements.length);
+  const internalLinkSeen = new Set<string>();
 
-  for (const d of sorted) for (const el of d.elements) {
-    if (!nm.has(el.node_id)) {
-      nm.set(el.node_id, { id: el.node_id, name: el.node_name, url: el.node_url, isWdm: true, ports: [], channels: [] });
+  const sorted = [...dataList].sort(
+    (a, b) => (b.cable_segments[0]?.items.length ?? 0) - (a.cable_segments[0]?.items.length ?? 0),
+  );
+
+  function ensureDev(name: string, isWdm: boolean, url: string): Device {
+    if (!deviceMap.has(name)) {
+      deviceMap.set(name, { name, isWdm, ports: [], url, channels: [], internalLinks: [] });
     }
-    if (!order.includes(el.node_id)) order.push(el.node_id);
-    if (!chSeen.has(el.channel_id)) {
-      chSeen.add(el.channel_id);
-      nm.get(el.node_id)!.channels.push({
-        id: el.channel_id, label: el.channel_label, wl: el.wavelength_nm,
-        muxName: el.mux_port?.name ?? null, demuxName: el.demux_port?.name ?? null,
-        muxConn: el.mux_connected, demuxConn: el.demux_connected,
-      });
-    }
+    return deviceMap.get(name)!;
   }
 
-  // Collect unique rear ports per WDM node (endpoints only)
-  const pSeen = new Set<number>();
-  for (const d of dl) for (const seg of d.cable_segments) {
-    for (const item of [seg.items[0], seg.items[seg.items.length - 1]]) {
-      if (item?.type === 'rear_port' && !pSeen.has(item.id)) {
-        pSeen.add(item.id);
-        const mn = [...nm.values()].find((n) => n.name === item.device);
-        if (mn) mn.ports.push({ id: item.id, name: item.name, url: item.url, device: item.device });
+  // Collect WDM nodes and channel front ports from elements
+  for (const d of sorted) {
+    for (const el of d.elements) {
+      const dev = ensureDev(el.node_name, true, el.node_url);
+      if (!chSeen.has(el.channel_id)) {
+        chSeen.add(el.channel_id);
+        dev.channels.push({
+          label: el.channel_label,
+          wl: el.wavelength_nm,
+          muxConn: el.mux_connected,
+          demuxConn: el.demux_connected,
+          hasMux: !!el.mux_port,
+          hasDemux: !!el.demux_port,
+        });
       }
-    }
-  }
-
-  const nodes = order.map((id) => nm.get(id)!);
-  const sections: Section[] = [];
-
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const fN = nodes[i], tN = nodes[i + 1];
-    const lanes: CLane[] = [];
-    for (let pi = 0; pi < dl.length; pi++) {
-      const d = dl[pi], els = d.elements;
-      for (let ei = 0; ei < els.length - 1; ei++) {
-        const a = els[ei].node_id, b = els[ei + 1].node_id;
-        if ((a === fN.id && b === tN.id) || (a === tN.id && b === fN.id)) {
-          const seg = d.cable_segments.find((s) => s.from_sequence === els[ei].sequence);
-          if (!seg || !seg.items.length) continue;
-          // Decompose into per-device hops
-          const hops: LaneHop[] = [];
-          let curDev = '', curPorts: CableSegmentItem[] = [], curCables: CableSegmentItem[] = [];
-          for (const item of seg.items) {
-            if (item.type === 'cable') { curCables.push(item); }
-            else {
-              if (item.device !== curDev && curDev) { hops.push({ device: curDev, ports: curPorts, cables: curCables }); curPorts = []; curCables = []; }
-              curDev = item.device || ''; curPorts.push(item);
-            }
-          }
-          if (curDev) hops.push({ device: curDev, ports: curPorts, cables: curCables });
-
-          const arrow = a === fN.id ? '\u2192' : '\u2190';
-          const fS = els[ei].node_name.replace(/.*-/, ''), tS = els[ei + 1].node_name.replace(/.*-/, '');
-          // Find first cable color for overview lines
-          const firstCable = seg.items.find((it) => it.type === 'cable');
-          const cc = firstCable?.color ? (firstCable.color.startsWith('#') ? firstCable.color : `#${firstCable.color}`) : '';
-
-          lanes.push({ label: `${d.wavelength_nm}nm ${fS}${arrow}${tS}`, hops, pi, firstCableColor: cc });
+      // Add channel front ports (mux/demux) — these are client-facing
+      for (const fp of [el.mux_port, el.demux_port]) {
+        if (fp && !portSeen.has(fp.id)) {
+          portSeen.add(fp.id);
+          dev.ports.push({
+            id: fp.id,
+            name: fp.name,
+            url: fp.url,
+            type: 'front_port',
+            side: 'left', // placeholder, fixed later
+            isChannel: true,
+          });
         }
       }
     }
-    if (lanes.length) sections.push({ fromId: fN.id, toId: tN.id, lanes });
   }
-  return { nodes, sections };
-}
 
-// ── Layout computation ──────────────────────────────────────────
-// We compute ONE layout (detail-level) and render all three tiers from it.
+  // Walk cable segment items to discover device order, trunk/PP ports, and internal links
+  for (const d of sorted) {
+    for (const seg of d.cable_segments) {
+      const items = seg.items;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type === 'cable') continue;
+        const devName = item.device;
+        if (!devName) continue;
 
-interface LPort { port: PortRef; rx: number; ry: number; }  // relative to node
-interface LNode { n: MNode; x: number; y: number; w: number; hOver: number; hFull: number; ports: LPort[]; }
-interface LCable { item: CableSegmentItem; x: number; y: number; }
-interface LPP { device: string; x: number; y: number; ports: { item: CableSegmentItem; rx: number; ry: number; }[]; }
-interface LLane { lane: CLane; x: number; yStart: number; cables: LCable[]; pps: LPP[]; }
-interface LSection { sec: Section; lanes: LLane[]; }
+        ensureDev(devName, false, '');
+        if (!deviceOrder.includes(devName)) deviceOrder.push(devName);
 
-function layout(nodes: MNode[], sections: Section[]) {
-  const ln: LNode[] = [];
-  const ls: LSection[] = [];
-  let curY = MARGIN.top;
-  let maxW = 0;
+        if (!portSeen.has(item.id)) {
+          portSeen.add(item.id);
+          const isFirstPort = items.slice(0, i).every((it) => it.type === 'cable' || it === item);
+          const isLastPort = items.slice(i + 1).every((it) => it.type === 'cable' || it === item);
+          const prevIsCable = i > 0 && items[i - 1].type === 'cable';
 
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    const pc = n.ports.length;
-    const portsW = pc > 0 ? pc * PORT_BOX_W + (pc - 1) * PORT_GAP + PORT_PAD_X * 2 : 0;
-    const w = Math.max(NODE_W, portsW);
-    const hFull = NODE_PAD_TOP + (pc > 0 ? PORT_BOX_H + NODE_PAD_BOT : NODE_PAD_BOT);
+          let side: 'left' | 'right';
+          if (!prevIsCable && (isFirstPort || i === 0)) side = 'right';
+          else if (isLastPort) side = 'left';
+          else side = prevIsCable ? 'left' : 'right';
 
-    const ports: LPort[] = [];
-    if (pc > 0) {
-      const totalPW = pc * PORT_BOX_W + (pc - 1) * PORT_GAP;
-      let px = (w - totalPW) / 2;
-      for (const p of n.ports) { ports.push({ port: p, rx: px, ry: NODE_PAD_TOP }); px += PORT_BOX_W + PORT_GAP; }
-    }
-
-    ln.push({ n, x: MARGIN.left, y: curY, w, hOver: NODE_H_OVERVIEW, hFull, ports });
-    maxW = Math.max(maxW, MARGIN.left + w + MARGIN.right);
-    curY += hFull;
-
-    const sec = sections.find((s) => s.fromId === n.id);
-    if (sec) {
-      curY += SECTION_GAP;
-      const lc = sec.lanes.length;
-      const totalLW = lc * LANE_W + (lc - 1) * LANE_GAP;
-      let secMaxH = 0;
-
-      const lLanes: LLane[] = [];
-      for (let li = 0; li < lc; li++) {
-        const lane = sec.lanes[li];
-        const lx = MARGIN.left + li * (LANE_W + LANE_GAP);
-        let ly = curY + LANE_LABEL_H;
-        const cables: LCable[] = [];
-        const pps: LPP[] = [];
-
-        for (let hi = 0; hi < lane.hops.length; hi++) {
-          const hop = lane.hops[hi];
-          const isEnd = hi === 0 || hi === lane.hops.length - 1;
-
-          if (!isEnd) {
-            // PP box
-            const ppPorts: LPP['ports'] = [];
-            const ppW = LANE_W;
-            let ppx = 4;
-            for (const p of hop.ports) {
-              ppPorts.push({ item: p, rx: ppx, ry: PP_PAD_TOP });
-              ppx += 62 + 4;
-            }
-            const ppH = PP_PAD_TOP + (hop.ports.length > 0 ? PORT_BOX_H - 2 + 4 : 4);
-            pps.push({ device: hop.device, x: lx, y: ly, ports: ppPorts });
-            ly += ppH + CABLE_GAP;
-          }
-          for (const c of hop.cables) { cables.push({ item: c, x: lx, y: ly }); ly += CABLE_H + CABLE_GAP; }
+          deviceMap.get(devName)!.ports.push({
+            id: item.id,
+            name: item.name,
+            url: item.url,
+            type: item.type,
+            side,
+          });
         }
-        secMaxH = Math.max(secMaxH, ly - curY);
-        lLanes.push({ lane, x: lx, yStart: curY, cables, pps });
+
+        // Detect internal links: consecutive non-cable items on the same device
+        if (
+          i > 0 &&
+          items[i - 1].type !== 'cable' &&
+          items[i - 1].device === devName
+        ) {
+          const key = `${items[i - 1].id}-${item.id}`;
+          if (!internalLinkSeen.has(key)) {
+            internalLinkSeen.add(key);
+            deviceMap.get(devName)!.internalLinks.push({ fromId: items[i - 1].id, toId: item.id });
+          }
+        }
       }
-      ls.push({ sec, lanes: lLanes });
-      maxW = Math.max(maxW, MARGIN.left + totalLW + MARGIN.right);
-      curY += secMaxH + SECTION_GAP;
+
+      // Extract cables with all port pairs
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type !== 'cable') continue;
+        const cable = items[i];
+        const prevPort = i > 0 && items[i - 1].type !== 'cable' ? items[i - 1] : null;
+        const nextPort = i < items.length - 1 && items[i + 1].type !== 'cable' ? items[i + 1] : null;
+        const pair = prevPort && nextPort ? { from: prevPort.id, to: nextPort.id } : null;
+
+        if (cableMap.has(cable.id)) {
+          if (pair) {
+            const existing = cableMap.get(cable.id)!;
+            if (!existing.portPairs.some((pp) => pp.from === pair.from && pp.to === pair.to)) {
+              existing.portPairs.push(pair);
+            }
+          }
+          continue;
+        }
+        const wl = d.wavelength_nm ?? '';
+        const els = d.elements;
+        const arrow =
+          els.length >= 2
+            ? `${els[0].node_name.replace(/.*-/, '')}\u2192${els[els.length - 1].node_name.replace(/.*-/, '')}`
+            : '';
+        cableMap.set(cable.id, {
+          id: cable.id,
+          name: cable.name,
+          url: cable.url,
+          color: cable.color || '',
+          status: cable.status || '',
+          portPairs: pair ? [pair] : [],
+          label: wl ? `${wl}nm ${arrow}` : arrow,
+        });
+      }
     }
   }
-  curY += MARGIN.bottom;
-  return { ln, ls, tw: maxW, th: curY };
+
+  // Add channel→COM internal links for WDM nodes
+  for (const d of sorted) {
+    for (const el of d.elements) {
+      const dev = deviceMap.get(el.node_name);
+      if (!dev) continue;
+      const rearPorts = dev.ports.filter((p) => p.type === 'rear_port' && !p.isChannel);
+      const txRP = rearPorts.find((p) => /tx/i.test(p.name));
+      const rxRP = rearPorts.find((p) => /rx/i.test(p.name));
+      const bidiRP = rearPorts.find((p) => /com$/i.test(p.name)) || rearPorts[0];
+      if (el.mux_port) {
+        const target = txRP || bidiRP;
+        if (target) {
+          const key = `${el.mux_port.id}-${target.id}`;
+          if (!internalLinkSeen.has(key)) {
+            internalLinkSeen.add(key);
+            dev.internalLinks.push({ fromId: el.mux_port.id, toId: target.id });
+          }
+        }
+      }
+      if (el.demux_port) {
+        const target = rxRP || bidiRP;
+        if (target) {
+          const key = `${target.id}-${el.demux_port.id}`;
+          if (!internalLinkSeen.has(key)) {
+            internalLinkSeen.add(key);
+            dev.internalLinks.push({ fromId: target.id, toId: el.demux_port.id });
+          }
+        }
+      }
+    }
+  }
+
+  // Ensure all WDM nodes are in the order
+  for (const d of sorted) {
+    for (const el of d.elements) {
+      if (!deviceOrder.includes(el.node_name)) deviceOrder.push(el.node_name);
+    }
+  }
+
+  const devices = deviceOrder.map((name) => deviceMap.get(name)!);
+  const cables = [...cableMap.values()];
+
+  // Fix port sides using cable segment items + device order
+  const portDevIdx = new Map<number, number>();
+  for (let di = 0; di < devices.length; di++) {
+    for (const p of devices[di].ports) portDevIdx.set(p.id, di);
+  }
+  for (const d of sorted) {
+    for (const seg of d.cable_segments) {
+      const items = seg.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type !== 'cable') continue;
+        const prev = i > 0 && items[i - 1].type !== 'cable' ? items[i - 1] : null;
+        const next = i < items.length - 1 && items[i + 1].type !== 'cable' ? items[i + 1] : null;
+        if (!prev || !next) continue;
+        const pi = portDevIdx.get(prev.id);
+        const ni = portDevIdx.get(next.id);
+        if (pi === undefined || ni === undefined) continue;
+        const pp = devices[pi].ports.find((p) => p.id === prev.id);
+        const np = devices[ni].ports.find((p) => p.id === next.id);
+        if (pi < ni) {
+          if (pp) pp.side = 'right';
+          if (np) np.side = 'left';
+        } else if (pi > ni) {
+          if (pp) pp.side = 'left';
+          if (np) np.side = 'right';
+        }
+      }
+    }
+  }
+
+  // Channel ports go on the opposite side from the trunk/COM ports
+  for (const dev of devices) {
+    if (!dev.isWdm) continue;
+    const trunkSide = dev.ports.find((p) => !p.isChannel && p.type === 'rear_port')?.side;
+    if (!trunkSide) continue;
+    const chSide = trunkSide === 'right' ? 'left' : 'right';
+    for (const p of dev.ports) {
+      if (p.isChannel) p.side = chSide;
+    }
+  }
+
+  return { devices, cables };
 }
 
-// ── Tooltip ─────────────────────────────────────────────────────
-function showTT(tt: any, html: string, ev: MouseEvent, c: ReturnType<typeof C>): void {
-  tt.style('display', 'block').style('background', c.ttBg).style('border', `1px solid ${c.ttBorder}`).style('color', c.ttText).html(html);
-  const tn = tt.node() as HTMLElement, r = tn.getBoundingClientRect(), cr = tn.parentElement!.getBoundingClientRect();
-  let l = ev.clientX - cr.left + 12, t = ev.clientY - cr.top - 12;
+// ── Layout ──────────────────────────────────────────────────────
+interface LPort {
+  port: Port;
+  relX: number;
+  relY: number;
+  absEdgeX: number;
+  absCY: number;
+}
+
+interface LInternalLink {
+  fromId: number;
+  toId: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface LDevice {
+  dev: Device;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  headerH: number;
+  leftPorts: LPort[];
+  rightPorts: LPort[];
+  internalLinks: LInternalLink[];
+}
+
+interface LLine {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface LCable {
+  cable: Cable;
+  lines: LLine[];
+  badgeX: number;
+  badgeY: number;
+}
+
+function computeLayout(graph: Graph) {
+  const portLookup = new Map<number, { absEdgeX: number; absCY: number }>();
+  // Also track port center (for internal links, which connect at port center, not edge)
+  const portCenter = new Map<number, { cx: number; cy: number }>();
+  const lDevices: LDevice[] = [];
+  let curX = MARGIN.left;
+
+  const infos: { w: number; h: number; hH: number; lp: Port[]; rp: Port[] }[] = [];
+  let maxH = 0;
+
+  for (const dev of graph.devices) {
+    const isWdm = dev.isWdm;
+    const lp = dev.ports.filter((p) => p.side === 'left');
+    const rp = dev.ports.filter((p) => p.side === 'right');
+    const hasBothSides = lp.length > 0 && rp.length > 0;
+    // Scale internal gap with number of links so bezier curves have room
+    const nLinks = dev.internalLinks.length;
+    const internalGap = hasBothSides ? Math.max(24, nLinks * 8, 40) : 0;
+    const w = isWdm ? (hasBothSides ? Math.max(WDM_W, PORT_W * 2 + internalGap) : WDM_W) : PP_W;
+    const hH = isWdm ? WDM_HEADER_H : PP_HEADER_H;
+    const nPorts = Math.max(lp.length, rp.length, 1);
+    const subH = isWdm && dev.channels.length ? SUBTITLE_H : 0;
+    const portsH = nPorts * PORT_H + (nPorts - 1) * PORT_GAP;
+    const bodyH = subH + PORT_INSET * 2 + portsH;
+    const h = hH + Math.max(bodyH, 40);
+    infos.push({ w, h, hH, lp, rp });
+    maxH = Math.max(maxH, h);
+  }
+
+  for (let i = 0; i < graph.devices.length; i++) {
+    const dev = graph.devices[i];
+    const inf = infos[i];
+    const y = MARGIN.top + (maxH - inf.h) / 2;
+    const subH = dev.isWdm && dev.channels.length ? SUBTITLE_H : 0;
+    const portsY0 = inf.hH + subH + PORT_INSET;
+
+    const lLeft: LPort[] = [];
+    let py = portsY0;
+    for (const p of inf.lp) {
+      const lp: LPort = {
+        port: p,
+        relX: 0,
+        relY: py,
+        absEdgeX: curX,
+        absCY: y + py + PORT_H / 2,
+      };
+      lLeft.push(lp);
+      portLookup.set(p.id, { absEdgeX: curX, absCY: lp.absCY });
+      portCenter.set(p.id, { cx: curX + PORT_W, cy: lp.absCY }); // inner edge of left port
+      py += PORT_H + PORT_GAP;
+    }
+
+    const lRight: LPort[] = [];
+    py = portsY0;
+    for (const p of inf.rp) {
+      const lp: LPort = {
+        port: p,
+        relX: inf.w - PORT_W,
+        relY: py,
+        absEdgeX: curX + inf.w,
+        absCY: y + py + PORT_H / 2,
+      };
+      lRight.push(lp);
+      portLookup.set(p.id, { absEdgeX: curX + inf.w, absCY: lp.absCY });
+      portCenter.set(p.id, { cx: curX + inf.w - PORT_W, cy: lp.absCY }); // inner edge of right port
+      py += PORT_H + PORT_GAP;
+    }
+
+    // Resolve internal links to device-relative coordinates
+    const iLinks: LInternalLink[] = [];
+    for (const il of dev.internalLinks) {
+      const from = portCenter.get(il.fromId);
+      const to = portCenter.get(il.toId);
+      if (from && to) {
+        iLinks.push({
+          fromId: il.fromId,
+          toId: il.toId,
+          x1: from.cx - curX,
+          y1: from.cy - y,
+          x2: to.cx - curX,
+          y2: to.cy - y,
+        });
+      }
+    }
+
+    lDevices.push({
+      dev,
+      x: curX,
+      y,
+      w: inf.w,
+      h: inf.h,
+      headerH: inf.hH,
+      leftPorts: lLeft,
+      rightPorts: lRight,
+      internalLinks: iLinks,
+    });
+    curX += inf.w + DEVICE_GAP;
+  }
+
+  // Cables
+  const lCables: LCable[] = [];
+  for (const cable of graph.cables) {
+    const lines: LLine[] = [];
+    for (const pp of cable.portPairs) {
+      const from = portLookup.get(pp.from);
+      const to = portLookup.get(pp.to);
+      if (from && to) lines.push({ x1: from.absEdgeX, y1: from.absCY, x2: to.absEdgeX, y2: to.absCY });
+    }
+    if (!lines.length) continue;
+    const avgX = lines.reduce((s, l) => s + (l.x1 + l.x2) / 2, 0) / lines.length;
+    const avgY = lines.reduce((s, l) => s + (l.y1 + l.y2) / 2, 0) / lines.length;
+    lCables.push({ cable, lines, badgeX: avgX, badgeY: avgY });
+  }
+
+  // Stagger cable badges in same gap
+  const gapCables = new Map<string, number[]>();
+  for (let ci = 0; ci < lCables.length; ci++) {
+    const l0 = lCables[ci].lines[0];
+    const key = `${Math.round(Math.min(l0.x1, l0.x2))}-${Math.round(Math.max(l0.x1, l0.x2))}`;
+    if (!gapCables.has(key)) gapCables.set(key, []);
+    gapCables.get(key)!.push(ci);
+  }
+  for (const indices of gapCables.values()) {
+    if (indices.length <= 1) continue;
+    indices.sort((a, b) => lCables[a].badgeY - lCables[b].badgeY);
+    let prevY = -Infinity;
+    for (const ci of indices) {
+      if (lCables[ci].badgeY - prevY < 34) lCables[ci].badgeY = prevY + 34;
+      prevY = lCables[ci].badgeY;
+    }
+  }
+
+  const totalW = curX - DEVICE_GAP + MARGIN.right;
+  const totalH = MARGIN.top + maxH + MARGIN.bottom;
+  return { lDevices, lCables, totalW, totalH };
+}
+
+// ── Helpers ─────────────────────────────────────────────────────
+function truncText(sel: any, maxW: number): void {
+  sel.each(function (this: SVGTextElement) {
+    const node = this;
+    const full = node.textContent || '';
+    let len = node.getComputedTextLength();
+    if (len === 0 && full.length > 0) return;
+    if (len <= maxW) return;
+    let t = full;
+    while (t.length > 1) {
+      t = t.slice(0, -1);
+      node.textContent = t + '\u2026';
+      len = node.getComputedTextLength();
+      if (len <= maxW) return;
+    }
+  });
+}
+
+function cableHex(color: string): string {
+  if (!color) return '';
+  return color.startsWith('#') ? color : `#${color}`;
+}
+
+function showTT(tt: any, html: string, ev: MouseEvent, t: ReturnType<typeof T>): void {
+  tt.style('display', 'block')
+    .style('background', t.ttBg)
+    .style('border', `1px solid ${t.ttBorder}`)
+    .style('color', t.ttText)
+    .html(html);
+  const tn = tt.node() as HTMLElement;
+  const r = tn.getBoundingClientRect();
+  const cr = tn.parentElement!.getBoundingClientRect();
+  let l = ev.clientX - cr.left + 12;
+  let top = ev.clientY - cr.top - 12;
   if (l + r.width > cr.width) l = ev.clientX - cr.left - r.width - 12;
-  if (t + r.height > cr.height) t = cr.height - r.height - 4;
-  tt.style('left', `${l}px`).style('top', `${t}px`);
+  if (top + r.height > cr.height) top = cr.height - r.height - 4;
+  if (top < 0) top = 4;
+  tt.style('left', `${l}px`).style('top', `${top}px`);
 }
-function hideTT(tt: any): void { tt.style('display', 'none'); }
-function cc(item: CableSegmentItem): string { return item.color ? (item.color.startsWith('#') ? item.color : `#${item.color}`) : C().cable; }
 
-// ── RENDER ──────────────────────────────────────────────────────
+function hideTT(tt: any): void {
+  tt.style('display', 'none');
+}
+
+function headerPath(w: number, h: number, rx: number): string {
+  return `M 0,${h} L 0,${rx} A ${rx},${rx} 0 0,1 ${rx},0 L ${w - rx},0 A ${rx},${rx} 0 0,1 ${w},${rx} L ${w},${h} Z`;
+}
+
+/** Bezier from (x1,y1) → through (bx,by) → to (x2,y2).  Lines merge at the badge center. */
+function cablePathThrough(x1: number, y1: number, bx: number, by: number, x2: number, y2: number): string {
+  return (
+    `M ${x1},${y1} C ${x1 + (bx - x1) * 0.55},${y1} ${bx - (bx - x1) * 0.15},${by} ${bx},${by}` +
+    ` C ${bx + (x2 - bx) * 0.15},${by} ${x2 - (x2 - bx) * 0.55},${y2} ${x2},${y2}`
+  );
+}
+
+// ── Render ──────────────────────────────────────────────────────
 function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): void {
   const container = document.querySelector(sel) as HTMLElement | null;
   const ttEl = document.querySelector(ttSel) as HTMLElement | null;
   if (!container || !ttEl) return;
-  const valid = dataList.filter((d) => d.elements?.length > 0);
-  if (!valid.length) { container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">No trace data.</div>'; return; }
 
-  const { nodes, sections } = buildGraph(valid);
-  const L = layout(nodes, sections);
-  const c = C();
+  const valid = dataList.filter((d) => d.elements?.length > 0);
+  if (!valid.length) {
+    container.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--bs-secondary)">No trace data.</div>';
+    return;
+  }
+
+  const graph = buildGraph(valid);
+  const layout = computeLayout(graph);
+  const t = T();
   const cr = container.getBoundingClientRect();
-  const W = cr.width || 900, H = cr.height || 700;
+  const W = cr.width || 1000;
+  const H = cr.height || 600;
 
   d3.select(container).select('svg').remove();
-  const svg = d3.select(container).append('svg').attr('width', W).attr('height', H).style('cursor', 'grab');
+  const svg = d3
+    .select(container)
+    .append('svg')
+    .attr('width', W)
+    .attr('height', H)
+    .style('cursor', 'grab')
+    .style('font-family', FONT);
   const tt = d3.select(ttEl);
   const g = svg.append('g');
 
-  // Three tier groups
-  const gOver = g.append('g').attr('class', 'tier-overview');
-  const gMed = g.append('g').attr('class', 'tier-medium').attr('display', 'none');
-  const gDet = g.append('g').attr('class', 'tier-detail').attr('display', 'none');
-
-  const zoom = d3.zoom().scaleExtent([0.08, 4]).on('zoom', (ev: any) => {
-    g.attr('transform', ev.transform);
-    const k = ev.transform.k;
-    gOver.attr('display', k < TIER_MED ? null : 'none');
-    gMed.attr('display', k >= TIER_MED && k < TIER_DET ? null : 'none');
-    gDet.attr('display', k >= TIER_DET ? null : 'none');
-  });
+  const zoom = d3
+    .zoom()
+    .scaleExtent([0.1, 4])
+    .on('zoom', (ev: any) => g.attr('transform', ev.transform));
   svg.call(zoom);
 
-  // ═══════════════════════════════════════════════════════════
-  // TIER 1: OVERVIEW
-  // ═══════════════════════════════════════════════════════════
-  for (const ln of L.ln) {
-    const ng = gOver.append('g').attr('transform', `translate(${ln.x}, ${ln.y})`);
-    ng.append('rect').attr('width', ln.w).attr('height', ln.hOver).attr('rx', 8)
-      .attr('fill', c.nodeFill).attr('stroke', c.nodeStroke).attr('stroke-width', 1.5);
-    ng.append('text').attr('x', 16).attr('y', 30).attr('fill', c.text)
-      .attr('font-size', '16px').attr('font-weight', '700').attr('font-family', 'system-ui, sans-serif').text(ln.n.name);
-    // Channel summary
-    const wls = [...new Set(ln.n.channels.map((ch) => ch.wl))].sort((a, b) => a - b);
-    const summary = wls.length <= 1 ? (wls[0] ? `${wls[0]}nm` : '') :
-      `${ln.n.channels.length}ch  ${wls[0]}\u2013${wls[wls.length - 1]}nm`;
-    ng.append('text').attr('x', 16).attr('y', 52).attr('fill', c.muted)
-      .attr('font-size', '13px').attr('font-family', 'system-ui, sans-serif').text(summary);
-    ng.style('cursor', 'pointer').on('click', () => { if (ln.n.url) window.location.href = ln.n.url; });
-  }
-  // Overview cable lines
-  for (const ls of L.ls) {
-    const fromLn = L.ln.find((n) => n.n.id === ls.sec.fromId)!;
-    const toLn = L.ln.find((n) => n.n.id === ls.sec.toId)!;
-    const y1 = fromLn.y + fromLn.hOver;
-    const y2 = toLn.y;
-    const lc = ls.sec.lanes.length;
-    const totalW = lc * 6 + (lc - 1) * 4;
-    const startX = fromLn.x + fromLn.w / 2 - totalW / 2;
-    for (let li = 0; li < lc; li++) {
-      const lx = startX + li * 10 + 3;
-      const lineColor = ls.sec.lanes[li].firstCableColor || c.cable;
-      gOver.append('line').attr('x1', lx).attr('y1', y1).attr('x2', lx).attr('y2', y2)
-        .attr('stroke', lineColor).attr('stroke-width', 4).attr('stroke-linecap', 'round').attr('opacity', 0.7);
-    }
-  }
+  // ── Cables ────────────────────────────────────────────────
+  for (const lc of layout.lCables) {
+    const { cable, lines, badgeX, badgeY } = lc;
+    const color = cableHex(cable.color) || t.cable;
+    const cg = g.append('g').style('cursor', 'pointer');
 
-  // ═══════════════════════════════════════════════════════════
-  // TIER 2: MEDIUM
-  // ═══════════════════════════════════════════════════════════
-  for (const ln of L.ln) {
-    const ng = gMed.append('g').attr('transform', `translate(${ln.x}, ${ln.y})`);
-    ng.append('rect').attr('width', ln.w).attr('height', ln.hFull).attr('rx', 6)
-      .attr('fill', c.nodeFill).attr('stroke', c.nodeStroke).attr('stroke-width', 1);
-    ng.append('text').attr('x', 12).attr('y', 22).attr('fill', c.text)
-      .attr('font-size', '14px').attr('font-weight', '600').attr('font-family', 'system-ui, sans-serif').text(ln.n.name)
-      .style('cursor', 'pointer').on('click', () => { if (ln.n.url) window.location.href = ln.n.url; });
-    // Ports
-    for (const p of ln.ports) {
-      const pg = ng.append('g').attr('transform', `translate(${p.rx}, ${p.ry})`).style('cursor', 'pointer');
-      pg.append('rect').attr('width', PORT_BOX_W).attr('height', PORT_BOX_H).attr('rx', 3)
-        .attr('fill', c.portFill).attr('stroke', c.portStroke).attr('stroke-width', 1);
-      pg.append('text').attr('x', PORT_BOX_W / 2).attr('y', PORT_BOX_H / 2 + 1)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', c.text)
-        .attr('font-size', '10px').attr('font-family', 'system-ui, sans-serif').text(p.port.name);
-      pg.on('click', () => { if (p.port.url) window.location.href = p.port.url; });
+    // Draw each port-pair as a path merging at the badge center
+    for (const ln of lines) {
+      const path = cablePathThrough(ln.x1, ln.y1, badgeX, badgeY, ln.x2, ln.y2);
+      cg.append('path')
+        .attr('d', path)
+        .attr('fill', 'none')
+        .attr('stroke', t.cable)
+        .attr('stroke-width', 5)
+        .attr('stroke-linecap', 'round')
+        .attr('opacity', 0.1);
+      cg.append('path')
+        .attr('d', path)
+        .attr('fill', 'none')
+        .attr('stroke', color)
+        .attr('stroke-width', 2)
+        .attr('stroke-linecap', 'round');
+      cg.append('circle').attr('cx', ln.x1).attr('cy', ln.y1).attr('r', 3).attr('fill', color);
+      cg.append('circle').attr('cx', ln.x2).attr('cy', ln.y2).attr('r', 3).attr('fill', color);
     }
-  }
-  // Medium lanes: labels + cable lines + PP name boxes
-  for (const ls of L.ls) {
-    for (const ll of ls.lanes) {
-      // Label
-      gMed.append('text').attr('x', ll.x + LANE_W / 2).attr('y', ll.yStart + LANE_LABEL_H - 3)
-        .attr('text-anchor', 'middle').attr('fill', c.laneLabel)
-        .attr('font-size', '9px').attr('font-weight', '600').attr('font-family', 'system-ui, sans-serif')
-        .text(ll.lane.label);
-      // PP name-only boxes
-      for (const pp of ll.pps) {
-        const pg = gMed.append('g').attr('transform', `translate(${pp.x}, ${pp.y})`);
-        pg.append('rect').attr('width', LANE_W).attr('height', PP_H_MED).attr('rx', 3)
-          .attr('fill', c.ppFill).attr('stroke', c.ppStroke).attr('stroke-width', 1).attr('stroke-dasharray', '4,2');
-        pg.append('text').attr('x', LANE_W / 2).attr('y', PP_H_MED / 2 + 1)
-          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', c.muted)
-          .attr('font-size', '10px').attr('font-weight', '500').attr('font-family', 'system-ui, sans-serif')
-          .text(pp.device);
-      }
-      // Cable name lines
-      for (const cb of ll.cables) {
-        const cg = gMed.append('g').attr('transform', `translate(${cb.x}, ${cb.y})`);
-        cg.append('rect').attr('width', LANE_W).attr('height', CABLE_H).attr('rx', 3)
-          .attr('fill', cc(cb.item)).attr('fill-opacity', 0.1).attr('stroke', cc(cb.item)).attr('stroke-width', 1);
-        cg.append('text').attr('x', LANE_W / 2).attr('y', CABLE_H / 2 + 1)
-          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', cc(cb.item))
-          .attr('font-size', '9px').attr('font-family', 'system-ui, sans-serif')
-          .text(cb.item.name);
-      }
+
+    // Cable badge
+    const badgeG = cg.append('g');
+    const hasStatus = !!cable.status;
+    const nameY = hasStatus ? badgeY - 4 : badgeY;
+    const nameText = badgeG
+      .append('text')
+      .attr('x', badgeX)
+      .attr('y', nameY)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', t.badgeText)
+      .attr('font-size', '9px')
+      .attr('font-weight', '500')
+      .text(cable.name);
+
+    let statusLen = 0;
+    if (hasStatus) {
+      const statusText = badgeG
+        .append('text')
+        .attr('x', badgeX)
+        .attr('y', badgeY + 8)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', t.muted)
+        .attr('font-size', '8px')
+        .text(cable.status);
+      statusLen = (statusText.node() as SVGTextElement).getComputedTextLength?.() || 0;
     }
+
+    const nameLen = (nameText.node() as SVGTextElement).getComputedTextLength?.() || cable.name.length * 5.5;
+    const badgeW = Math.max(nameLen, statusLen) + 14;
+    const badgeH = hasStatus ? 28 : 20;
+    badgeG
+      .insert('rect', ':first-child')
+      .attr('x', badgeX - badgeW / 2)
+      .attr('y', badgeY - badgeH / 2)
+      .attr('width', badgeW)
+      .attr('height', badgeH)
+      .attr('rx', badgeH / 2)
+      .attr('fill', t.badgeBg)
+      .attr('stroke', t.badgeBorder)
+      .attr('stroke-width', 0.5);
+
+    const ttLines = [`<strong>${cable.name}</strong>`];
+    if (cable.status) ttLines.push(`Status: ${cable.status}`);
+    if (cable.label) ttLines.push(cable.label);
+    if (cable.portPairs.length > 1) ttLines.push(`${cable.portPairs.length} fibre pairs`);
+    const ttHtml = ttLines.join('<br>');
+    cg.on('mouseover', (ev: MouseEvent) => showTT(tt, ttHtml, ev, t))
+      .on('mousemove', (ev: MouseEvent) => showTT(tt, ttHtml, ev, t))
+      .on('mouseout', () => hideTT(tt))
+      .on('click', () => {
+        if (cable.url) window.location.href = cable.url;
+      });
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // TIER 3: DETAIL
-  // ═══════════════════════════════════════════════════════════
-  for (const ln of L.ln) {
-    const ng = gDet.append('g').attr('transform', `translate(${ln.x}, ${ln.y})`);
-    ng.append('rect').attr('width', ln.w).attr('height', ln.hFull).attr('rx', 6)
-      .attr('fill', c.nodeFill).attr('stroke', c.nodeStroke).attr('stroke-width', 1);
-    ng.append('text').attr('x', 12).attr('y', 22).attr('fill', c.text)
-      .attr('font-size', '14px').attr('font-weight', '600').attr('font-family', 'system-ui, sans-serif').text(ln.n.name)
-      .style('cursor', 'pointer').on('click', () => { if (ln.n.url) window.location.href = ln.n.url; });
+  // ── Devices ───────────────────────────────────────────────
+  for (const ld of layout.lDevices) {
+    const isWdm = ld.dev.isWdm;
+    const dg = g.append('g').attr('transform', `translate(${ld.x}, ${ld.y})`);
 
-    // Per-wavelength TX/RX dots
-    if (ln.n.channels.length > 0) {
-      const sorted = [...ln.n.channels].sort((a, b) => a.wl - b.wl);
-      const dotSp = 14;
-      const maxDots = Math.min(sorted.length, Math.floor((ln.w - 120) / dotSp));
-      const shown = sorted.slice(0, maxDots);
-      let dx = ln.w - 12 - (shown.length - 1) * dotSp;
-      ng.append('text').attr('x', dx - 16).attr('y', 12).attr('fill', c.muted)
-        .attr('font-size', '7px').attr('font-family', 'system-ui, sans-serif').text('TX');
-      ng.append('text').attr('x', dx - 16).attr('y', 24).attr('fill', c.muted)
-        .attr('font-size', '7px').attr('font-family', 'system-ui, sans-serif').text('RX');
-      for (let ci = 0; ci < shown.length; ci++) {
-        const ch = shown[ci], cx = dx + ci * dotSp;
-        if (ch.muxName) ng.append('circle').attr('cx', cx).attr('cy', 10).attr('r', 3).attr('fill', ch.muxConn ? c.green : c.red);
-        if (ch.demuxName) ng.append('circle').attr('cx', cx).attr('cy', 22).attr('r', 3).attr('fill', ch.demuxConn ? c.green : c.red);
-      }
-      if (sorted.length > maxDots) {
-        ng.append('text').attr('x', ln.w - 4).attr('y', 16).attr('text-anchor', 'end')
-          .attr('fill', c.muted).attr('font-size', '8px').attr('font-family', 'system-ui, sans-serif')
-          .text(`+${sorted.length - maxDots}`);
-      }
+    dg.append('rect')
+      .attr('width', ld.w)
+      .attr('height', ld.h)
+      .attr('rx', CORNER_R)
+      .attr('fill', t.bodyFill)
+      .attr('stroke', t.bodyStroke)
+      .attr('stroke-width', 1.5);
+
+    dg.append('path').attr('d', headerPath(ld.w, ld.headerH, CORNER_R)).attr('fill', t.headerFill);
+
+    dg.append('line')
+      .attr('x1', 0)
+      .attr('y1', ld.headerH)
+      .attr('x2', ld.w)
+      .attr('y2', ld.headerH)
+      .attr('stroke', t.bodyStroke)
+      .attr('stroke-width', 0.5);
+
+    // Internal routing curves — subtle by default, highlighted on port hover
+    const ilElements: { path: any; dot1: any; dot2: any; fromId: number; toId: number }[] = [];
+    for (const il of ld.internalLinks) {
+      const dx = (il.x2 - il.x1) / 3;
+      const d = `M ${il.x1},${il.y1} C ${il.x1 + dx},${il.y1} ${il.x2 - dx},${il.y2} ${il.x2},${il.y2}`;
+      const p = dg
+        .append('path')
+        .attr('d', d)
+        .attr('fill', 'none')
+        .attr('stroke', t.internalLink)
+        .attr('stroke-width', 1)
+        .attr('stroke-dasharray', '4,3')
+        .attr('opacity', 0.3);
+      const d1 = dg
+        .append('circle')
+        .attr('cx', il.x1)
+        .attr('cy', il.y1)
+        .attr('r', 2)
+        .attr('fill', t.internalLink)
+        .attr('opacity', 0.3);
+      const d2 = dg
+        .append('circle')
+        .attr('cx', il.x2)
+        .attr('cy', il.y2)
+        .attr('r', 2)
+        .attr('fill', t.internalLink)
+        .attr('opacity', 0.3);
+      ilElements.push({ path: p, dot1: d1, dot2: d2, fromId: il.fromId, toId: il.toId });
     }
-
-    // Ports
-    for (const p of ln.ports) {
-      const pg = ng.append('g').attr('transform', `translate(${p.rx}, ${p.ry})`).style('cursor', 'pointer');
-      pg.append('rect').attr('width', PORT_BOX_W).attr('height', PORT_BOX_H).attr('rx', 3)
-        .attr('fill', c.portFill).attr('stroke', c.portStroke).attr('stroke-width', 1);
-      pg.append('text').attr('x', PORT_BOX_W / 2).attr('y', PORT_BOX_H / 2 + 1)
-        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', c.text)
-        .attr('font-size', '10px').attr('font-family', 'system-ui, sans-serif').text(p.port.name);
-      pg.on('click', () => { if (p.port.url) window.location.href = p.port.url; })
-        .on('mouseover', (ev: MouseEvent) => showTT(tt, `<strong>${p.port.name}</strong><br>Device: ${p.port.device}`, ev, c))
-        .on('mousemove', (ev: MouseEvent) => showTT(tt, `<strong>${p.port.name}</strong><br>Device: ${p.port.device}`, ev, c))
-        .on('mouseout', () => hideTT(tt));
-    }
-
-    // Node tooltip
-    const ntt = (ev: MouseEvent) => {
-      const lines = [`<strong>${ln.n.name}</strong>`];
-      for (const ch of ln.n.channels) {
-        let s = ''; if (ch.muxName) s += ch.muxConn ? ' TX\u2713' : ' TX\u2717'; if (ch.demuxName) s += ch.demuxConn ? ' RX\u2713' : ' RX\u2717';
-        lines.push(`&nbsp;&nbsp;${ch.label} (${ch.wl}nm)${s}`);
+    // Helper: highlight internal links connected to a port
+    const hlLinks = (portId: number, on: boolean) => {
+      for (const el of ilElements) {
+        const match = el.fromId === portId || el.toId === portId;
+        el.path
+          .attr('opacity', on && match ? 0.85 : 0.3)
+          .attr('stroke-width', on && match ? 2.5 : 1)
+          .attr('stroke', on && match ? t.cable : t.internalLink);
+        el.dot1.attr('opacity', on && match ? 0.9 : 0.3).attr('r', on && match ? 3 : 2);
+        el.dot2.attr('opacity', on && match ? 0.9 : 0.3).attr('r', on && match ? 3 : 2);
       }
-      showTT(tt, lines.join('<br>'), ev, c);
     };
-    ng.on('mouseover', ntt).on('mousemove', ntt).on('mouseout', () => hideTT(tt));
-  }
 
-  // Detail lanes: full cable boxes + PP with port boxes
-  for (const ls of L.ls) {
-    for (const ll of ls.lanes) {
-      gDet.append('text').attr('x', ll.x + LANE_W / 2).attr('y', ll.yStart + LANE_LABEL_H - 3)
-        .attr('text-anchor', 'middle').attr('fill', c.laneLabel)
-        .attr('font-size', '9px').attr('font-weight', '600').attr('font-family', 'system-ui, sans-serif')
-        .text(ll.lane.label);
+    const nameText = dg
+      .append('text')
+      .attr('x', ld.w / 2)
+      .attr('y', ld.headerH / 2 + 1)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', t.headerText)
+      .attr('font-size', isWdm ? '12px' : '11px')
+      .attr('font-weight', '600')
+      .text(ld.dev.name);
+    truncText(nameText, ld.w - 16);
 
-      // PP detail boxes with ports
-      for (const pp of ll.pps) {
-        const ppH = PP_PAD_TOP + (pp.ports.length > 0 ? PORT_BOX_H - 2 + 4 : 4);
-        const pg = gDet.append('g').attr('transform', `translate(${pp.x}, ${pp.y})`);
-        pg.append('rect').attr('width', LANE_W).attr('height', ppH).attr('rx', 3)
-          .attr('fill', c.ppFill).attr('stroke', c.ppStroke).attr('stroke-width', 1).attr('stroke-dasharray', '4,2');
-        pg.append('text').attr('x', 8).attr('y', 14).attr('fill', c.muted)
-          .attr('font-size', '10px').attr('font-weight', '500').attr('font-family', 'system-ui, sans-serif').text(pp.device);
-        for (const p of pp.ports) {
-          const ppg = pg.append('g').attr('transform', `translate(${p.rx}, ${p.ry})`).style('cursor', 'pointer');
-          const isFP = p.item.type === 'front_port';
-          ppg.append('rect').attr('width', 60).attr('height', PORT_BOX_H - 2).attr('rx', 2)
-            .attr('fill', c.portFill).attr('stroke', c.portStroke).attr('stroke-width', 0.5);
-          ppg.append('text').attr('x', 30).attr('y', (PORT_BOX_H - 2) / 2 + 1)
-            .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', c.muted)
-            .attr('font-size', '8px').attr('font-family', 'system-ui, sans-serif')
-            .text(`${isFP ? '\u25cb' : '\u25c9'} ${p.item.name}`);
-          ppg.on('click', () => { if (p.item.url) window.location.href = p.item.url; })
-            .on('mouseover', (ev: MouseEvent) => showTT(tt, `<strong>${p.item.name}</strong><br>Device: ${p.item.device}<br>Type: ${p.item.type.replace('_', ' ')}`, ev, c))
-            .on('mousemove', (ev: MouseEvent) => showTT(tt, `<strong>${p.item.name}</strong><br>Device: ${p.item.device}<br>Type: ${p.item.type.replace('_', ' ')}`, ev, c))
-            .on('mouseout', () => hideTT(tt));
-        }
-      }
-
-      // Cable boxes
-      for (const cb of ll.cables) {
-        const cg = gDet.append('g').attr('transform', `translate(${cb.x}, ${cb.y})`).style('cursor', 'pointer');
-        cg.append('rect').attr('width', LANE_W).attr('height', CABLE_H).attr('rx', 3)
-          .attr('fill', cc(cb.item)).attr('fill-opacity', 0.12).attr('stroke', cc(cb.item)).attr('stroke-width', 1);
-        cg.append('text').attr('x', LANE_W / 2).attr('y', CABLE_H / 2 + 1)
-          .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle').attr('fill', cc(cb.item))
-          .attr('font-size', '9px').attr('font-family', 'system-ui, sans-serif')
-          .text(`\u2500\u2500  ${cb.item.name}`);
-        cg.on('mouseover', (ev: MouseEvent) => { const l = [`<strong>${cb.item.name}</strong>`]; if (cb.item.status) l.push(`Status: ${cb.item.status}`); showTT(tt, l.join('<br>'), ev, c); })
-          .on('mousemove', (ev: MouseEvent) => { const l = [`<strong>${cb.item.name}</strong>`]; if (cb.item.status) l.push(`Status: ${cb.item.status}`); showTT(tt, l.join('<br>'), ev, c); })
-          .on('mouseout', () => hideTT(tt))
-          .on('click', () => { if (cb.item.url) window.location.href = cb.item.url; });
-      }
+    if (isWdm && ld.dev.channels.length > 0) {
+      const wls = [...new Set(ld.dev.channels.map((ch) => ch.wl))].sort((a, b) => a - b);
+      const summary =
+        wls.length <= 2
+          ? wls.map((w) => `${w}nm`).join(', ')
+          : `${ld.dev.channels.length}ch ${wls[0]}\u2013${wls[wls.length - 1]}nm`;
+      const subText = dg
+        .append('text')
+        .attr('x', ld.w / 2)
+        .attr('y', ld.headerH + SUBTITLE_H / 2 + 2)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', t.subtitle)
+        .attr('font-size', '9px')
+        .text(summary);
+      truncText(subText, ld.w - 12);
     }
+
+    // Ports
+    const drawPort = (lp: LPort) => {
+      const isCh = !!lp.port.isChannel;
+      const pg = dg.append('g').attr('transform', `translate(${lp.relX}, ${lp.relY})`).style('cursor', 'pointer');
+
+      pg.append('rect')
+        .attr('width', PORT_W)
+        .attr('height', PORT_H)
+        .attr('rx', 3)
+        .attr('fill', isCh ? t.chPortFill : t.portFill)
+        .attr('stroke', isCh ? t.chPortStroke : t.portStroke)
+        .attr('stroke-width', 0.5);
+
+      const icon = lp.port.type === 'front_port' ? '\u25cb' : '\u25c9';
+      const pText = pg
+        .append('text')
+        .attr('x', PORT_W / 2)
+        .attr('y', PORT_H / 2 + 1)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', t.portText)
+        .attr('font-size', '9px')
+        .text(`${icon} ${lp.port.name}`);
+      truncText(pText, PORT_W - 10);
+
+      const portTT = `<strong>${lp.port.name}</strong><br>${lp.port.type.replace('_', ' ')}${isCh ? ' (channel)' : ''}<br>Device: ${ld.dev.name}`;
+      pg.on('click', (ev: MouseEvent) => {
+        ev.stopPropagation();
+        if (lp.port.url) window.location.href = lp.port.url;
+      })
+        .on('mouseover', (ev: MouseEvent) => {
+          ev.stopPropagation();
+          showTT(tt, portTT, ev, t);
+          hlLinks(lp.port.id, true);
+        })
+        .on('mousemove', (ev: MouseEvent) => {
+          ev.stopPropagation();
+          showTT(tt, portTT, ev, t);
+        })
+        .on('mouseout', () => {
+          hideTT(tt);
+          hlLinks(lp.port.id, false);
+        });
+    };
+
+    for (const lp of ld.leftPorts) drawPort(lp);
+    for (const lp of ld.rightPorts) drawPort(lp);
+
+    // Header overlay
+    const headerOverlay = dg
+      .append('rect')
+      .attr('width', ld.w)
+      .attr('height', ld.headerH)
+      .attr('fill', 'transparent')
+      .style('cursor', 'pointer');
+
+    const devTTLines = [`<strong>${ld.dev.name}</strong>`];
+    if (ld.dev.channels.length) {
+      for (const ch of ld.dev.channels) {
+        let s = '';
+        if (ch.hasMux) s += ch.muxConn ? ' TX\u2713' : ' TX\u2717';
+        if (ch.hasDemux) s += ch.demuxConn ? ' RX\u2713' : ' RX\u2717';
+        devTTLines.push(`&nbsp;&nbsp;${ch.label} (${ch.wl}nm)${s}`);
+      }
+    } else {
+      devTTLines.push(`${ld.dev.ports.length} port(s)`);
+    }
+    const devTTHtml = devTTLines.join('<br>');
+
+    headerOverlay
+      .on('click', (ev: MouseEvent) => {
+        ev.stopPropagation();
+        if (ld.dev.url) window.location.href = ld.dev.url;
+      })
+      .on('mouseover', (ev: MouseEvent) => showTT(tt, devTTHtml, ev, t))
+      .on('mousemove', (ev: MouseEvent) => showTT(tt, devTTHtml, ev, t))
+      .on('mouseout', () => hideTT(tt));
   }
 
   // ── Zoom controls ─────────────────────────────────────────
-  const cg = svg.append('g').attr('transform', `translate(${W - 48}, 12)`);
+  const ctrlG = svg.append('g').attr('transform', `translate(${W - 48}, 12)`);
   [
     { label: '+', dy: 0, fn: () => svg.transition().duration(300).call(zoom.scaleBy, 1.4) },
     { label: '\u2212', dy: 36, fn: () => svg.transition().duration(300).call(zoom.scaleBy, 0.7) },
     { label: '\u21ba', dy: 72, fn: () => fit() },
   ].forEach((btn) => {
-    const bg = cg.append('g').attr('transform', `translate(0, ${btn.dy})`).style('cursor', 'pointer');
-    bg.append('rect').attr('width', 32).attr('height', 32).attr('rx', 4)
-      .attr('fill', c.btnFill).attr('stroke', c.btnStroke).attr('stroke-width', 1);
-    bg.append('text').attr('x', 16).attr('y', 21).attr('text-anchor', 'middle')
-      .attr('fill', c.btnText).attr('font-size', '16px').attr('font-family', 'system-ui, sans-serif').text(btn.label);
-    bg.on('click', (ev: MouseEvent) => { ev.stopPropagation(); btn.fn(); });
+    const bg = ctrlG.append('g').attr('transform', `translate(0, ${btn.dy})`).style('cursor', 'pointer');
+    bg.append('rect')
+      .attr('width', 32)
+      .attr('height', 32)
+      .attr('rx', 4)
+      .attr('fill', t.btnFill)
+      .attr('stroke', t.btnStroke)
+      .attr('stroke-width', 1);
+    bg.append('text')
+      .attr('x', 16)
+      .attr('y', 21)
+      .attr('text-anchor', 'middle')
+      .attr('fill', t.btnText)
+      .attr('font-size', '16px')
+      .text(btn.label);
+    bg.on('click', (ev: MouseEvent) => {
+      ev.stopPropagation();
+      btn.fn();
+    });
   });
 
   function fit(): void {
-    const s = Math.min(W / L.tw, H / L.th, 1) * 0.9;
-    const tx = (W - L.tw * s) / 2, ty = (H - L.th * s) / 2;
+    const s = Math.min(W / layout.totalW, H / layout.totalH, 1) * 0.9;
+    const tx = (W - layout.totalW * s) / 2;
+    const ty = (H - layout.totalH * s) / 2;
     svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(s));
   }
   fit();

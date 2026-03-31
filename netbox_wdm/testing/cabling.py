@@ -76,45 +76,63 @@ def cable_duplex_through_pp_pair(
     device_b_rx_rp: RearPort,
     device_b_tx_rp: RearPort,
     *,
-    pp_a_tx_port: int = 1,
-    pp_b_tx_port: int = 1,
-    pp_b_rx_port: int = 2,
-    pp_a_rx_port: int = 2,
+    pp_a_port_num: int = 1,
+    pp_b_port_num: int = 1,
     label_prefix: str = "",
     cable_type: str = "smf-os2",
     status: str = "connected",
-) -> tuple[tuple[Cable, Cable, Cable], tuple[Cable, Cable, Cable]]:
-    """Create 6 cables for a duplex link through a pair of patch panels.
+) -> tuple[Cable, Cable, Cable]:
+    """Create 3 duplex cables for a bidirectional link through patch panels.
 
-    TX direction: A.COM-TX → PP-A → PP-B → B.COM-RX
-    RX direction: B.COM-TX → PP-B → PP-A → A.COM-RX
+    Each cable carries both TX and RX fibres as a multi-terminated pair:
+        1. A-patch: [A.COM-TX, A.COM-RX] → PP-A [FP-nn, FP-nn+1]
+        2. Trunk:   PP-A [RP-nn, RP-nn+1] → PP-B [RP-nn, RP-nn+1]
+        3. B-patch: PP-B [FP-nn, FP-nn+1] → [B.COM-RX, B.COM-TX]
+
+    Uses consecutive PP port pairs (port_num and port_num + 1).
 
     Returns:
-        tuple of (tx_cables, rx_cables) where each is a 3-tuple of
-        (patch_cable_1, trunk_cable, patch_cable_2).
+        tuple of (a_patch, trunk, b_patch)
     """
-    tx_cables = cable_through_pp_pair(
-        device_a_tx_rp,
-        pp_a_device,
-        pp_b_device,
-        device_b_rx_rp,
-        pp_a_port_num=pp_a_tx_port,
-        pp_b_port_num=pp_b_tx_port,
-        label_prefix=f"{label_prefix} TX".strip(),
-        cable_type=cable_type,
-        status=status,
-    )
+    # PP-A ports: TX fibre on port_num, RX fibre on port_num + 1
+    pp_a_fp_tx = FrontPort.objects.get(device=pp_a_device, name=f"FP-{pp_a_port_num:02d}")
+    pp_a_fp_rx = FrontPort.objects.get(device=pp_a_device, name=f"FP-{pp_a_port_num + 1:02d}")
+    pp_a_rp_tx = RearPort.objects.get(device=pp_a_device, name=f"RP-{pp_a_port_num:02d}")
+    pp_a_rp_rx = RearPort.objects.get(device=pp_a_device, name=f"RP-{pp_a_port_num + 1:02d}")
 
-    rx_cables = cable_through_pp_pair(
-        device_b_tx_rp,
-        pp_b_device,
-        pp_a_device,
-        device_a_rx_rp,
-        pp_a_port_num=pp_b_rx_port,
-        pp_b_port_num=pp_a_rx_port,
-        label_prefix=f"{label_prefix} RX".strip(),
-        cable_type=cable_type,
-        status=status,
-    )
+    # PP-B ports
+    pp_b_fp_tx = FrontPort.objects.get(device=pp_b_device, name=f"FP-{pp_b_port_num:02d}")
+    pp_b_fp_rx = FrontPort.objects.get(device=pp_b_device, name=f"FP-{pp_b_port_num + 1:02d}")
+    pp_b_rp_tx = RearPort.objects.get(device=pp_b_device, name=f"RP-{pp_b_port_num:02d}")
+    pp_b_rp_rx = RearPort.objects.get(device=pp_b_device, name=f"RP-{pp_b_port_num + 1:02d}")
 
-    return (tx_cables, rx_cables)
+    sep = " " if label_prefix else ""
+
+    a_patch = Cable(
+        type=cable_type,
+        status=status,
+        label=f"{label_prefix}{sep}A-patch",
+        a_terminations=[device_a_tx_rp, device_a_rx_rp],
+        b_terminations=[pp_a_fp_tx, pp_a_fp_rx],
+    )
+    a_patch.save()
+
+    trunk = Cable(
+        type=cable_type,
+        status=status,
+        label=f"{label_prefix}{sep}trunk",
+        a_terminations=[pp_a_rp_tx, pp_a_rp_rx],
+        b_terminations=[pp_b_rp_tx, pp_b_rp_rx],
+    )
+    trunk.save()
+
+    b_patch = Cable(
+        type=cable_type,
+        status=status,
+        label=f"{label_prefix}{sep}B-patch",
+        a_terminations=[pp_b_fp_tx, pp_b_fp_rx],
+        b_terminations=[device_b_rx_rp, device_b_tx_rp],
+    )
+    b_patch.save()
+
+    return (a_patch, trunk, b_patch)

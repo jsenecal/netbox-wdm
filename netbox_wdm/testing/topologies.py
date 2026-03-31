@@ -55,7 +55,7 @@ def duplex_mux_pair(
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
     pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
 
-    tx_cables, rx_cables = cable_duplex_through_pp_pair(
+    cables = cable_duplex_through_pp_pair(
         device_a_tx_rp=mux_a.line_ports["tx"].rear_port,
         device_a_rx_rp=mux_a.line_ports["rx"].rear_port,
         pp_a_device=pp_a,
@@ -65,13 +65,11 @@ def duplex_mux_pair(
         label_prefix=p.strip("-") if p else "DX",
     )
 
-    cables = list(tx_cables) + list(rx_cables)
-
     return Topology(
         name=f"{p}duplex-mux-pair",
         bundles={"mux_a": mux_a, "mux_b": mux_b},
         patch_panels=[pp_a, pp_b],
-        cables=cables,
+        cables=list(cables),
     )
 
 
@@ -152,7 +150,7 @@ def dwdm_mux_to_roadm(
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
     pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
 
-    tx_cables, rx_cables = cable_duplex_through_pp_pair(
+    cables = cable_duplex_through_pp_pair(
         device_a_tx_rp=mux.line_ports["tx"].rear_port,
         device_a_rx_rp=mux.line_ports["rx"].rear_port,
         pp_a_device=pp_a,
@@ -162,11 +160,9 @@ def dwdm_mux_to_roadm(
         label_prefix=p.strip("-") if p else "DWDM",
     )
 
-    cables = list(tx_cables) + list(rx_cables)
-
     return Topology(
         name=f"{p}dwdm-mux-to-roadm",
         bundles={"mux": mux, "roadm": roadm},
         patch_panels=[pp_a, pp_b],
-        cables=cables,
+        cables=list(cables),
     )
