@@ -2,18 +2,21 @@
 
 Computes expected vs actual PortMapping state and provides sync operations.
 
-The expected PortMapping state is derived from WdmChannel and WdmLinePort data:
-  - Each channel's mux_front_port maps to TX (or BIDI) line port rear ports.
-  - Each channel's demux_front_port maps to RX (or BIDI) line port rear ports.
+Two validation modes based on node type:
 
-The actual PortMapping state is read from PortMapping rows, filtered to only those
-whose front_port belongs to a WdmChannel on this node. Hashes of sorted
-(fp_id, rp_id, grid_position) tuples are compared to detect sync drift.
+**Fixed nodes** (terminal MUX, OADM, amplifier):
+  Full validation — the exact set of (front_port_id, rear_port_id, grid_position)
+  tuples must match between expected and actual PortMappings. MUX front ports map
+  to TX/BIDI line ports, DEMUX front ports map to RX/BIDI line ports.
 
-Note: NetBox auto-creates PortMappings from PortTemplateMappings when a Device is
-instantiated. This module verifies that WdmChannel data is consistent with those
-auto-created mappings. Extra PortMappings (e.g., EXP/1310 pass-through ports) that
-are not part of any WdmChannel are intentionally excluded from both hashes.
+**ROADM nodes:**
+  Position-only validation — channel-to-direction assignment is dynamic, so we
+  don't validate which rear port a front port maps to. We only check that every
+  existing PortMapping for a channel front port has the correct rear_port_position
+  matching the channel's grid_position.
+
+EXP/1310 pass-through PortMappings are excluded from both hashes since they are
+not part of any WdmChannel.
 """
 
 from __future__ import annotations
@@ -29,23 +32,33 @@ if TYPE_CHECKING:
     from .models import WdmNode
 
 
-def _hash_tuples(tuples: list[tuple[int, int, int]]) -> str:
-    """Compute SHA-256 hex digest from a sorted list of (front_port_id, rear_port_id, position) tuples."""
+def _hash_tuples(tuples: list[tuple[int, ...]]) -> str:
+    """Compute SHA-256 hex digest from a sorted list of int tuples."""
     if not tuples:
         return ""
     sorted_tuples = sorted(tuples)
-    data = ",".join(f"{fp}:{rp}:{pos}" for fp, rp, pos in sorted_tuples)
+    data = ",".join(":".join(str(v) for v in t) for t in sorted_tuples)
     return hashlib.sha256(data.encode()).hexdigest()
 
 
-def compute_expected_port_hash(node: WdmNode) -> str:
-    """Compute the hash of the expected PortMapping state from WdmChannels and WdmLinePorts.
+def _get_channel_fp_ids(node: WdmNode) -> set[int]:
+    """Collect all front_port_ids from WdmChannels (mux and demux, excluding None)."""
+    fp_ids: set[int] = set()
+    for ch in node.channels.all():
+        if ch.mux_front_port_id is not None:
+            fp_ids.add(ch.mux_front_port_id)
+        if ch.demux_front_port_id is not None:
+            fp_ids.add(ch.demux_front_port_id)
+    return fp_ids
 
-    For duplex nodes: mux_front_port → TX line ports, demux_front_port → RX line ports.
-    For single-fiber nodes: both mux and demux front ports → BIDI line ports.
 
-    Returns an empty string if there are no line ports or no channels with front ports.
-    """
+# ---------------------------------------------------------------------------
+# Fixed node hash: full (fp_id, rp_id, grid_position) comparison
+# ---------------------------------------------------------------------------
+
+
+def _compute_expected_hash_fixed(node: WdmNode) -> str:
+    """Expected hash for fixed nodes: full cross-product of channels × matching line ports."""
     line_ports = list(node.line_ports.select_related("rear_port").order_by("direction", "role"))
     if not line_ports:
         return ""
@@ -53,9 +66,8 @@ def compute_expected_port_hash(node: WdmNode) -> str:
     tx_rp_ids = [lp.rear_port_id for lp in line_ports if lp.role in (WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI)]
     rx_rp_ids = [lp.rear_port_id for lp in line_ports if lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)]
 
-    channels = node.channels.order_by("grid_position")
-    tuples: list[tuple[int, int, int]] = []
-    for ch in channels:
+    tuples: list[tuple[int, ...]] = []
+    for ch in node.channels.order_by("grid_position"):
         if ch.mux_front_port_id is not None:
             for rp_id in tx_rp_ids:
                 tuples.append((ch.mux_front_port_id, rp_id, ch.grid_position))
@@ -66,39 +78,81 @@ def compute_expected_port_hash(node: WdmNode) -> str:
     return _hash_tuples(tuples)
 
 
-def compute_actual_port_hash(node: WdmNode) -> str:
-    """Compute the hash of the actual PortMapping state on the device.
+def _compute_actual_hash_fixed(node: WdmNode) -> str:
+    """Actual hash for fixed nodes: (fp_id, rp_id, rear_port_position) from PortMappings."""
+    line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
+    if not line_port_rp_ids:
+        return ""
 
-    Only considers PortMappings whose front_port belongs to a WdmChannel on this node,
-    and whose rear_port is a WdmLinePort rear port. Uses rear_port_position as the
-    grid position dimension.
+    channel_fp_ids = _get_channel_fp_ids(node)
+    if not channel_fp_ids:
+        return ""
+
+    mappings = PortMapping.objects.filter(
+        device=node.device,
+        front_port_id__in=channel_fp_ids,
+        rear_port_id__in=line_port_rp_ids,
+    ).values_list("front_port_id", "rear_port_id", "rear_port_position")
+    return _hash_tuples([(fp, rp, pos) for fp, rp, pos in mappings])
+
+
+# ---------------------------------------------------------------------------
+# ROADM hash: position-only (fp_id, grid_position) comparison
+# ---------------------------------------------------------------------------
+
+
+def _compute_expected_hash_roadm(node: WdmNode) -> str:
+    """Expected hash for ROADMs: (fp_id, grid_position) for each mapped channel front port."""
+    tuples: list[tuple[int, ...]] = []
+    for ch in node.channels.order_by("grid_position"):
+        if ch.mux_front_port_id is not None:
+            tuples.append((ch.mux_front_port_id, ch.grid_position))
+        if ch.demux_front_port_id is not None:
+            tuples.append((ch.demux_front_port_id, ch.grid_position))
+    return _hash_tuples(tuples)
+
+
+def _compute_actual_hash_roadm(node: WdmNode) -> str:
+    """Actual hash for ROADMs: (fp_id, rear_port_position) from existing PortMappings.
+
+    Ignores which rear_port the mapping points to — only checks that the position
+    is correct. Deduplicates since the same front port may map to multiple rear ports.
     """
     line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
     if not line_port_rp_ids:
         return ""
 
-    # Collect all front_port_ids from WdmChannels (mux and demux, excluding None)
-    channel_fp_ids: set[int] = set()
-    for ch in node.channels.all():
-        if ch.mux_front_port_id is not None:
-            channel_fp_ids.add(ch.mux_front_port_id)
-        if ch.demux_front_port_id is not None:
-            channel_fp_ids.add(ch.demux_front_port_id)
-
+    channel_fp_ids = _get_channel_fp_ids(node)
     if not channel_fp_ids:
         return ""
 
-    mappings = (
-        PortMapping.objects.filter(
-            device=node.device,
-            front_port_id__in=channel_fp_ids,
-            rear_port_id__in=line_port_rp_ids,
-        )
-        .values_list("front_port_id", "rear_port_id", "rear_port_position")
-        .order_by("front_port_id", "rear_port_id", "rear_port_position")
-    )
-    tuples = [(fp, rp, pos) for fp, rp, pos in mappings]
-    return _hash_tuples(tuples)
+    mappings = PortMapping.objects.filter(
+        device=node.device,
+        front_port_id__in=channel_fp_ids,
+        rear_port_id__in=line_port_rp_ids,
+    ).values_list("front_port_id", "rear_port_position")
+    # Deduplicate: same fp may map to multiple rear ports at the same position
+    unique_tuples = {(fp, pos) for fp, pos in mappings}
+    return _hash_tuples(list(unique_tuples))
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def compute_expected_port_hash(node: WdmNode) -> str:
+    """Compute the expected port hash, dispatching by node type."""
+    if node.is_fixed:
+        return _compute_expected_hash_fixed(node)
+    return _compute_expected_hash_roadm(node)
+
+
+def compute_actual_port_hash(node: WdmNode) -> str:
+    """Compute the actual port hash, dispatching by node type."""
+    if node.is_fixed:
+        return _compute_actual_hash_fixed(node)
+    return _compute_actual_hash_roadm(node)
 
 
 def check_port_sync(node: WdmNode) -> bool:
@@ -113,8 +167,8 @@ def check_port_sync(node: WdmNode) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _build_expected_mappings(node: WdmNode) -> set[tuple[int, int, int]]:
-    """Build the set of expected (front_port_id, rear_port_id, grid_position) tuples."""
+def _build_expected_mappings_fixed(node: WdmNode) -> set[tuple[int, int, int]]:
+    """Build expected (front_port_id, rear_port_id, grid_position) tuples for fixed nodes."""
     line_ports = list(node.line_ports.select_related("rear_port").all())
     tx_rp_ids = [lp.rear_port_id for lp in line_ports if lp.role in (WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI)]
     rx_rp_ids = [lp.rear_port_id for lp in line_ports if lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)]
@@ -136,12 +190,7 @@ def _build_actual_mappings(node: WdmNode) -> set[tuple[int, int, int]]:
     Only considers PortMappings for WdmChannel front ports and WdmLinePort rear ports.
     """
     line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
-    channel_fp_ids: set[int] = set()
-    for ch in node.channels.all():
-        if ch.mux_front_port_id is not None:
-            channel_fp_ids.add(ch.mux_front_port_id)
-        if ch.demux_front_port_id is not None:
-            channel_fp_ids.add(ch.demux_front_port_id)
+    channel_fp_ids = _get_channel_fp_ids(node)
 
     if not line_port_rp_ids or not channel_fp_ids:
         return set()
@@ -154,15 +203,47 @@ def _build_actual_mappings(node: WdmNode) -> set[tuple[int, int, int]]:
     return {(fp, rp, pos) for fp, rp, pos in mappings}
 
 
+def _compute_roadm_position_errors(node: WdmNode) -> tuple[set[tuple[int, int, int]], set[tuple[int, int, int]]]:
+    """For ROADMs: find PortMappings with wrong positions.
+
+    Returns (to_delete, to_recreate) — mappings that have the wrong rear_port_position
+    and the corrected versions to recreate.
+    """
+    actual = _build_actual_mappings(node)
+    # Build fp_id → grid_position lookup from channels
+    fp_to_grid: dict[int, int] = {}
+    for ch in node.channels.all():
+        if ch.mux_front_port_id is not None:
+            fp_to_grid[ch.mux_front_port_id] = ch.grid_position
+        if ch.demux_front_port_id is not None:
+            fp_to_grid[ch.demux_front_port_id] = ch.grid_position
+
+    to_delete: set[tuple[int, int, int]] = set()
+    to_recreate: set[tuple[int, int, int]] = set()
+    for fp_id, rp_id, pos in actual:
+        expected_pos = fp_to_grid.get(fp_id)
+        if expected_pos is not None and pos != expected_pos:
+            to_delete.add((fp_id, rp_id, pos))
+            to_recreate.add((fp_id, rp_id, expected_pos))
+
+    return to_delete, to_recreate
+
+
 def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
-    """Compute the full diff between expected and actual port state."""
+    """Compute the full diff between expected and actual port state.
+
+    Fixed nodes: full set comparison of expected vs actual mappings.
+    ROADM nodes: only detect wrong-position mappings (direction assignment is dynamic).
+    """
     from dcim.models import FrontPort, FrontPortTemplate, RearPortTemplate
 
-    expected = _build_expected_mappings(node)
-    actual = _build_actual_mappings(node)
-
-    to_create = expected - actual
-    to_delete = actual - expected
+    if node.is_fixed:
+        expected = _build_expected_mappings_fixed(node)
+        actual = _build_actual_mappings(node)
+        to_create = expected - actual
+        to_delete = actual - expected
+    else:
+        to_delete, to_create = _compute_roadm_position_errors(node)
 
     # Structural check: find expected ports from DeviceType template missing on device
     device_type = node.device.device_type
@@ -179,25 +260,20 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
         if fpt.name not in existing_fp_names:
             front_ports_to_create.append({"name": fpt.name, "type": fpt.type})
 
-    # Warnings: affected cable paths and wavelength services
-    from dcim.models import CablePath, CableTermination, RearPort
+    # Warnings: count cables connected to line port rear ports
+    from dcim.models import CableTermination, RearPort
     from django.contrib.contenttypes.models import ContentType
-    from django.db.models import Q
 
     line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
-    cable_paths_affected = 0
+    cables_affected = 0
     if line_port_rp_ids:
         rp_ct = ContentType.objects.get_for_model(RearPort)
-        cable_ids = list(
+        cables_affected = (
             CableTermination.objects.filter(termination_type=rp_ct, termination_id__in=line_port_rp_ids)
             .values_list("cable_id", flat=True)
             .distinct()
+            .count()
         )
-        if cable_ids:
-            q = Q()
-            for cid in cable_ids:
-                q |= Q(_nodes__contains=[{"cable_id": cid}])
-            cable_paths_affected = CablePath.objects.filter(q).distinct().count()
 
     from .models import WdmCircuit, WdmWavelengthPathChannel
 
@@ -209,7 +285,7 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
 
     return {
         "warnings": {
-            "cable_paths_affected": cable_paths_affected,
+            "cables_affected": cables_affected,
             "wavelength_services": [{"id": c["id"], "display": c["name"]} for c in affected_circuits],
         },
         "changes": {
@@ -261,24 +337,17 @@ def apply_sync(node: WdmNode) -> dict[str, Any]:
                         )
                         front_ports_created.append({"name": fpt.name, "type": fpt.type})
 
-        # Phase 2: PortMapping reset
-        # Collect WDM-related front port IDs and line port rear port IDs
-        line_port_rp_ids = set(node.line_ports.values_list("rear_port_id", flat=True))
-        channel_fp_ids: set[int] = set()
-        for ch in node.channels.all():
-            if ch.mux_front_port_id:
-                channel_fp_ids.add(ch.mux_front_port_id)
-            if ch.demux_front_port_id:
-                channel_fp_ids.add(ch.demux_front_port_id)
-
-        # Diff-based PortMapping repair
-        expected = _build_expected_mappings(node)
-        actual = _build_actual_mappings(node)
-        to_create = expected - actual
-        to_delete = actual - expected
+        # Phase 2: PortMapping repair
+        if node.is_fixed:
+            expected = _build_expected_mappings_fixed(node)
+            actual = _build_actual_mappings(node)
+            to_create = expected - actual
+            to_delete = actual - expected
+        else:
+            to_delete, to_create = _compute_roadm_position_errors(node)
 
         deleted_count = 0
-        if to_delete and line_port_rp_ids and channel_fp_ids:
+        if to_delete:
             from django.db.models import Q
 
             delete_q = Q()

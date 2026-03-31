@@ -234,7 +234,7 @@ class TestSyncPortsAPI:
         bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")
         response = self._make_request(bundle.node)
         assert "warnings" in response.data
-        assert "cable_paths_affected" in response.data["warnings"]
+        assert "cables_affected" in response.data["warnings"]
         assert "wavelength_services" in response.data["warnings"]
 
 

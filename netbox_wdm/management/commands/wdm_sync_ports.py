@@ -50,7 +50,7 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         self.stdout.write("--- Warnings ---")
-        self.stdout.write(f"Cable paths affected: {warnings['cable_paths_affected']}")
+        self.stdout.write(f"Cables affected: {warnings['cables_affected']}")
         if warnings["wavelength_services"]:
             for svc in warnings["wavelength_services"]:
                 self.stdout.write(f"  Wavelength service: {svc['display']} (id={svc['id']})")
