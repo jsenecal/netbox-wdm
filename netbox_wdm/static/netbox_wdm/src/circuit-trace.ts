@@ -633,37 +633,41 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
   svg.call(zoom);
 
   // ── Per-wavelength-path port sets for whole-path highlighting ──
-  // Each port in a path maps to that path's port set, so hovering ANY
-  // port on the path highlights the entire path.
-  // Only directionally-meaningful channel ports are included:
-  //   - source element's mux_port  (TX origin)
-  //   - dest element's demux_port  (RX termination)
-  // Other channel ports (source demux, dest mux) are excluded to avoid
-  // highlighting the reverse direction.
-  const portPathMap = new Map<number, Set<number>>();
+  // Each trace builds its own port set.  Ports map to the trace indices
+  // they belong to, so hovering a shared port (COM-TX, PP port) highlights
+  // ALL traces passing through it, while hovering a channel port highlights
+  // only that channel's specific direction.
+  const traceSets: Set<number>[] = [];
+  const portTraceIdx = new Map<number, number[]>();
   for (const d of valid) {
     const pathIds = new Set<number>();
-    // Cable segment ports (trunk, PP, COM)
     for (const seg of d.cable_segments) {
       for (const item of seg.items) {
         if (item.type !== 'cable') pathIds.add(item.id);
       }
     }
-    // Only the directionally-meaningful channel ports
     const src = d.elements[0];
     const dst = d.elements[d.elements.length - 1];
     if (src?.mux_port) pathIds.add(src.mux_port.id);
     if (dst?.demux_port) pathIds.add(dst.demux_port.id);
-    // Intermediate elements (ROADM) — include both channel ports if present
     for (let ei = 1; ei < d.elements.length - 1; ei++) {
       const el = d.elements[ei];
       if (el.mux_port) pathIds.add(el.mux_port.id);
       if (el.demux_port) pathIds.add(el.demux_port.id);
     }
-    // Map EVERY port in this path so any port can trigger the highlight
+    const ti = traceSets.length;
+    traceSets.push(pathIds);
     for (const pid of pathIds) {
-      if (!portPathMap.has(pid)) portPathMap.set(pid, pathIds);
+      if (!portTraceIdx.has(pid)) portTraceIdx.set(pid, []);
+      portTraceIdx.get(pid)!.push(ti);
     }
+  }
+  function getPathPorts(startId: number): Set<number> {
+    const result = new Set<number>();
+    for (const ti of portTraceIdx.get(startId) ?? []) {
+      for (const pid of traceSets[ti]) result.add(pid);
+    }
+    return result;
   }
 
   // Global element registries for path highlighting
@@ -693,7 +697,7 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
   const hlPorts: HlPortBox[] = [];
 
   function hlPath(startPortId: number, on: boolean) {
-    const ids = on ? portPathMap.get(startPortId) ?? new Set<number>() : new Set<number>();
+    const ids = on ? getPathPorts(startPortId) : new Set<number>();
     const active = on && ids.size > 1;
     // Cables
     for (const el of hlCables) {
