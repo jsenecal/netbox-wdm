@@ -31,6 +31,15 @@ jobs:
         run: cd netbox_wdm/static/netbox_wdm && npm install
       - name: Typecheck
         run: cd netbox_wdm/static/netbox_wdm && npx tsc --noEmit
+      - name: Build
+        run: cd netbox_wdm/static/netbox_wdm && npm run build
+      - name: Check dist is up to date
+        run: |
+          if ! git diff --quiet netbox_wdm/static/netbox_wdm/dist/; then
+            echo "::error::dist/ files are out of date. Run 'make ts-build' and commit the result."
+            git diff --stat netbox_wdm/static/netbox_wdm/dist/
+            exit 1
+          fi
 
   test:
     name: Test (Python ${{ matrix.python-version }}, NetBox ${{ matrix.netbox-version }})
