@@ -2,7 +2,7 @@
 
 ## ROADM Multi-Channel-Per-Port
 
-Current `WavelengthChannel` model enforces a 1:1 constraint between channel and front port (`unique_node_mux_fp`, `unique_node_demux_fp`). Real ROADM hardware allows multiple wavelength channels to be added/dropped on a single "user" port (e.g., a muxponder port carrying 4 lambdas).
+Current `WdmChannel` model enforces a 1:1 constraint between channel and front port (`unique_node_mux_fp`, `unique_node_demux_fp`). Real ROADM hardware allows multiple wavelength channels to be added/dropped on a single "user" port (e.g., a muxponder port carrying 4 lambdas).
 
 ### What needs to change
 - Relax or make conditional the unique constraint on `(wdm_node, mux_front_port)` and `(wdm_node, demux_front_port)` for ROADM node types
@@ -15,13 +15,15 @@ Current `WavelengthChannel` model enforces a 1:1 constraint between channel and 
 - Each bank may have 20+ port pairs sharing a common failure domain
 - Consider whether the model needs a bank/SRG grouping concept or if port naming convention is sufficient
 
-## OADM Node Type
+## OADM Device Type Builders and Sample Data
 
-Add `OADM` as a distinct `WdmNodeTypeChoices` value (separate from ROADM). OADMs are passive inline devices that:
-- Have LINE-IN + LINE-OUT rear ports (trunk passes through)
-- Drop/add a small number of specific channels (1-4) via front port pairs
-- Channels not dropped pass through transparently
-- Can be cascaded in series on a fiber span
+The `OADM` node type already exists in `WdmNodeTypeChoices`. The pass-through tracing infrastructure (multi-TX/RX port support, cross-segment internal links) is ready to handle OADM devices. What's missing:
+
+### What needs to be built
+- Device type builder (`create_oadm_type`) with LINE-IN/LINE-OUT rear ports and CH{n}-ADD/DROP front ports
+- Device builder (`create_oadm`) for instance creation
+- Sample topology with OADM in a cascaded inline configuration
+- Test coverage for OADM tracing (pass-through + local add/drop channels)
 
 ### Port topology
 - Rear: `LINE-IN`, `LINE-OUT` (or `LINE-EAST`, `LINE-WEST` for ring topologies)
@@ -47,7 +49,7 @@ For DWDM single-fiber bidirectional deployments with amplification:
 
 ## EXP/MON Ports as WDM-Aware Entities
 
-Currently EXP and 1310 pass-through ports are modeled as regular front ports with COM rear port positions. Consider whether the WDM model should explicitly track:
+EXP and 1310 pass-through ports are currently modeled as regular front ports with COM rear port positions in the device type templates. They exist in sample data but are not tracked by the WDM model. Consider whether the WDM model should explicitly track:
 - Which front ports are EXP ports (for daisy-chain topology validation)
 - Which front ports are 1310 pass-through (for gray optic coexistence tracking)
 - MON (monitor) ports for signal tap management
