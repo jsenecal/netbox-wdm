@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-01
+
+### Fixed
+
+- Single-fiber MUX channel highlight now extends to far-end port (falls back to `dst.mux_port` when `demux_port` is absent)
+- Reverse internal link (COM → mux_port) created for bidi ports so far-end channel lights up on hover
+- Auto-populate workaround added to `create_sf_mux` and `create_roadm` for `transaction=True` test mode
+
 ## [0.2.0] - 2026-04-01
 
 ### Added

@@ -10,7 +10,7 @@ netbox_wdm = ["templates/**/*", "static/**/*"]
 
 [project]
 name = "netbox-wdm"
-version = "0.2.0"
+version = "0.2.1"
 description = "WDM wavelength management for NetBox - ITU channel plans, ROADM editing, and position stack enforcement"
 readme = "README.md"
 authors = [
@@ -64,7 +64,7 @@ python_functions = ["test_*"]
 addopts = "-v --cov=netbox_wdm --cov-report=term-missing --reuse-db"
 
 [tool.bumpver]
-current_version = "0.2.0"
+current_version = "0.2.1"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message = "chore: bump version {old_version} -> {new_version}"
 tag_pattern = "vMAJOR.MINOR.PATCH"
