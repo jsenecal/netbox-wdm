@@ -463,9 +463,7 @@ def _trace_cable_segment(from_node: Any, to_node: Any = None) -> list[CableSegme
     fp_ct = ContentType.objects.get_for_model(FrontPort)
 
     # Select the correct TX port — for multi-TX nodes (ROADM), pick the one reaching to_node
-    tx_lps = list(
-        WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port")
-    )
+    tx_lps = list(WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port"))
     tx_lp = None
     if len(tx_lps) > 1 and to_node:
         from .trace import _get_far_end_node
@@ -485,16 +483,24 @@ def _trace_cable_segment(from_node: Any, to_node: Any = None) -> list[CableSegme
     def _add_rp(rp: RearPort) -> None:
         items.append(
             CableSegmentItem(
-                type="rear_port", id=rp.pk, name=rp.name, device=rp.device.name,
-                url=rp.get_absolute_url(), color=rp.color or "",
+                type="rear_port",
+                id=rp.pk,
+                name=rp.name,
+                device=rp.device.name,
+                url=rp.get_absolute_url(),
+                color=rp.color or "",
             )
         )
 
     def _add_fp(fp: FrontPort) -> None:
         items.append(
             CableSegmentItem(
-                type="front_port", id=fp.pk, name=fp.name, device=fp.device.name,
-                url=fp.get_absolute_url(), color=fp.color or "",
+                type="front_port",
+                id=fp.pk,
+                name=fp.name,
+                device=fp.device.name,
+                url=fp.get_absolute_url(),
+                color=fp.color or "",
             )
         )
 
