@@ -34,7 +34,8 @@ function isDark(): boolean {
 function T() {
   const d = isDark();
   return {
-    headerFill: d ? '#2a7070' : '#3a8a8a',
+    wdmHeaderFill: d ? '#2a7070' : '#3a8a8a',
+    ppHeaderFill: d ? '#3b3654' : '#6c5fa7',
     headerText: '#fff',
     bodyFill: d ? '#1e293b' : '#fff',
     bodyStroke: d ? '#475569' : '#dee2e6',
@@ -68,6 +69,7 @@ interface Port {
   name: string;
   url: string;
   type: string;
+  color: string;
   side: 'left' | 'right';
   isChannel?: boolean;
 }
@@ -145,6 +147,7 @@ function buildGraph(dataList: TraceData[]): Graph {
             name: fp.name,
             url: fp.url,
             type: 'front_port',
+            color: '',
             side: 'left', // placeholder, fixed later
             isChannel: true,
           });
@@ -182,6 +185,7 @@ function buildGraph(dataList: TraceData[]): Graph {
             name: item.name,
             url: item.url,
             type: item.type,
+            color: item.color || '',
             side,
           });
         }
@@ -721,9 +725,20 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
     for (const el of hlPorts) {
       const match = active && ids.has(el.portId);
       el.rect
-        .attr('stroke', match ? t.headerFill : el.origStroke)
+        .attr('stroke', match ? t.wdmHeaderFill : el.origStroke)
         .attr('stroke-width', match ? 2 : 0.5)
         .attr('opacity', active && !match ? 0.35 : 1);
+    }
+  }
+
+  // ── Port → cable color map (for port outline tint) ─────────
+  const portCableColor = new Map<number, string>();
+  for (const cable of graph.cables) {
+    const color = cableHex(cable.color);
+    if (!color) continue;
+    for (const pp of cable.portPairs) {
+      if (!portCableColor.has(pp.from)) portCableColor.set(pp.from, color);
+      if (!portCableColor.has(pp.to)) portCableColor.set(pp.to, color);
     }
   }
 
@@ -825,7 +840,8 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
       .attr('stroke', t.bodyStroke)
       .attr('stroke-width', 1.5);
 
-    dg.append('path').attr('d', headerPath(ld.w, ld.headerH, CORNER_R)).attr('fill', t.headerFill);
+    const hdrFill = isWdm ? t.wdmHeaderFill : t.ppHeaderFill;
+    dg.append('path').attr('d', headerPath(ld.w, ld.headerH, CORNER_R)).attr('fill', hdrFill);
 
     dg.append('line')
       .attr('x1', 0)
@@ -888,15 +904,19 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
       const origStroke = isCh ? t.chPortStroke : t.portStroke;
       const pg = dg.append('g').attr('transform', `translate(${lp.relX}, ${lp.relY})`).style('cursor', 'pointer');
 
+      // Port outline color: port's own color > connected cable color > default
+      const portColor = cableHex(lp.port.color);
+      const cableColor = portCableColor.get(lp.port.id);
+      const tintColor = portColor || cableColor;
       const rect = pg
         .append('rect')
         .attr('width', PORT_W)
         .attr('height', PORT_H)
         .attr('rx', 3)
         .attr('fill', isCh ? t.chPortFill : t.portFill)
-        .attr('stroke', origStroke)
-        .attr('stroke-width', 0.5);
-      hlPorts.push({ rect, portId: lp.port.id, isChannel: isCh, origStroke });
+        .attr('stroke', tintColor || origStroke)
+        .attr('stroke-width', tintColor ? 1.5 : 0.5);
+      hlPorts.push({ rect, portId: lp.port.id, isChannel: isCh, origStroke: tintColor || origStroke });
 
       const icon = lp.port.type === 'front_port' ? '\u25cb' : '\u25c9';
       const pText = pg

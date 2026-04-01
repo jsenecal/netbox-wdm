@@ -63,6 +63,8 @@ def duplex_mux_pair(
         device_b_rx_rp=mux_b.line_ports["rx"].rear_port,
         device_b_tx_rp=mux_b.line_ports["tx"].rear_port,
         label_prefix=p.strip("-") if p else "DX",
+        patch_color="f5e960",
+        trunk_color="4287f5",
     )
 
     return Topology(
@@ -105,6 +107,8 @@ def sf_mux_pair(
         pp_b_device=pp_b,
         device_b_rearport=mux_b.line_ports["bidi"].rear_port,
         label_prefix=p.strip("-") if p else "SF",
+        patch_color="f5e960",
+        trunk_color="4287f5",
     )
 
     cables = list(cables_tuple)
@@ -158,6 +162,8 @@ def dwdm_mux_to_roadm(
         device_b_rx_rp=roadm.line_ports["line_east_rx"].rear_port,
         device_b_tx_rp=roadm.line_ports["line_east_tx"].rear_port,
         label_prefix=p.strip("-") if p else "DWDM",
+        patch_color="f5e960",
+        trunk_color="4287f5",
     )
 
     return Topology(
@@ -203,6 +209,8 @@ def mux_roadm_mux(
         device_b_rx_rp=roadm.line_ports["line_east_rx"].rear_port,
         device_b_tx_rp=roadm.line_ports["line_east_tx"].rear_port,
         label_prefix=f"{p.strip('-')} East".strip(),
+        patch_color="f5e960",
+        trunk_color="4287f5",
     )
 
     # West side: ROADM WEST ↔ PPs ↔ MUX-B
@@ -214,6 +222,8 @@ def mux_roadm_mux(
         device_b_rx_rp=mux_b.line_ports["rx"].rear_port,
         device_b_tx_rp=mux_b.line_ports["tx"].rear_port,
         label_prefix=f"{p.strip('-')} West".strip(),
+        patch_color="f5e960",
+        trunk_color="4287f5",
     )
 
     return Topology(
