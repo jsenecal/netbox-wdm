@@ -341,12 +341,16 @@ All components live in `netbox_wdm/static/netbox_wdm/src/`:
 |---|---|---|
 | `wavelength-editor-types.ts` | `ChannelData`, `PortData`, `EditorConfig` | Type definitions for the wavelength editor |
 | `wavelength-editor.ts` | `WavelengthEditor` class | ROADM channel assignment editor |
+| `channel-trace-types.ts` | `TraceData`, `PathElement`, `CableSegment`, etc. | Type definitions for trace visualizations |
+| `channel-trace.ts` | `renderChannelTrace` | Single-channel vertical trace diagram |
+| `circuit-trace.ts` | `renderCircuitTrace` | Multi-path horizontal circuit trace (NetBox-style) |
 
-Future components follow the same pattern  - one file per component, types in a separate `-types.ts` file.
+Each component follows the pattern  - one file per component, types in a separate `-types.ts` file.
 
 Import via the entry point or barrel:
 ```typescript
 import type { ChannelData, EditorConfig } from './wavelength-editor-types';
+import type { TraceData, CableSegment } from './channel-trace-types';
 ```
 
 ---
