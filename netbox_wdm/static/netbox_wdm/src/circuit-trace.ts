@@ -268,6 +268,13 @@ function buildGraph(dataList: TraceData[]): Graph {
             dev.internalLinks.push({ fromId: target.id, toId: el.demux_port.id });
           }
         }
+      } else if (el.mux_port && bidiRP) {
+        // Single-fiber: COM is bidi, add reverse link COM→mux_port for RX highlight
+        const key = `${bidiRP.id}-${el.mux_port.id}`;
+        if (!internalLinkSeen.has(key)) {
+          internalLinkSeen.add(key);
+          dev.internalLinks.push({ fromId: bidiRP.id, toId: el.mux_port.id });
+        }
       }
     }
   }
@@ -652,8 +659,11 @@ function renderCircuitTrace(sel: string, ttSel: string, dataList: TraceData[]): 
     }
     const src = d.elements[0];
     const dst = d.elements[d.elements.length - 1];
+    // Source: TX channel port (mux_port)
     if (src?.mux_port) pathIds.add(src.mux_port.id);
+    // Dest: RX channel port — demux_port for duplex, mux_port for single-fiber (bidi)
     if (dst?.demux_port) pathIds.add(dst.demux_port.id);
+    else if (dst?.mux_port) pathIds.add(dst.mux_port.id);
     for (let ei = 1; ei < d.elements.length - 1; ei++) {
       const el = d.elements[ei];
       if (el.mux_port) pathIds.add(el.mux_port.id);
