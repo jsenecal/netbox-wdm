@@ -60,6 +60,9 @@ def create_sf_mux(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.TERMINAL_MUX, "grid": grid},
     )
+    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+        node.channels.all().delete()
+        node._auto_populate_channels()
     com = RearPort.objects.get(device=device, name="COM")
     lp_bidi, _ = WdmLinePort.objects.get_or_create(
         wdm_node=node,
@@ -79,6 +82,9 @@ def create_roadm(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.ROADM, "grid": grid},
     )
+    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+        node.channels.all().delete()
+        node._auto_populate_channels()
     line_ports = {}
     for rp_name, direction, lp_role in [
         ("LINE-EAST-TX", WdmLineDirectionChoices.EAST, WdmLineRoleChoices.TX),

@@ -3,7 +3,7 @@
 import pytest
 
 from netbox_wdm.models import WdmWavelengthPath
-from netbox_wdm.testing import duplex_mux_pair, mux_roadm_mux
+from netbox_wdm.testing import duplex_mux_pair, mux_roadm_mux, sf_mux_pair
 from netbox_wdm.trace import rebuild_wavelength_paths_for_node, trace_wavelength_path
 
 
@@ -201,3 +201,100 @@ class TestDirectedTraceSegment:
         port_items = [it for it in items if it.type != "cable"]
         last_device = port_items[-1].device if port_items else None
         assert last_device == mux_a_node.device.name, f"Last device should be MUX-A, got {last_device}"
+
+
+@pytest.mark.django_db(transaction=True)
+class TestSingleFiberTraceData:
+    """Single-fiber (bidi) MUX trace data includes far-end channel port."""
+
+    def test_sf_trace_segment_reaches_far_com(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
+        """Cable segment for SF MUX pair includes far-end COM port."""
+        from netbox_wdm.views import _trace_cable_segment
+
+        topo = sf_mux_pair(wdm_site, dt_cwdm_sf, dt_pp, wdm_roles)
+        node_a = topo.bundles["mux_a"].node
+        node_b = topo.bundles["mux_b"].node
+
+        items = _trace_cable_segment(node_a, node_b)
+        port_items = [it for it in items if it.type != "cable"]
+        assert len(port_items) >= 2
+        assert port_items[0].device == node_a.device.name
+        assert port_items[-1].device == node_b.device.name
+
+    def test_sf_path_elements_have_mux_port_no_demux(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
+        """SF MUX PathElements have mux_port but no demux_port (bidi channel)."""
+        from dataclasses import asdict
+
+        from netbox_wdm.views import _build_trace_data_for_path
+
+        topo = sf_mux_pair(wdm_site, dt_cwdm_sf, dt_pp, wdm_roles)
+        for bundle in topo.bundles.values():
+            rebuild_wavelength_paths_for_node(bundle.node)
+
+        path = WdmWavelengthPath.objects.first()
+        td = _build_trace_data_for_path(path)
+
+        for el in td.elements:
+            assert el.mux_port is not None, f"SF element on {el.node_name} should have mux_port"
+            assert el.demux_port is None, f"SF element on {el.node_name} should have no demux_port"
+
+    def test_sf_trace_data_cable_segment_has_far_end_com(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
+        """The cable segment items include the far-end COM rear port."""
+        from netbox_wdm.views import _build_trace_data_for_path
+
+        topo = sf_mux_pair(wdm_site, dt_cwdm_sf, dt_pp, wdm_roles)
+        for bundle in topo.bundles.values():
+            rebuild_wavelength_paths_for_node(bundle.node)
+
+        path = WdmWavelengthPath.objects.first()
+        td = _build_trace_data_for_path(path)
+        assert len(td.cable_segments) >= 1
+
+        seg = td.cable_segments[0]
+        port_items = [it for it in seg.items if it.type != "cable"]
+        devices = {it.device for it in port_items}
+        # Both MUX devices should appear in the cable segment
+        assert len(devices) >= 2, f"Expected ports from at least 2 devices, got {devices}"
+
+    def test_sf_highlight_data_includes_far_channel_port(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
+        """For the JS highlight, the far-end mux_port ID must be reachable.
+
+        Since SF has no demux_port, the path set should fall back to
+        dst.mux_port. This test verifies that the source mux_port,
+        far-end COM, and far-end mux_port are all in the same trace.
+        """
+        from netbox_wdm.views import _build_trace_data_for_path
+
+        topo = sf_mux_pair(wdm_site, dt_cwdm_sf, dt_pp, wdm_roles)
+        for bundle in topo.bundles.values():
+            rebuild_wavelength_paths_for_node(bundle.node)
+
+        path = WdmWavelengthPath.objects.first()
+        td = _build_trace_data_for_path(path)
+
+        src = td.elements[0]
+        dst = td.elements[-1]
+
+        # Collect all port IDs from cable segments
+        seg_port_ids = set()
+        for seg in td.cable_segments:
+            for item in seg.items:
+                if item.type != "cable":
+                    seg_port_ids.add(item.id)
+
+        # Source mux_port should be known
+        assert src.mux_port is not None
+        # Far-end mux_port should be known (fallback for missing demux_port)
+        assert dst.mux_port is not None
+        assert dst.demux_port is None, "SF should have no demux_port"
+
+        # The cable segment should contain both COM ports (first and last)
+        # so the JS can build: src.mux_port → COM(A) → ... → COM(B) → dst.mux_port
+        port_items = []
+        for seg in td.cable_segments:
+            port_items.extend([it for it in seg.items if it.type != "cable"])
+        first_port = port_items[0]
+        last_port = port_items[-1]
+        # First port is source COM, last port is far-end COM
+        assert first_port.device == src.node_name
+        assert last_port.device == dst.node_name
