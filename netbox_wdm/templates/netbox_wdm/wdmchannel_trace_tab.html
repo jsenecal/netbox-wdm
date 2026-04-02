@@ -5,20 +5,22 @@
 {% load static %}
 
 {% block content %}
-{% if trace_data %}
+{% if trace_data_list %}
 <link rel="stylesheet" href="{% static 'netbox_wdm/css/channel-trace.css' %}">
 <div class="row mb-3">
     <div class="col">
         <div class="card">
             <h5 class="card-header">
                 {% trans "Wavelength Path Trace" %}
-                <span class="badge text-bg-primary ms-2">{{ trace_data.wavelength_nm }} nm</span>
-                {% if trace_data.is_active %}
+                {% with trace_data_list.0 as td %}
+                <span class="badge text-bg-primary ms-2">{{ td.wavelength_nm }} nm</span>
+                {% if td.is_active %}
                 <span class="badge text-bg-success ms-1">{% trans "Active" %}</span>
                 {% endif %}
-                {% if trace_data.is_complete %}
+                {% if td.is_complete %}
                 <span class="badge text-bg-info ms-1">{% trans "Complete" %}</span>
                 {% endif %}
+                {% endwith %}
             </h5>
             <div class="card-body p-0">
                 <div id="channel-trace-container" class="wdm-trace-container" style="height: 600px;"></div>
@@ -36,12 +38,20 @@
 
 {% block javascript %}
 {{ block.super }}
-{% if trace_data %}
+{% if trace_data_list %}
 <script>
-window.CHANNEL_TRACE_DATA = {{ trace_data_json|safe }};
-window.CHANNEL_TRACE_CURRENT_ID = {{ object.pk }};
+window.CHANNEL_TRACE_DATA_LIST = {{ trace_data_list_json|safe }};
 </script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="{% static 'netbox_wdm/dist/channel-trace.min.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    window.renderChannelTrace(
+        '#channel-trace-container',
+        '#channel-trace-tooltip',
+        window.CHANNEL_TRACE_DATA_LIST
+    );
+});
+</script>
 {% endif %}
 {% endblock %}
