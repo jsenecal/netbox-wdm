@@ -23,11 +23,6 @@ const entries = [
     globalName: 'ChannelTrace',
     outfile: path.join(__dirname, 'dist', 'channel-trace.min.js'),
   },
-  {
-    entryPoints: [path.join(__dirname, 'src', 'circuit-trace.ts')],
-    globalName: 'CircuitTrace',
-    outfile: path.join(__dirname, 'dist', 'circuit-trace.min.js'),
-  },
 ];
 
 async function main() {
