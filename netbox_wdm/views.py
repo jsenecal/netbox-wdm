@@ -677,15 +677,6 @@ def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> C
     )
 
 
-def _serialize_trace_context(trace_data: ChannelTraceData) -> dict[str, Any]:
-    """Serialize ChannelTraceData into template context with JSON."""
-    from dataclasses import asdict
-
-    return {
-        "trace_data": trace_data,
-        "trace_data_json": json.dumps(asdict(trace_data), cls=DjangoJSONEncoder),
-    }
-
 
 @register_model_view(WdmChannel, "trace", path="trace")
 class WdmChannelTraceView(generic.ObjectView):
@@ -701,14 +692,19 @@ class WdmChannelTraceView(generic.ObjectView):
         return "netbox_wdm/wdmchannel_trace_tab.html"
 
     def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
+        from dataclasses import asdict
+
         from .models import WdmWavelengthPathChannel
 
         path_entry = WdmWavelengthPathChannel.objects.filter(channel=instance).select_related("path").first()
         if not path_entry:
-            return {"trace_data": None, "trace_data_json": "null"}
+            return {"trace_data_list": [], "trace_data_list_json": "[]"}
 
         trace_data = _build_trace_data_for_path(path_entry.path, channel_id=instance.pk)
-        return _serialize_trace_context(trace_data)
+        return {
+            "trace_data_list": [trace_data],
+            "trace_data_list_json": json.dumps([asdict(trace_data)], cls=DjangoJSONEncoder),
+        }
 
 
 @register_model_view(WdmChannel, "edit")
