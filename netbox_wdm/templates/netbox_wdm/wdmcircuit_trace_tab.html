@@ -35,10 +35,10 @@
 window.CIRCUIT_TRACE_DATA_LIST = {{ trace_data_list_json|safe }};
 </script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{% static 'netbox_wdm/dist/circuit-trace.min.js' %}"></script>
+<script src="{% static 'netbox_wdm/dist/channel-trace.min.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    window.renderCircuitTrace(
+    window.renderChannelTrace(
         '#circuit-trace-container',
         '#circuit-trace-tooltip',
         window.CIRCUIT_TRACE_DATA_LIST
