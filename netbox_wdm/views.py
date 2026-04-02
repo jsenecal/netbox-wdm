@@ -677,7 +677,6 @@ def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> C
     )
 
 
-
 @register_model_view(WdmChannel, "trace", path="trace")
 class WdmChannelTraceView(generic.ObjectView):
     queryset = WdmChannel.objects.select_related("wdm_node__device", "mux_front_port", "demux_front_port")
