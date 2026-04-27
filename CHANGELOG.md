@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Canonical normalize-toolkit CI/CD shape: 5 GHA workflows (`ci.yml`, `publish.yml`, `docs.yml`, `release-drafter.yml`, `pr-title.yml`) + `.github/release-drafter.yml`.
 - `.pre-commit-config.yaml` with ruff hooks + standard pre-commit-hooks + a `commit-msg` stage that rejects AI/Claude attribution lines.
 - `.git-template/hooks/commit-msg` (canonical hook tracked in-tree, referenced by pre-commit).
-- `docs/zensical.toml` + `docs/index.md` — documentation site auto-deployed to GitHub Pages on push to `main`.
+- `docs/zensical.toml` + `docs/index.md` -- documentation site auto-deployed to GitHub Pages on push to `main`.
 - `uv.lock` committed for reproducible CI/dev environments.
 
 ### Changed
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Single-fiber MUX channel highlight now extends to far-end port (falls back to `dst.mux_port` when `demux_port` is absent)
-- Reverse internal link (COM → mux_port) created for bidi ports so far-end channel lights up on hover
+- Reverse internal link (COM -> mux_port) created for bidi ports so far-end channel lights up on hover
 - Auto-populate workaround added to `create_sf_mux` and `create_roadm` for `transaction=True` test mode
 
 ## [0.2.0] - 2026-04-01

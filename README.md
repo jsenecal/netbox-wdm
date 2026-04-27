@@ -16,25 +16,25 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 ## Features
 
-- **Overlay pattern** — `WdmDeviceTypeProfile` overlays `DeviceType` (blueprint), `WdmNode` overlays `Device` (instance).
-- **Dual port support** — separate MUX and DEMUX front port assignments per channel, with duplex and single-fiber modes.
-- **ITU grid support** — DWDM 100 GHz (44 ch), DWDM 50 GHz (88 ch), CWDM (18 ch).
-- **EXP / 1310 ports** — express upgrade and 1310 nm gray optic pass-through as COM rear port positions.
-- **Auto-population** — channels automatically created from profile templates when a device is added.
-- **DeviceType integration** — WDM Profile tab on DeviceType detail pages.
-- **Wavelength editor** — TypeScript frontend with undo/redo, dirty state, optimistic concurrency, conditional MUX/DEMUX columns.
-- **Wavelength services** — end-to-end service tracking with sequenced channel assignments and PROTECT guards.
-- **Circuit trace visualization** — interactive horizontal flow diagram on `WdmCircuit` detail pages.
-- **Full CRUD stack** — list, detail, edit, delete, bulk import/edit/delete views for all models.
-- **REST API** — CRUD endpoints plus `apply-mapping` (atomic ROADM editor) and `stitch` (wavelength path).
-- **GraphQL** — strawberry-django types, filters, and schema for all models.
-- **Sample data** — management command with realistic WDM topologies, patch panels, and end-to-end cabling.
+- **Overlay pattern** -- `WdmDeviceTypeProfile` overlays `DeviceType` (blueprint), `WdmNode` overlays `Device` (instance).
+- **Dual port support** -- separate MUX and DEMUX front port assignments per channel, with duplex and single-fiber modes.
+- **ITU grid support** -- DWDM 100 GHz (44 ch), DWDM 50 GHz (88 ch), CWDM (18 ch).
+- **EXP / 1310 ports** -- express upgrade and 1310 nm gray optic pass-through as COM rear port positions.
+- **Auto-population** -- channels automatically created from profile templates when a device is added.
+- **DeviceType integration** -- WDM Profile tab on DeviceType detail pages.
+- **Wavelength editor** -- TypeScript frontend with undo/redo, dirty state, optimistic concurrency, conditional MUX/DEMUX columns.
+- **Wavelength services** -- end-to-end service tracking with sequenced channel assignments and PROTECT guards.
+- **Circuit trace visualization** -- interactive horizontal flow diagram on `WdmCircuit` detail pages.
+- **Full CRUD stack** -- list, detail, edit, delete, bulk import/edit/delete views for all models.
+- **REST API** -- CRUD endpoints plus `apply-mapping` (atomic ROADM editor) and `stitch` (wavelength path).
+- **GraphQL** -- strawberry-django types, filters, and schema for all models.
+- **Sample data** -- management command with realistic WDM topologies, patch panels, and end-to-end cabling.
 
 ## Compatibility
 
 | Plugin version | NetBox version | Python    |
 |----------------|----------------|-----------|
-| 0.2.x          | 4.5            | 3.12–3.14 |
+| 0.2.x          | 4.5            | 3.12-3.14 |
 
 ## Installation
 
@@ -60,16 +60,16 @@ python manage.py migrate
 Full documentation: **[jsenecal.github.io/netbox-wdm](https://jsenecal.github.io/netbox-wdm/)**
 
 Key references:
-- `docs/developer/architecture` — overlay pattern, port topology, position-stack alignment.
-- `docs/developer/style-guide` — frontend conventions for the TypeScript components.
+- `docs/developer/architecture` -- overlay pattern, port topology, position-stack alignment.
+- `docs/developer/style-guide` -- frontend conventions for the TypeScript components.
 
 ## Models
 
 | Model | Description |
 |-------|-------------|
-| `WdmDeviceTypeProfile` | 1:1 overlay on `dcim.DeviceType` — defines grid, node type, and fiber type (duplex / single-fiber) |
+| `WdmDeviceTypeProfile` | 1:1 overlay on `dcim.DeviceType` -- defines grid, node type, and fiber type (duplex / single-fiber) |
 | `WdmChannelTemplate`   | Channel-to-port blueprint with MUX and DEMUX front port template assignments |
-| `WdmNode`              | 1:1 overlay on `dcim.Device` — instance of a WDM device |
+| `WdmNode`              | 1:1 overlay on `dcim.Device` -- instance of a WDM device |
 | `WdmLinePort`          | Identifies trunk RearPorts with direction (common / east / west) and role (tx / rx / bidi) |
 | `WdmChannel`           | Per-channel instance with MUX and DEMUX front port assignments |
 | `WdmWavelengthPath`    | End-to-end traced path through the cable plant between WDM nodes |
@@ -77,7 +77,7 @@ Key references:
 
 ## Contributing
 
-PRs welcome. Use conventional-commits PR titles (`feat:`, `fix:`, `chore:`, `docs:`, …) — release-drafter assembles release notes from them. Run `make setup` after cloning to install dev dependencies and the pre-commit hooks (including the AI-attribution-rejecting `commit-msg` hook).
+PRs welcome. Use conventional-commits PR titles (`feat:`, `fix:`, `chore:`, `docs:`, ...) -- release-drafter assembles release notes from them. Run `make setup` after cloning to install dev dependencies and the pre-commit hooks (including the AI-attribution-rejecting `commit-msg` hook).
 
 ## License
 
