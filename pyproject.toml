@@ -36,25 +36,33 @@ dev = [
     "pytest-cov>=3.0.0",
     "ruff",
 ]
+docs = [
+    "zensical",
+]
 
 [project.urls]
 Homepage = "https://github.com/jsenecal/netbox-wdm"
 Source = "https://github.com/jsenecal/netbox-wdm"
 Changelog = "https://github.com/jsenecal/netbox-wdm/blob/main/CHANGELOG.md"
 Issues = "https://github.com/jsenecal/netbox-wdm/issues"
+Documentation = "https://jsenecal.github.io/netbox-wdm/"
 
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["netbox_wdm/migrations/"]
+extend-exclude = ["**/migrations/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "S", "B", "A", "C4", "DJ", "PIE"]
-ignore = ["E501", "S101", "DJ01"]
+ignore = ["E501", "N806", "S101", "DJ01"]
 
 [tool.ruff.lint.per-file-ignores]
 "migrations/*" = ["N806", "N999"]
-"tests/*" = ["S101", "S105", "S106"]
+"tests/*" = ["S101", "S105", "S106", "E402", "F841"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -79,4 +87,8 @@ push = true
 ]
 "netbox_wdm/__init__.py" = [
     '__version__ = "{version}"',
+]
+"CHANGELOG.md" = [
+    '## \[Unreleased\]',
+    '## \[{version}\] - {now:%Y-%m-%d}',
 ]

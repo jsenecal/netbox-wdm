@@ -81,11 +81,7 @@ class TestROADMPassThrough:
             rebuild_wavelength_paths_for_node(bundle.node)
 
         # At least some 3-hop paths should exist
-        three_hop = [
-            p
-            for p in WdmWavelengthPath.objects.all()
-            if p.path_channels.count() == 3
-        ]
+        three_hop = [p for p in WdmWavelengthPath.objects.all() if p.path_channels.count() == 3]
         assert len(three_hop) > 0, "Should have at least one 3-hop pass-through path"
 
     def test_passthrough_path_traverses_roadm(self, wdm_site, dt_dwdm, dt_roadm, dt_pp, wdm_roles):
@@ -117,14 +113,14 @@ class TestROADMPassThrough:
         node_a = topo.bundles["mux_a"].node
         node_b = topo.bundles["mux_b"].node
 
-        three_hop = [
-            p
-            for p in WdmWavelengthPath.objects.all()
-            if p.path_channels.count() == 3
-        ]
+        three_hop = [p for p in WdmWavelengthPath.objects.all() if p.path_channels.count() == 3]
 
-        a_to_b = [p for p in three_hop if list(p.path_channels.order_by("sequence"))[0].channel.wdm_node_id == node_a.pk]
-        b_to_a = [p for p in three_hop if list(p.path_channels.order_by("sequence"))[0].channel.wdm_node_id == node_b.pk]
+        a_to_b = [
+            p for p in three_hop if list(p.path_channels.order_by("sequence"))[0].channel.wdm_node_id == node_a.pk
+        ]
+        b_to_a = [
+            p for p in three_hop if list(p.path_channels.order_by("sequence"))[0].channel.wdm_node_id == node_b.pk
+        ]
 
         assert len(a_to_b) > 0, "Should have A→ROADM→B paths"
         assert len(b_to_a) > 0, "Should have B→ROADM→A paths"
@@ -134,11 +130,7 @@ class TestROADMPassThrough:
         for bundle in topo.bundles.values():
             rebuild_wavelength_paths_for_node(bundle.node)
 
-        three_hop = [
-            p
-            for p in WdmWavelengthPath.objects.all()
-            if p.path_channels.count() == 3
-        ]
+        three_hop = [p for p in WdmWavelengthPath.objects.all() if p.path_channels.count() == 3]
         for p in three_hop:
             assert p.is_complete is True
             assert p.is_active is True
@@ -223,7 +215,6 @@ class TestSingleFiberTraceData:
 
     def test_sf_path_elements_have_mux_port_no_demux(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
         """SF MUX PathElements have mux_port but no demux_port (bidi channel)."""
-        from dataclasses import asdict
 
         from netbox_wdm.views import _build_trace_data_for_path
 

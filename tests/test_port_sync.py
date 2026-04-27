@@ -1,8 +1,11 @@
 """Tests for the port sync detection and repair system."""
 
 import pytest
-from netbox_wdm.testing import create_cwdm_mux_dx_type, create_device_roles, create_duplex_mux, create_manufacturer, create_site
-from netbox_wdm.port_sync import compute_sync_diff, apply_sync, check_port_sync
+
+from netbox_wdm.port_sync import apply_sync, check_port_sync, compute_sync_diff
+from netbox_wdm.testing import (
+    create_duplex_mux,
+)
 
 
 @pytest.mark.django_db
@@ -17,7 +20,8 @@ class TestPortSyncFields:
 
 
 from dcim.models import PortMapping
-from netbox_wdm.port_sync import compute_expected_port_hash, compute_actual_port_hash
+
+from netbox_wdm.port_sync import compute_actual_port_hash, compute_expected_port_hash
 
 
 @pytest.mark.django_db
@@ -184,9 +188,9 @@ class TestSignalInvalidation:
         assert node.port_sync_valid is False
 
 
+from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from rest_framework.test import force_authenticate
-from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
@@ -195,6 +199,7 @@ User = get_user_model()
 class TestSyncPortsAPI:
     def _get_view(self):
         from netbox_wdm.api.views import WdmNodeViewSet
+
         return WdmNodeViewSet.as_view({"post": "sync_ports"})
 
     def _make_request(self, node, query_params=None):
@@ -238,8 +243,9 @@ class TestSyncPortsAPI:
         assert "wavelength_services" in response.data["warnings"]
 
 
-from django.core.management import call_command
 from io import StringIO
+
+from django.core.management import call_command
 
 
 @pytest.mark.django_db

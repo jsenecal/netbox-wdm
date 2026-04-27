@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Canonical normalize-toolkit CI/CD shape: 5 GHA workflows (`ci.yml`, `publish.yml`, `docs.yml`, `release-drafter.yml`, `pr-title.yml`) + `.github/release-drafter.yml`.
+- `.pre-commit-config.yaml` with ruff hooks + standard pre-commit-hooks + a `commit-msg` stage that rejects AI/Claude attribution lines.
+- `.git-template/hooks/commit-msg` (canonical hook tracked in-tree, referenced by pre-commit).
+- `docs/zensical.toml` + `docs/index.md` — documentation site auto-deployed to GitHub Pages on push to `main`.
+- `uv.lock` committed for reproducible CI/dev environments.
+
+### Changed
+
+- CI: switched dependency installation to `uv` for faster caching; activates the workspace `.venv` via `GITHUB_PATH` so plain `python` works from `/opt/netbox/netbox`. Codecov upload uses OIDC (tokenless). Existing `test-ts` job and `dist/` up-to-date check preserved.
+- `publish.yml` split into `build` (unprivileged) + `publish-to-pypi` (`environment: pypi` with `id-token: write`).
+- `pyproject.toml`: added `[docs]` extra (`zensical`); `extend-exclude = ["**/migrations/*.py"]`; ignore `N806` globally (Django `User = get_user_model()` idiom); explicit `[tool.ruff.format]`; bumpver `CHANGELOG.md` file pattern so the Unreleased section is promoted on every version bump.
+- README aligned to canonical skeleton (PyPI / Python / NetBox / CI / codecov badges, Compatibility table, Documentation links, Contributing section).
+
 ## [0.2.1] - 2026-04-01
 
 ### Fixed
