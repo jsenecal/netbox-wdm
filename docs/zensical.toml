@@ -1,0 +1,42 @@
+[project]
+site_name = "NetBox WDM"
+site_url = "https://jsenecal.github.io/netbox-wdm/"
+site_description = "Wavelength division multiplexing (WDM) device management for NetBox: ITU channel plans, ROADM editing, and circuit trace visualization"
+site_author = "Jonathan Senecal"
+repo_url = "https://github.com/jsenecal/netbox-wdm"
+repo_name = "jsenecal/netbox-wdm"
+edit_uri = "edit/main/docs/"
+docs_dir = "."
+nav = [
+  { "Home" = "index.md" },
+  { "User Guide" = [
+    { "Port Sync" = "user/port-sync.md" },
+  ] },
+  { "Developer" = [
+    { "Port Sync (internal)" = "developer/port-sync.md" },
+    { "Style Guide" = "developer/style-guide.md" },
+  ] },
+]
+
+[project.theme]
+features = [
+  "content.action.edit",
+  "content.action.view",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
