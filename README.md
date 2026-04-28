@@ -7,6 +7,7 @@
 [![NetBox](https://img.shields.io/badge/NetBox-4.5%2B-success.svg)](https://github.com/netbox-community/netbox)
 [![CI](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml/badge.svg)](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jsenecal/netbox-wdm/branch/main/graph/badge.svg)](https://codecov.io/gh/jsenecal/netbox-wdm)
+[![Documentation](https://img.shields.io/badge/docs-jsenecal.github.io-blue)](https://jsenecal.github.io/netbox-wdm/)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 
