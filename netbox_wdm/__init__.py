@@ -1,6 +1,10 @@
+import logging
+
 from netbox.plugins import PluginConfig
 
 __version__ = "0.2.2"
+
+logger = logging.getLogger(__name__)
 
 
 class NetBoxWDMConfig(PluginConfig):
@@ -20,6 +24,7 @@ class NetBoxWDMConfig(PluginConfig):
 
         connect_signals()
         self._register_map_layers()
+        logger.info("%s plugin loaded", self.name)
 
     @staticmethod
     def _register_map_layers():
