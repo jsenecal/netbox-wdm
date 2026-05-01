@@ -29,7 +29,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
-    "bumpver",
+    "bump-my-version",
     "pre-commit>=4.0.0",
     "pytest",
     "pytest-django>=4.5.0",
@@ -71,24 +71,26 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=netbox_wdm --cov-report=term-missing --reuse-db"
 
-[tool.bumpver]
+[tool.bumpversion]
 current_version = "0.2.2"
-version_pattern = "MAJOR.MINOR.PATCH"
-commit_message = "chore: bump version {old_version} -> {new_version}"
-tag_pattern = "vMAJOR.MINOR.PATCH"
 commit = true
 tag = true
-push = true
+tag_name = "v{new_version}"
+allow_dirty = false
+message = "chore: bump version {current_version} -> {new_version}"
+tag_message = "Release v{new_version}"
 
-[tool.bumpver.file_patterns]
-"pyproject.toml" = [
-    'current_version = "{version}"',
-    'version = "{version}"',
-]
-"netbox_wdm/__init__.py" = [
-    '__version__ = "{version}"',
-]
-"CHANGELOG.md" = [
-    '## \[Unreleased\]',
-    '## \[{version}\] - {now:%Y-%m-%d}',
-]
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'current_version = "{current_version}"'
+replace = 'current_version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "netbox_wdm/__init__.py"
+search = '__version__ = "{current_version}"'
+replace = '__version__ = "{new_version}"'
