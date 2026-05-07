@@ -76,6 +76,13 @@ Key references:
 | `WdmWavelengthPath`    | End-to-end traced path through the cable plant between WDM nodes |
 | `WdmCircuit`           | Logical service grouping one or more wavelength paths |
 
+## Related plugins
+
+netbox-wdm is part of a three-plugin set that models the full optical transport stack:
+
+- **[netbox-fms](https://github.com/jsenecal/netbox-fms)** -- Fiber Management System. Defines fiber cable construction (buffer tubes, ribbons, strands), plans splices in closures, and provisions the fiber circuits that WDM wavelength paths ride on.
+- **[netbox-pathways](https://github.com/jsenecal/netbox-pathways)** -- physical cable plant documentation with PostGIS. Models conduits, aerial spans, structures (poles, manholes, cabinets), and the geographic routes the cables carrying WDM circuits traverse.
+
 ## Contributing
 
 PRs welcome. Use conventional-commits PR titles (`feat:`, `fix:`, `chore:`, `docs:`, ...) -- release-drafter assembles release notes from them. Run `make setup` after cloning to install dev dependencies and the pre-commit hooks (including the AI-attribution-rejecting `commit-msg` hook).
