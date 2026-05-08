@@ -63,19 +63,27 @@ Position 1 starts at 192.10 THz (label `C21`), position 2 is 192.15 THz
 | ... | ... | ... |
 | 18 | CWDM-1610 | 1610 |
 
-## Choosing a grid
+## Picking the grid for a profile
 
-- **CWDM:** cheapest optics, widest spacing, no temperature stabilisation.
-  Best for fixed-wavelength access plant or short metro spans. Limited to 18
-  channels and not amplifier-friendly outside the C-band subset.
-- **DWDM 100 GHz:** the workhorse for metro and regional. 44 channels in the
-  C-band with off-the-shelf coloured optics.
-- **DWDM 50 GHz:** double the channels at half the spacing. Used when 100
-  GHz is exhausted or when running coherent muxponders that fit comfortably
-  in a 50 GHz slot.
+The grid you set on a profile should describe what the hardware actually
+is. The data sheet or front-panel labelling on the device tells you
+which of the three grids to pick:
 
-You cannot change a profile's grid after channel plans exist; either remove
-the channel plans first, or create a new profile.
+- **CWDM:** front ports labelled by 20 nm wavelengths (typically `1270`
+  through `1610`). 18 fixed wavelengths, no temperature stabilisation.
+- **DWDM 100 GHz:** ports labelled with ITU C-band channel numbers
+  (`C21` through `C64`) on a 100 GHz spacing.
+- **DWDM 50 GHz:** 88 wavelengths on a 50 GHz spacing, with labels
+  alternating `C{n}` and `C{n}.5`. Common on newer coherent line
+  systems.
+
+If the device does not fit any of these, the bundled grids cannot
+represent it; see [Adding a new grid](#adding-a-new-grid) below.
+
+The grid is locked once channel plans exist. Changing it later requires
+clearing the channel plans first or creating a new profile. In practice
+this only comes up when a profile was set up with the wrong grid by
+mistake -- the device's grid itself does not change.
 
 ## Adding a new grid
 

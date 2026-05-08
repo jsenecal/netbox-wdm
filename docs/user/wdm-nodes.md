@@ -78,7 +78,10 @@ The WDM Node detail page shows:
 ## Line ports
 
 `WdmLinePort` records identify which of the device's `RearPort` instances
-carry trunk wavelengths and which direction they belong to.
+carry trunk wavelengths and which direction they belong to. **The plugin
+does not create them automatically** -- once a Device exists, you must
+add one line port per trunk RearPort before the wavelength-path trace
+will recognise that side of the device as a trunk.
 
 | Field | Notes |
 |-------|-------|
@@ -87,13 +90,28 @@ carry trunk wavelengths and which direction they belong to.
 | `direction` | `common`, `east`, or `west` |
 | `role` | `tx`, `rx`, or `bidi` |
 
-A duplex MUX has two line ports: COM-TX (role `tx`) and COM-RX (role `rx`),
-both `direction=common`. A single-fibre MUX has one line port with
-`role=bidi`. A 2-degree ROADM has four: `(east, tx)`, `(east, rx)`,
-`(west, tx)`, `(west, rx)`.
+The recipe per hardware class:
 
-Constraints prevent two line ports on the same node from sharing a rear port,
-and from having the same direction-role pair.
+| Hardware | Rear port | direction | role |
+|----------|-----------|-----------|------|
+| Duplex MUX | `COM-TX` | `common` | `tx` |
+| Duplex MUX | `COM-RX` | `common` | `rx` |
+| Single-fibre MUX | `COM` | `common` | `bidi` |
+| 2-degree ROADM | `LINE-EAST-TX` | `east` | `tx` |
+| 2-degree ROADM | `LINE-EAST-RX` | `east` | `rx` |
+| 2-degree ROADM | `LINE-WEST-TX` | `west` | `tx` |
+| 2-degree ROADM | `LINE-WEST-RX` | `west` | `rx` |
+| EDFA | `LINE-OUT` | `common` | `bidi` |
+
+Add them from **WDM > Line Ports > Add** or via bulk CSV import. The
+fields are deterministic per DeviceType, so a single CSV per hardware
+model can provision every device of that model.
+
+Constraints prevent two line ports on the same node from sharing a rear
+port, and from having the same direction-role pair.
+
+Patch panels do not need line ports; they appear in the trace via their
+ordinary cable terminations.
 
 ## Bulk operations
 

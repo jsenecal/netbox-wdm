@@ -42,9 +42,11 @@ optical hardware, it tracks documented intent.
 User Guide:
 
 - [Getting Started](user/getting-started.md)
+- [DeviceType Setup](user/device-types.md)
 - [WDM Profiles](user/wdm-profiles.md)
 - [WDM Nodes](user/wdm-nodes.md)
 - [ITU Channel Plans](user/itu-grids.md)
+- [Cabling and Topologies](user/cabling.md)
 - [Wavelength Editor (ROADM)](user/wavelength-editor.md)
 - [Wavelength Paths and Circuits](user/circuits.md)
 - [Circuit Trace Visualisation](user/circuit-trace.md)
@@ -58,7 +60,6 @@ Developer:
 - [Wavelength Path Tracing](developer/path-tracing.md)
 - [REST API](developer/rest-api.md)
 - [GraphQL API](developer/graphql.md)
-- [Sample Data and Test Builders](developer/sample-data.md)
 - [Port Sync (internal)](developer/port-sync.md)
 - [Style Guide](developer/style-guide.md)
 

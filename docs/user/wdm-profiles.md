@@ -48,14 +48,20 @@ grid position, or front port template across multiple channel plans.
 
 ## Creating a profile
 
+The values you fill in describe what the hardware actually is, so the
+device's data sheet (or a glance at the front panel) is the easiest
+reference while you work.
+
 From the NetBox UI:
 
 1. Navigate to **WDM > Profiles > Add**.
 2. Pick the DeviceType. A DeviceType can only have one profile.
-3. Pick `node_type`, `grid`, and `fiber_type`.
+3. Set `node_type`, `grid`, and `fiber_type` to match the hardware -- a
+   terminal MUX is a terminal MUX, a duplex MUX has separate TX/RX
+   fibres, and so on.
 4. Save. The profile detail page opens with an empty **Channels** tab.
-5. Switch to the **Channels** tab and add one row per ITU position you wish to
-   provision, picking the matching FrontPortTemplate(s).
+5. Switch to the **Channels** tab and add one row per ITU position the
+   hardware carries, pointing at the matching FrontPortTemplate(s).
 
 Profiles also appear on the DeviceType detail page under a **WDM Profile**
 tab; this tab is only visible when a profile exists.
