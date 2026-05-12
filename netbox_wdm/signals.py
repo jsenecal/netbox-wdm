@@ -120,7 +120,15 @@ def _lineport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
 
 def _portmapping_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     """Rebuild wavelength paths and recheck port sync when a port mapping changes."""
+    from dcim.models import PortMapping
+
     from .models import WdmNode
+
+    # NetBox's FrontPortFormMixin._save_m2m sends post_save with sender=PortMapping
+    # even when the instance is a PortTemplateMapping (DeviceType-level template).
+    # Templates have no live device, so there is nothing for us to rebuild.
+    if not isinstance(instance, PortMapping):
+        return
 
     try:
         node = WdmNode.objects.get(device=instance.device)

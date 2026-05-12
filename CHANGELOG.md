@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
+
 ## [0.2.2] - 2026-04-28
 
 ### Added
