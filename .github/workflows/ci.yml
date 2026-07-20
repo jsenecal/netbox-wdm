@@ -51,7 +51,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
       - run: cd netbox_wdm/static/netbox_wdm && npm install
       - run: cd netbox_wdm/static/netbox_wdm && npx tsc --noEmit
       - run: cd netbox_wdm/static/netbox_wdm && npm run build
