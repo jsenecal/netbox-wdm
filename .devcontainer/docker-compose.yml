@@ -47,7 +47,7 @@ services:
 
   redis:
     container_name: netbox-wdm-redis
-    image: redis:7-alpine
+    image: redis:8-alpine
     command:
       - sh
       - -c
