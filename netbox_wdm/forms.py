@@ -156,7 +156,7 @@ class WdmLinePortForm(NetBoxModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.wdm_node.is_fixed:
+        if self.instance.pk and self.instance.is_fixed:
             for field_name in WdmLinePort.FIXED_FIELDS:
                 if field_name in self.fields:
                     self.fields[field_name].disabled = True
@@ -197,7 +197,7 @@ class WdmChannelForm(NetBoxModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.wdm_node.is_fixed:
+        if self.instance.pk and self.instance.is_fixed:
             for field_name in ("mux_front_port", "demux_front_port"):
                 if field_name in self.fields:
                     self.fields[field_name].disabled = True
