@@ -12,6 +12,13 @@ from netbox_wdm.choices import (
     WdmNodeTypeChoices,
 )
 from netbox_wdm.models import WdmChannel, WdmLinePort, WdmLinePortPlan, WdmNode, WdmProfile
+from netbox_wdm.testing import (
+    create_cwdm_mux_dx_type,
+    create_cwdm_mux_sf_type,
+    create_duplex_mux,
+    create_roadm_2d_type,
+    create_sf_mux,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -166,3 +173,38 @@ class TestEffectiveGridAndFixedness:
         assert ch.is_fixed is False
         ch_dev = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         assert ch_dev.is_fixed is True
+
+
+class TestPlanDrivenLinePorts:
+    def test_duplex_factory_creates_line_port_plans(self, wdm_manufacturer):
+        dt = create_cwdm_mux_dx_type(wdm_manufacturer)
+        plans = dt.wdm_profile.line_port_plans.order_by("role")
+        assert [(p.rear_port_template.name, p.direction, p.role) for p in plans] == [
+            ("COM-RX", "common", "rx"),
+            ("COM-TX", "common", "tx"),
+        ]
+
+    def test_duplex_node_auto_populates_line_ports(self, wdm_site, wdm_manufacturer, wdm_roles):
+        dt = create_cwdm_mux_dx_type(wdm_manufacturer)
+        bundle = create_duplex_mux(wdm_site, dt, wdm_roles["wdm-mux"], "MUX-LP-A")
+        assert bundle.line_ports["tx"].rear_port.name == "COM-TX"
+        assert bundle.line_ports["rx"].rear_port.name == "COM-RX"
+
+    def test_sf_node_auto_populates_bidi_line_port(self, wdm_site, wdm_manufacturer, wdm_roles):
+        dt = create_cwdm_mux_sf_type(wdm_manufacturer)
+        bundle = create_sf_mux(wdm_site, dt, wdm_roles["wdm-mux"], "MUX-SF-A")
+        assert bundle.line_ports["bidi"].role == "bidi"
+        assert bundle.line_ports["bidi"].rear_port.name == "COM"
+
+    def test_roadm_line_ports_stay_editable(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.testing import create_roadm
+
+        dt = create_roadm_2d_type(wdm_manufacturer)
+        bundle = create_roadm(wdm_site, dt, wdm_roles["wdm-roadm"], "ROADM-LP-A")
+        lp = bundle.line_ports["line_east_tx"]
+        # "common"/"rx" isn't used by any of the ROADM's other auto-populated line ports
+        # (all four are east/west), so this only exercises fixedness, not the
+        # (wdm_node, direction, role) uniqueness constraint.
+        lp.direction = "common"
+        lp.role = "rx"
+        lp.full_clean()  # would raise on a fixed node

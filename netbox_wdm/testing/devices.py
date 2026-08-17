@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dcim.models import Device, DeviceRole, DeviceType, RearPort, Site
+from dcim.models import Device, DeviceRole, DeviceType, Site
 
-from netbox_wdm.choices import WdmGridChoices, WdmLineDirectionChoices, WdmLineRoleChoices, WdmNodeTypeChoices
+from netbox_wdm.choices import WdmGridChoices, WdmLineRoleChoices, WdmNodeTypeChoices
 from netbox_wdm.models import WdmChannel, WdmLinePort, WdmNode
 
 
@@ -30,23 +30,13 @@ def create_duplex_mux(
         defaults={"node_type": WdmNodeTypeChoices.TERMINAL_MUX, "grid": grid},
     )
     # In transaction=True test mode, on_commit fires immediately during Device.save(),
-    # causing _auto_populate_channels to run before FrontPorts exist. Detect and repair
-    # by deleting channels with null FP IDs and re-running auto-population.
+    # causing auto-populate to run before FrontPorts exist. Detect and repair.
     if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
         node.channels.all().delete()
-        node._auto_populate_channels()
-    com_tx = RearPort.objects.get(device=device, name="COM-TX")
-    com_rx = RearPort.objects.get(device=device, name="COM-RX")
-    lp_tx, _ = WdmLinePort.objects.get_or_create(
-        wdm_node=node,
-        rear_port=com_tx,
-        defaults={"direction": WdmLineDirectionChoices.COMMON, "role": WdmLineRoleChoices.TX},
-    )
-    lp_rx, _ = WdmLinePort.objects.get_or_create(
-        wdm_node=node,
-        rear_port=com_rx,
-        defaults={"direction": WdmLineDirectionChoices.COMMON, "role": WdmLineRoleChoices.RX},
-    )
+        node.line_ports.all().delete()
+        node._auto_populate()
+    lp_tx = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.TX)
+    lp_rx = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.RX)
     channels = list(node.channels.order_by("grid_position"))
     return WdmDeviceBundle(device=device, node=node, line_ports={"tx": lp_tx, "rx": lp_rx}, channels=channels)
 
@@ -62,13 +52,9 @@ def create_sf_mux(
     )
     if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
         node.channels.all().delete()
-        node._auto_populate_channels()
-    com = RearPort.objects.get(device=device, name="COM")
-    lp_bidi, _ = WdmLinePort.objects.get_or_create(
-        wdm_node=node,
-        rear_port=com,
-        defaults={"direction": WdmLineDirectionChoices.COMMON, "role": WdmLineRoleChoices.BIDI},
-    )
+        node.line_ports.all().delete()
+        node._auto_populate()
+    lp_bidi = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.BIDI)
     channels = list(node.channels.order_by("grid_position"))
     return WdmDeviceBundle(device=device, node=node, line_ports={"bidi": lp_bidi}, channels=channels)
 
@@ -84,21 +70,9 @@ def create_roadm(
     )
     if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
         node.channels.all().delete()
-        node._auto_populate_channels()
-    line_ports = {}
-    for rp_name, direction, lp_role in [
-        ("LINE-EAST-TX", WdmLineDirectionChoices.EAST, WdmLineRoleChoices.TX),
-        ("LINE-EAST-RX", WdmLineDirectionChoices.EAST, WdmLineRoleChoices.RX),
-        ("LINE-WEST-TX", WdmLineDirectionChoices.WEST, WdmLineRoleChoices.TX),
-        ("LINE-WEST-RX", WdmLineDirectionChoices.WEST, WdmLineRoleChoices.RX),
-    ]:
-        rp = RearPort.objects.get(device=device, name=rp_name)
-        lp, _ = WdmLinePort.objects.get_or_create(
-            wdm_node=node,
-            rear_port=rp,
-            defaults={"direction": direction, "role": lp_role},
-        )
-        line_ports[rp_name.lower().replace("-", "_")] = lp
+        node.line_ports.all().delete()
+        node._auto_populate()
+    line_ports = {f"line_{lp.direction}_{lp.role}": lp for lp in node.line_ports.select_related("rear_port")}
     channels = list(node.channels.order_by("grid_position"))
     return WdmDeviceBundle(device=device, node=node, line_ports=line_ports, channels=channels)
 

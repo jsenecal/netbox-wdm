@@ -346,45 +346,86 @@ class WdmNode(NetBoxModel):
         return errors
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Save and auto-populate channels from device type profile on creation."""
+        """Save and auto-populate channels and line ports from profiles on creation."""
         is_new = self._state.adding
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if is_new and self.node_type != WdmNodeTypeChoices.AMPLIFIER:
-                self._auto_populate_channels()
+            if is_new:
+                self._auto_populate()
 
-    def _auto_populate_channels(self) -> None:
-        """Create WdmChannel rows from the device type's WDM profile channel plans."""
-        from dcim.models import FrontPort
+    def _auto_populate(self) -> None:
+        """Create channels and line ports from the device type profile and installed module profiles.
+
+        Idempotent: uses get_or_create throughout so repeated calls (module install
+        signal, port sync repair) only fill gaps.
+        """
+        from dcim.models import Module
+
+        self._populate_from_device_profile()
+        for module in Module.objects.filter(device=self.device).select_related("module_type", "module_bay"):
+            self.populate_module(module)
+
+    def _populate_from_device_profile(self) -> None:
+        from dcim.models import FrontPort, RearPort
 
         try:
             profile = self.device.device_type.wdm_profile
         except WdmProfile.DoesNotExist:
             return
 
-        plans = list(profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").all())
-        if not plans:
+        def resolve(template: Any) -> str:
+            return template.name
+
+        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device, module__isnull=True)}
+        rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(device=self.device, module__isnull=True)}
+        self._create_channels(profile, None, resolve, fp_by_name)
+        self._create_line_ports(profile, None, resolve, rp_by_name)
+
+    def populate_module(self, module: Any) -> None:
+        """Create channels and line ports for one installed module, if its ModuleType has a profile."""
+        from dcim.models import FrontPort, RearPort
+
+        profile = _module_wdm_profile(module)
+        if profile is None:
             return
 
-        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device)}
+        def resolve(template: Any) -> str:
+            return template.resolve_name(module=module)
 
-        channels = []
+        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(module=module)}
+        rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(module=module)}
+        self._create_channels(profile, module, resolve, fp_by_name)
+        self._create_line_ports(profile, module, resolve, rp_by_name)
+
+    def _create_channels(self, profile: WdmProfile, module: Any, resolve: Any, fp_by_name: dict) -> None:
+        # Device-scoped: the node's own node_type is authoritative (matches historical
+        # behavior and lets a WdmNode be marked AMPLIFIER regardless of its device
+        # type's profile). Module-scoped: the module's own profile decides, since the
+        # node-level node_type says nothing about what role an individual module plays.
+        node_type = profile.node_type if module is not None else self.node_type
+        if node_type == WdmNodeTypeChoices.AMPLIFIER:
+            return
+        plans = profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template")
         for cp in plans:
-            mux_front_port = None
-            if cp.mux_front_port_template:
-                mux_front_port = fp_by_name.get(cp.mux_front_port_template.name)
-            demux_front_port = None
-            if cp.demux_front_port_template:
-                demux_front_port = fp_by_name.get(cp.demux_front_port_template.name)
-            channels.append(
-                WdmChannel(
-                    wdm_node=self,
-                    grid_position=cp.grid_position,
-                    mux_front_port=mux_front_port,
-                    demux_front_port=demux_front_port,
-                )
+            mux_fp = fp_by_name.get(resolve(cp.mux_front_port_template)) if cp.mux_front_port_template else None
+            demux_fp = fp_by_name.get(resolve(cp.demux_front_port_template)) if cp.demux_front_port_template else None
+            WdmChannel.objects.get_or_create(
+                wdm_node=self,
+                module=module,
+                grid_position=cp.grid_position,
+                defaults={"mux_front_port": mux_fp, "demux_front_port": demux_fp},
             )
-        WdmChannel.objects.bulk_create(channels)
+
+    def _create_line_ports(self, profile: WdmProfile, module: Any, resolve: Any, rp_by_name: dict) -> None:
+        for lpp in profile.line_port_plans.select_related("rear_port_template"):
+            rp = rp_by_name.get(resolve(lpp.rear_port_template))
+            if rp is None:
+                continue
+            WdmLinePort.objects.get_or_create(
+                wdm_node=self,
+                rear_port=rp,
+                defaults={"direction": lpp.direction, "role": lpp.role, "module": module},
+            )
 
 
 class WdmLinePort(NetBoxModel):

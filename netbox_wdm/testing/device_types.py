@@ -5,8 +5,14 @@ from __future__ import annotations
 from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, Manufacturer, RearPortTemplate
 from dcim.models.device_component_templates import PortTemplateMapping
 
-from netbox_wdm.choices import WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
-from netbox_wdm.models import WdmChannelPlan, WdmProfile
+from netbox_wdm.choices import (
+    WdmFiberTypeChoices,
+    WdmGridChoices,
+    WdmLineDirectionChoices,
+    WdmLineRoleChoices,
+    WdmNodeTypeChoices,
+)
+from netbox_wdm.models import WdmChannelPlan, WdmLinePortPlan, WdmProfile
 from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_100GHZ_CHANNELS
 
 
@@ -91,6 +97,13 @@ def create_cwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 8) -
             },
         )
 
+    for rpt, role in ((com_tx, WdmLineRoleChoices.TX), (com_rx, WdmLineRoleChoices.RX)):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": WdmLineDirectionChoices.COMMON, "role": role},
+        )
+
     return dt
 
 
@@ -147,6 +160,12 @@ def create_cwdm_mux_sf_type(manufacturer: Manufacturer, num_channels: int = 8) -
                 "demux_front_port_template": None,
             },
         )
+
+    WdmLinePortPlan.objects.get_or_create(
+        profile=profile,
+        rear_port_template=com,
+        defaults={"direction": WdmLineDirectionChoices.COMMON, "role": WdmLineRoleChoices.BIDI},
+    )
 
     return dt
 
@@ -225,6 +244,13 @@ def create_dwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 44) 
             },
         )
 
+    for rpt, role in ((com_tx, WdmLineRoleChoices.TX), (com_rx, WdmLineRoleChoices.RX)):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": WdmLineDirectionChoices.COMMON, "role": role},
+        )
+
     return dt
 
 
@@ -266,10 +292,10 @@ def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> 
     line_east_rx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-EAST-RX", defaults={"type": "lc-apc", "positions": 44}
     )
-    RearPortTemplate.objects.get_or_create(
+    line_west_tx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-WEST-TX", defaults={"type": "lc-apc", "positions": 44}
     )
-    RearPortTemplate.objects.get_or_create(
+    line_west_rx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-WEST-RX", defaults={"type": "lc-apc", "positions": 44}
     )
 
@@ -321,6 +347,18 @@ def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> 
                 "mux_front_port_template": fp_add,
                 "demux_front_port_template": fp_drop,
             },
+        )
+
+    for rpt, direction, role in (
+        (line_east_tx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.TX),
+        (line_east_rx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.RX),
+        (line_west_tx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.TX),
+        (line_west_rx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.RX),
+    ):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": direction, "role": role},
         )
 
     return dt
