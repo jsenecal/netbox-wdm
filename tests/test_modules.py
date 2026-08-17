@@ -208,3 +208,33 @@ class TestPlanDrivenLinePorts:
         lp.direction = "common"
         lp.role = "rx"
         lp.full_clean()  # would raise on a fixed node
+
+
+class TestAmplifierProfileLinePorts:
+    def test_amplifier_profile_gets_line_ports_but_no_channels(self, wdm_site, wdm_manufacturer, wdm_roles):
+        """_create_line_ports is intentionally not amplifier-gated, unlike _create_channels:
+
+        amplifiers are pass-through devices whose trunk rear ports are the line ports
+        themselves, so an amplifier profile's line port plans must still populate, while
+        its (nonexistent) channel plans never do.
+        """
+        dt = DeviceType.objects.create(manufacturer=wdm_manufacturer, model="EDFA-TEST", slug="edfa-test")
+        rpt = RearPortTemplate.objects.create(device_type=dt, name="LINE-OUT", type="lc-apc", positions=1)
+        profile = WdmProfile.objects.create(
+            device_type=dt,
+            node_type=WdmNodeTypeChoices.AMPLIFIER,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        WdmLinePortPlan.objects.create(
+            profile=profile,
+            rear_port_template=rpt,
+            direction=WdmLineDirectionChoices.COMMON,
+            role=WdmLineRoleChoices.BIDI,
+        )
+        device = Device.objects.create(name="AMP-A", site=wdm_site, device_type=dt, role=wdm_roles["wdm-amplifier"])
+        node = WdmNode.objects.create(
+            device=device, node_type=WdmNodeTypeChoices.AMPLIFIER, grid=WdmGridChoices.DWDM_100GHZ
+        )
+        assert node.channels.count() == 0
+        assert node.line_ports.count() == 1
+        assert node.line_ports.get().role == WdmLineRoleChoices.BIDI

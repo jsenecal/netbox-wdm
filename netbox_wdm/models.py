@@ -417,6 +417,10 @@ class WdmNode(NetBoxModel):
             )
 
     def _create_line_ports(self, profile: WdmProfile, module: Any, resolve: Any, rp_by_name: dict) -> None:
+        # Deliberately not gated on node_type == AMPLIFIER (unlike _create_channels above).
+        # Amplifiers are pass-through devices: their trunk rear ports ARE line ports and
+        # must still be created from the profile's line port plans. Amplifier-profile
+        # modules get line ports but never channels, mirroring the node-level rule.
         for lpp in profile.line_port_plans.select_related("rear_port_template"):
             rp = rp_by_name.get(resolve(lpp.rear_port_template))
             if rp is None:
