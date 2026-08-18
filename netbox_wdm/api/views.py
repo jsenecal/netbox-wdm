@@ -11,6 +11,7 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from ..choices import WdmLineRoleChoices
 from ..dataclasses import ChannelTraceData
 from ..filters import (
     WdmChannelFilterSet,
@@ -89,6 +90,13 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
             continue
 
         module_line_ports = line_ports_by_module.get(ch.module_id, [])
+        # A channel's MUX (TX) front port only ever fans out to that module group's
+        # TX/BIDI line ports, and DEMUX (RX) only to RX/BIDI. Without this split, a
+        # front port fanned across every line port in the group collides with
+        # PortMapping's (front_port, front_port_position) uniqueness as soon as a
+        # group has more than one line port -- any real ROADM (east/west TX+RX: 4).
+        tx_line_ports = [lp for lp in module_line_ports if lp.role in (WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI)]
+        rx_line_ports = [lp for lp in module_line_ports if lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)]
 
         desired_mux = ports.get("mux")
         desired_demux = ports.get("demux")
@@ -98,19 +106,19 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
         if current_mux == desired_mux and current_demux == desired_demux:
             continue
 
-        for current_fp_pk in (current_mux, current_demux):
+        for current_fp_pk, role_line_ports in ((current_mux, tx_line_ports), (current_demux, rx_line_ports)):
             if current_fp_pk is not None:
-                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position, module_line_ports))
+                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position, role_line_ports))
 
-        for desired_fp_pk in (desired_mux, desired_demux):
+        for desired_fp_pk, role_line_ports in ((desired_mux, tx_line_ports), (desired_demux, rx_line_ports)):
             if desired_fp_pk is not None:
-                for tp in module_line_ports:
+                for position, tp in enumerate(role_line_ports, start=1):
                     new_mappings_to_create.append(
                         PortMapping(
                             device=wdm_node.device,
                             front_port_id=desired_fp_pk,
                             rear_port=tp.rear_port,
-                            front_port_position=1,
+                            front_port_position=position,
                             rear_port_position=ch.grid_position,
                         )
                     )
@@ -133,8 +141,8 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
     if old_fp_ids_to_delete:
         delete_q = Q()
-        for fp_id, grid_pos, module_line_ports in old_fp_ids_to_delete:
-            for tp in module_line_ports:
+        for fp_id, grid_pos, role_line_ports in old_fp_ids_to_delete:
+            for tp in role_line_ports:
                 delete_q |= Q(front_port_id=fp_id, rear_port=tp.rear_port, rear_port_position=grid_pos)
         if delete_q:
             PortMapping.objects.filter(delete_q).delete()

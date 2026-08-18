@@ -628,17 +628,19 @@ class TestModularPortSync:
         assert result["changes"]["front_ports"]["create"] == []
         assert check_port_sync(node) is True
 
-    def test_apply_mapping_scoped_to_channel_module(self, mixed_chassis):
+    def test_apply_mapping_scoped_to_channel_module_and_role(self, mixed_chassis):
         """_apply_mapping's create/delete loops must scope to the changed channel's
-        own module's line ports. Before the fix, both loops iterated every line port
-        on the node, so remapping a ROADM channel's front port also wrote garbage
-        PortMappings against the fixed cassette's COM rear ports.
+        own module's line ports, AND further scope by TX/RX role: a MUX front port
+        only fans out to that group's TX/BIDI line ports, a DEMUX front port only to
+        RX/BIDI. Before the fix, both loops iterated every line port in the module
+        group regardless of role, so remapping a ROADM channel's front port also
+        wrote garbage PortMappings against the fixed cassette's COM rear ports, and
+        (once a group has more than one line port, as any real ROADM does with
+        east/west TX+RX) collided with PortMapping's (front_port, front_port_position)
+        uniqueness.
 
-        Narrows the ROADM module's own line-port group down to its single EAST/TX
-        port first: fanning a front port out across >1 line port of the SAME module
-        already collides on PortMapping's (front_port, front_port_position) uniqueness
-        (a pre-existing, unrelated gap in _apply_mapping's role handling), which would
-        otherwise mask the module-scoping assertion this test exists to make.
+        Uses the mixed_chassis fixture's realistic 4-line-port ROADM group (east/west
+        TX+RX) unmodified, instead of narrowing it down to a single line port.
         """
         from dcim.models import FrontPort, PortMapping
 
@@ -646,24 +648,47 @@ class TestModularPortSync:
 
         node, module_fixed, module_roadm = mixed_chassis
         fixed_rear_port_ids = set(node.line_ports.filter(module=module_fixed).values_list("rear_port_id", flat=True))
-        node.line_ports.filter(module=module_roadm).exclude(
-            direction=WdmLineDirectionChoices.EAST, role=WdmLineRoleChoices.TX
-        ).delete()
-        roadm_rear_port_ids = set(node.line_ports.filter(module=module_roadm).values_list("rear_port_id", flat=True))
-        assert fixed_rear_port_ids and roadm_rear_port_ids
+        roadm_tx_rear_port_ids = set(
+            node.line_ports.filter(module=module_roadm, role=WdmLineRoleChoices.TX).values_list(
+                "rear_port_id", flat=True
+            )
+        )
+        roadm_rx_rear_port_ids = set(
+            node.line_ports.filter(module=module_roadm, role=WdmLineRoleChoices.RX).values_list(
+                "rear_port_id", flat=True
+            )
+        )
+        assert fixed_rear_port_ids
+        assert roadm_tx_rear_port_ids == {
+            lp.rear_port_id
+            for lp in node.line_ports.filter(
+                module=module_roadm, direction__in=(WdmLineDirectionChoices.EAST, WdmLineDirectionChoices.WEST)
+            )
+            if lp.role == WdmLineRoleChoices.TX
+        }
+        assert len(roadm_tx_rear_port_ids) == 2  # east + west
+        assert len(roadm_rx_rear_port_ids) == 2  # east + west
 
         roadm_ch = node.channels.filter(module=module_roadm).order_by("grid_position").first()
-        spare_fp = FrontPort.objects.create(
+        spare_mux_fp = FrontPort.objects.create(
             device=node.device, module=module_roadm, name="ROADM1 ADD-SPARE", type="lc-upc"
         )
+        spare_demux_fp = FrontPort.objects.create(
+            device=node.device, module=module_roadm, name="ROADM1 DROP-SPARE", type="lc-upc"
+        )
 
-        _apply_mapping(node, {roadm_ch.pk: {"mux": spare_fp.pk, "demux": None}})
+        _apply_mapping(node, {roadm_ch.pk: {"mux": spare_mux_fp.pk, "demux": spare_demux_fp.pk}})
 
-        created = PortMapping.objects.filter(front_port=spare_fp)
-        assert created.exists()
-        # only the ROADM module's own rear ports were written to
-        assert set(created.values_list("rear_port_id", flat=True)) <= roadm_rear_port_ids
-        assert not created.filter(rear_port_id__in=fixed_rear_port_ids).exists()
+        mux_mappings = PortMapping.objects.filter(front_port=spare_mux_fp)
+        demux_mappings = PortMapping.objects.filter(front_port=spare_demux_fp)
+
+        # mux fanned out to exactly the ROADM module's TX rear ports, nothing else
+        assert set(mux_mappings.values_list("rear_port_id", flat=True)) == roadm_tx_rear_port_ids
+        # demux fanned out to exactly the ROADM module's RX rear ports, nothing else
+        assert set(demux_mappings.values_list("rear_port_id", flat=True)) == roadm_rx_rear_port_ids
+        # nothing crossed roles or modules
+        assert not mux_mappings.filter(rear_port_id__in=roadm_rx_rear_port_ids | fixed_rear_port_ids).exists()
+        assert not demux_mappings.filter(rear_port_id__in=roadm_tx_rear_port_ids | fixed_rear_port_ids).exists()
 
 
 class TestStructuralRepair:
