@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** raised the minimum supported NetBox version from 4.5.0 to 4.6.6. Upcoming changes rely on profile-aware `link_peers` (NetBox 4.6.0) and the `FrontPortFormMixin._save_m2m` template-mapping `post_save` fix in NetBox 4.6.6 (see the Fixed entry below). ([#38](https://github.com/jsenecal/netbox-wdm/issues/38))
+
 ### Fixed
 
 - Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))

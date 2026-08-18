@@ -1,10 +1,10 @@
 # netbox-wdm
 
-> A [NetBox](https://github.com/netbox-community/netbox) 4.5+ plugin for WDM (Wavelength Division Multiplexing) device management.
+> A [NetBox](https://github.com/netbox-community/netbox) 4.6.6+ plugin for WDM (Wavelength Division Multiplexing) device management.
 
 [![PyPI](https://img.shields.io/pypi/v/netbox-wdm.svg)](https://pypi.org/project/netbox-wdm/)
 [![Python](https://img.shields.io/pypi/pyversions/netbox-wdm.svg)](https://pypi.org/project/netbox-wdm/)
-[![NetBox](https://img.shields.io/badge/NetBox-4.5%2B-success.svg)](https://github.com/netbox-community/netbox)
+[![NetBox](https://img.shields.io/badge/NetBox-4.6.6%2B-success.svg)](https://github.com/netbox-community/netbox)
 [![CI](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml/badge.svg)](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jsenecal/netbox-wdm/branch/main/graph/badge.svg)](https://codecov.io/gh/jsenecal/netbox-wdm)
 [![Documentation](https://img.shields.io/badge/docs-jsenecal.github.io-blue)](https://jsenecal.github.io/netbox-wdm/)
@@ -33,9 +33,10 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 ## Compatibility
 
-| Plugin version | NetBox version | Python    |
-|----------------|----------------|-----------|
-| 0.2.x          | 4.5            | 3.12-3.14 |
+| Plugin version    | NetBox version | Python    |
+|-------------------|----------------|-----------|
+| main (unreleased) | 4.6.6+         | 3.12-3.14 |
+| 0.2.x             | 4.5            | 3.12-3.14 |
 
 ## Installation
 
