@@ -447,3 +447,25 @@ class TestModularTracing:
         far = entry.path.path_channels.get(sequence=1).channel
         assert far.wdm_node == hub.node
         assert far.module == hub.modules["MUX2"]
+
+
+class TestModularPortSync:
+    def test_chassis_in_sync_after_populate(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.port_sync import check_port_sync
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-PS", mt)
+        assert check_port_sync(bundle.node) is True
+
+    def test_broken_mapping_detected_per_module(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from dcim.models import PortMapping
+
+        from netbox_wdm.port_sync import check_port_sync
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-PS2", mt)
+        victim_ch = bundle.node.channels.filter(module=bundle.modules["MUX2"]).first()
+        PortMapping.objects.filter(front_port=victim_ch.mux_front_port).delete()
+        assert check_port_sync(bundle.node) is False
