@@ -8,6 +8,7 @@ from __future__ import annotations
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
 from .dcim import create_device_roles, create_manufacturer, create_site
 from .device_types import (
+    create_cwdm_cassette_module_type,
     create_cwdm_mux_dx_type,
     create_cwdm_mux_sf_type,
     create_dwdm_mux_dx_type,
@@ -16,12 +17,22 @@ from .device_types import (
     create_roadm_2d_type,
     create_router_type,
 )
-from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
+from .devices import (
+    ChassisBundle,
+    WdmDeviceBundle,
+    create_duplex_mux,
+    create_modular_chassis,
+    create_patch_panel,
+    create_roadm,
+    create_sf_mux,
+)
 from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, mux_roadm_mux, sf_mux_pair
 
 __all__ = [
+    "ChassisBundle",
     "cable_duplex_through_pp_pair",
     "cable_through_pp_pair",
+    "create_cwdm_cassette_module_type",
     "create_cwdm_mux_dx_type",
     "create_cwdm_mux_sf_type",
     "create_device_roles",
@@ -30,6 +41,7 @@ __all__ = [
     "create_edfa_type",
     "create_fiber_pp_type",
     "create_manufacturer",
+    "create_modular_chassis",
     "create_patch_panel",
     "create_roadm",
     "create_roadm_2d_type",

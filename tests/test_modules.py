@@ -238,3 +238,28 @@ class TestAmplifierProfileLinePorts:
         assert node.channels.count() == 0
         assert node.line_ports.count() == 1
         assert node.line_ports.get().role == WdmLineRoleChoices.BIDI
+
+
+class TestModularAutoPopulate:
+    def test_chassis_gets_channels_and_line_ports_per_module(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-A", mt, bays=("MUX1", "MUX2"))
+        node = bundle.node
+        assert node.channels.filter(module=bundle.modules["MUX1"]).count() == 8
+        assert node.channels.filter(module=bundle.modules["MUX2"]).count() == 8
+        # {module} resolution: the MUX1 cassette's CH1-MUX port carries the bay position prefix
+        ch1 = node.channels.filter(module=bundle.modules["MUX1"], grid_position=1).first()
+        assert ch1.mux_front_port.name == "MUX1 CH1-MUX"
+        assert ch1.mux_front_port.module == bundle.modules["MUX1"]
+        # per-module line ports
+        assert node.line_ports.filter(module=bundle.modules["MUX1"]).count() == 2
+        assert node.line_ports.filter(module=bundle.modules["MUX2"]).count() == 2
+
+    def test_same_wavelength_present_on_both_modules(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-B", mt)
+        assert bundle.node.channels.filter(grid_position=1).count() == 2
