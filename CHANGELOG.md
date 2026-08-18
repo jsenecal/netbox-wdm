@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
 - `WdmChannelViewSet.trace` no longer picks an arbitrary TX/BIDI line port on a modular chassis or multi-degree ROADM; it now delegates to the same module- and destination-aware port selection the UI trace view already used, instead of a module- and destination-blind `.first()`.
 - The ROADM live wavelength editor no longer offers front ports from unrelated modules as MUX/DEMUX candidates. `WdmNode.validate_channel_mapping` also now rejects a proposed mapping that assigns a channel a front port belonging to a different module.
+- The plugin's GraphQL schema was never registered with NetBox: `NetBoxWDMConfig` did not set `graphql_schema`, so NetBox's default resource lookup could not resolve the nested `graphql.schema` module, and every `wdm_*` query field (`wdm_profile`, `wdm_node`, `wdm_channel`, etc.) was silently absent from the live schema, with no error. `graphql_schema = "graphql.schema.schema"` is now set explicitly, matching the convention already used by other owned plugins.
 
 ## [0.2.2] - 2026-04-28
 
