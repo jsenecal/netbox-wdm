@@ -379,3 +379,71 @@ class TestDeviceLevelRearPortDeletion:
         assert not WdmLinePort.objects.filter(wdm_node=node, role=WdmLineRoleChoices.TX).exists()
         assert WdmLinePort.objects.filter(wdm_node=node, role=WdmLineRoleChoices.RX).exists()
         assert node.channels.count() == channel_count
+
+
+class TestModularTracing:
+    @pytest.fixture
+    def chassis_two_spans(self, wdm_site, wdm_manufacturer, wdm_roles):
+        """One chassis with 2 cassettes, each cabled through a PP pair to its own peer chassis."""
+        from netbox_wdm.testing import (
+            cable_duplex_through_pp_pair,
+            create_cwdm_cassette_module_type,
+            create_fiber_pp_type,
+            create_modular_chassis,
+            create_patch_panel,
+        )
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        dt_pp = create_fiber_pp_type(wdm_manufacturer)
+        hub = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "HUB", mt, bays=("MUX1", "MUX2"))
+        peer1 = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "PEER1", mt, bays=("MUX1",))
+        peer2 = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "PEER2", mt, bays=("MUX1",))
+
+        def lp(bundle, bay, role):
+            return bundle.node.line_ports.get(module=bundle.modules[bay], role=role)
+
+        for i, (bay, peer) in enumerate((("MUX1", peer1), ("MUX2", peer2)), start=1):
+            pp_a = create_patch_panel(wdm_site, dt_pp, wdm_roles["fiber-pp"], f"PP-A{i}")
+            pp_b = create_patch_panel(wdm_site, dt_pp, wdm_roles["fiber-pp"], f"PP-B{i}")
+            cable_duplex_through_pp_pair(
+                device_a_tx_rp=lp(hub, bay, "tx").rear_port,
+                device_a_rx_rp=lp(hub, bay, "rx").rear_port,
+                pp_a_device=pp_a,
+                pp_b_device=pp_b,
+                device_b_rx_rp=lp(peer, "MUX1", "rx").rear_port,
+                device_b_tx_rp=lp(peer, "MUX1", "tx").rear_port,
+                label_prefix=f"SPAN{i}",
+            )
+        return hub, peer1, peer2
+
+    def test_same_wavelength_traces_per_cassette(self, chassis_two_spans):
+        from netbox_wdm.models import WdmWavelengthPathChannel
+        from netbox_wdm.trace import rebuild_wavelength_paths_for_node
+
+        hub, peer1, peer2 = chassis_two_spans
+        for bundle in (hub, peer1, peer2):
+            rebuild_wavelength_paths_for_node(bundle.node)
+
+        ch_mux1 = hub.node.channels.get(module=hub.modules["MUX1"], grid_position=1)
+        entry = WdmWavelengthPathChannel.objects.get(channel=ch_mux1, sequence=0)
+        far = entry.path.path_channels.get(sequence=1).channel
+        assert far.wdm_node == peer1.node
+
+        ch_mux2 = hub.node.channels.get(module=hub.modules["MUX2"], grid_position=1)
+        entry2 = WdmWavelengthPathChannel.objects.get(channel=ch_mux2, sequence=0)
+        far2 = entry2.path.path_channels.get(sequence=1).channel
+        assert far2.wdm_node == peer2.node
+
+    def test_reverse_direction_selects_correct_cassette(self, chassis_two_spans):
+        from netbox_wdm.models import WdmWavelengthPathChannel
+        from netbox_wdm.trace import rebuild_wavelength_paths_for_node
+
+        hub, peer1, peer2 = chassis_two_spans
+        for bundle in (hub, peer1, peer2):
+            rebuild_wavelength_paths_for_node(bundle.node)
+
+        ch_peer2 = peer2.node.channels.get(grid_position=1)
+        entry = WdmWavelengthPathChannel.objects.get(channel=ch_peer2, sequence=0)
+        far = entry.path.path_channels.get(sequence=1).channel
+        assert far.wdm_node == hub.node
+        assert far.module == hub.modules["MUX2"]

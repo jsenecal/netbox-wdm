@@ -445,12 +445,16 @@ class WdmChannelElementsView(generic.ObjectView):
         return {"elements": elements}
 
 
-def _trace_cable_segment(from_node: Any, to_node: Any = None) -> list[CableSegmentItem]:
+def _trace_cable_segment(
+    from_node: Any, to_node: Any = None, from_module: Any = None, to_module: Any = None
+) -> list[CableSegmentItem]:
     """Trace the full cable chain from a node's TX/BIDI rear port to the next WDM node.
 
     Follows through patch panels and intermediate devices, collecting every port and cable.
     When to_node is provided and from_node has multiple TX ports (e.g. ROADM),
-    selects the TX port whose cable chain reaches to_node.
+    selects the TX port whose cable chain reaches to_node. from_module/to_module scope
+    the line-port lookup and destination match to a single cassette module on a
+    modular chassis (None means the device-level group).
     Returns a list of CableSegmentItem entries in order.
     """
     from dcim.models import Cable, CableTermination, FrontPort, PortMapping, RearPort
@@ -463,16 +467,22 @@ def _trace_cable_segment(from_node: Any, to_node: Any = None) -> list[CableSegme
     fp_ct = ContentType.objects.get_for_model(FrontPort)
 
     # Select the correct TX port — for multi-TX nodes (ROADM), pick the one reaching to_node
-    tx_lps = list(WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"]).select_related("rear_port"))
+    tx_lps = list(
+        WdmLinePort.objects.filter(wdm_node=from_node, module=from_module, role__in=["tx", "bidi"]).select_related(
+            "rear_port"
+        )
+    )
     tx_lp = None
     if len(tx_lps) > 1 and to_node:
         from .trace import _get_far_end_node
 
+        to_module_pk = to_module.pk if to_module else None
         for lp in tx_lps:
             if not lp.rear_port.cable_id:
                 continue
-            far_node, _ = _get_far_end_node(lp.rear_port)
-            if far_node and far_node.pk == to_node.pk:
+            far_node, far_module, _ = _get_far_end_node(lp.rear_port)
+            far_module_pk = far_module.pk if far_module else None
+            if far_node and far_node.pk == to_node.pk and far_module_pk == to_module_pk:
                 tx_lp = lp
                 break
     if tx_lp is None:
@@ -651,11 +661,15 @@ def _build_trace_data_for_path(wl_path: Any, channel_id: int | None = None) -> C
         elements.append(path_element_from_channel(entry.channel, entry.sequence))
 
     cable_segments: list[CableSegment] = []
-    hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
+    hop_entries = list(
+        wl_path.path_channels.select_related("channel__wdm_node__device", "channel__module").order_by("sequence")
+    )
     for i in range(len(hop_entries) - 1):
-        from_node = hop_entries[i].channel.wdm_node
-        to_node = hop_entries[i + 1].channel.wdm_node
-        items = _trace_cable_segment(from_node, to_node)
+        from_channel = hop_entries[i].channel
+        to_channel = hop_entries[i + 1].channel
+        from_node = from_channel.wdm_node
+        to_node = to_channel.wdm_node
+        items = _trace_cable_segment(from_node, to_node, from_channel.module, to_channel.module)
         cable_segments.append(
             CableSegment(
                 from_sequence=hop_entries[i].sequence,
