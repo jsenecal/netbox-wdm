@@ -648,3 +648,34 @@ class TestStructuralRepair:
         apply_sync(bundle.node)
 
         assert bundle.node.line_ports.filter(module=bundle.modules["MUX1"], role="tx").exists()
+
+    def test_repair_recreates_front_port_with_multiple_rear_port_mappings(self, wdm_site, wdm_manufacturer, wdm_roles):
+        """A single FrontPortTemplate may be wired to more than one RearPortTemplate (e.g.
+        a splitter tap). _repair_missing_ports's ptms_by_fpt defaultdict(list) must recreate
+        every PortMapping row for the recreated front port, not just the first one found."""
+        from dcim.models import FrontPort, PortMapping
+
+        from netbox_wdm.port_sync import _repair_missing_ports
+
+        dt = DeviceType.objects.create(manufacturer=wdm_manufacturer, model="DT-SPLIT", slug="dt-split")
+        fpt = FrontPortTemplate.objects.create(device_type=dt, name="SPLIT-IN", type="lc-upc")
+        rpt_a = RearPortTemplate.objects.create(device_type=dt, name="OUT-A", type="lc", positions=1)
+        rpt_b = RearPortTemplate.objects.create(device_type=dt, name="OUT-B", type="lc", positions=1)
+        PortTemplateMapping.objects.create(
+            device_type=dt, front_port=fpt, rear_port=rpt_a, front_port_position=1, rear_port_position=1
+        )
+        PortTemplateMapping.objects.create(
+            device_type=dt, front_port=fpt, rear_port=rpt_b, front_port_position=2, rear_port_position=1
+        )
+        device = Device.objects.create(name="SPLIT-DEV", site=wdm_site, device_type=dt, role=wdm_roles["wdm-mux"])
+
+        victim = FrontPort.objects.get(device=device, name="SPLIT-IN")
+        PortMapping.objects.filter(front_port=victim).delete()
+        victim.delete()
+
+        _repair_missing_ports(device)
+
+        recreated = FrontPort.objects.get(device=device, name="SPLIT-IN")
+        mappings = PortMapping.objects.filter(front_port=recreated)
+        assert mappings.count() == 2
+        assert set(mappings.values_list("rear_port__name", flat=True)) == {"OUT-A", "OUT-B"}
