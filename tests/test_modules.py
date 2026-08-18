@@ -1,7 +1,17 @@
 """Module-scoped overlay: profile anchors, per-module uniqueness, consistency rules."""
 
 import pytest
-from dcim.models import Device, DeviceType, Module, ModuleBay, ModuleType, RearPort, RearPortTemplate
+from dcim.models import (
+    Device,
+    DeviceType,
+    FrontPortTemplate,
+    Module,
+    ModuleBay,
+    ModuleType,
+    RearPort,
+    RearPortTemplate,
+)
+from dcim.models.device_component_templates import PortTemplateMapping
 from django.core.exceptions import ValidationError
 
 from netbox_wdm.choices import (
@@ -13,6 +23,7 @@ from netbox_wdm.choices import (
 )
 from netbox_wdm.models import (
     WdmChannel,
+    WdmChannelPlan,
     WdmLinePort,
     WdmLinePortPlan,
     WdmNode,
@@ -27,6 +38,7 @@ from netbox_wdm.testing import (
     create_roadm_2d_type,
     create_sf_mux,
 )
+from netbox_wdm.wdm_constants import DWDM_100GHZ_CHANNELS
 
 pytestmark = pytest.mark.django_db
 
@@ -449,6 +461,87 @@ class TestModularTracing:
         assert far.module == hub.modules["MUX2"]
 
 
+def _create_roadm_cassette_module_type(manufacturer, num_channels=2):
+    """Small ROADM-profile cassette ModuleType: ADD/DROP front ports, LINE-{dir}-TX/RX rear ports.
+
+    Mirrors `create_cwdm_cassette_module_type`'s {module}-tokenized template pattern but
+    scaled down (2 channels, one direction wired to PortTemplateMappings) since this is
+    only used to exercise the ROADM side of a mixed-group chassis in tests.
+    """
+    mt, _ = ModuleType.objects.get_or_create(manufacturer=manufacturer, model=f"ROADM-CASSETTE-{num_channels}CH")
+
+    line_east_tx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} LINE-EAST-TX", defaults={"type": "lc-apc", "positions": num_channels}
+    )
+    line_east_rx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} LINE-EAST-RX", defaults={"type": "lc-apc", "positions": num_channels}
+    )
+    line_west_tx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} LINE-WEST-TX", defaults={"type": "lc-apc", "positions": num_channels}
+    )
+    line_west_rx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} LINE-WEST-RX", defaults={"type": "lc-apc", "positions": num_channels}
+    )
+
+    add_fps, drop_fps = [], []
+    for i in range(1, num_channels + 1):
+        fp_add, _ = FrontPortTemplate.objects.get_or_create(
+            module_type=mt, name=f"{{module}} ADD-{i:02d}", defaults={"type": "lc-upc"}
+        )
+        fp_drop, _ = FrontPortTemplate.objects.get_or_create(
+            module_type=mt, name=f"{{module}} DROP-{i:02d}", defaults={"type": "lc-upc"}
+        )
+        add_fps.append(fp_add)
+        drop_fps.append(fp_drop)
+
+    for pos_idx, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True), start=1):
+        PortTemplateMapping.objects.get_or_create(
+            module_type=mt,
+            front_port=fp_add,
+            rear_port=line_east_tx,
+            defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+        PortTemplateMapping.objects.get_or_create(
+            module_type=mt,
+            front_port=fp_drop,
+            rear_port=line_east_rx,
+            defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+
+    profile, _ = WdmProfile.objects.get_or_create(
+        module_type=mt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.ROADM,
+            "grid": WdmGridChoices.DWDM_100GHZ,
+            "fiber_type": WdmFiberTypeChoices.DUPLEX,
+        },
+    )
+    for i, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True)):
+        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_add,
+                "demux_front_port_template": fp_drop,
+            },
+        )
+    for rpt, direction, role in (
+        (line_east_tx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.TX),
+        (line_east_rx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.RX),
+        (line_west_tx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.TX),
+        (line_west_rx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.RX),
+    ):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": direction, "role": role},
+        )
+    return mt
+
+
 class TestModularPortSync:
     def test_chassis_in_sync_after_populate(self, wdm_site, wdm_manufacturer, wdm_roles):
         from netbox_wdm.port_sync import check_port_sync
@@ -469,3 +562,59 @@ class TestModularPortSync:
         victim_ch = bundle.node.channels.filter(module=bundle.modules["MUX2"]).first()
         PortMapping.objects.filter(front_port=victim_ch.mux_front_port).delete()
         assert check_port_sync(bundle.node) is False
+
+    def test_mixed_fixed_and_roadm_module_chassis(self, wdm_site, wdm_manufacturer, wdm_roles):
+        """A chassis mixing a fixed cassette module with a ROADM-profile module: each
+        group is judged by its own fixedness, and compute_sync_diff/apply_sync operate
+        correctly on module-scoped data (not just check_port_sync)."""
+        from dcim.models import PortMapping
+
+        from netbox_wdm.port_sync import apply_sync, check_port_sync, compute_sync_diff
+        from netbox_wdm.testing import create_cwdm_cassette_module_type
+
+        mt_fixed = create_cwdm_cassette_module_type(wdm_manufacturer)
+        mt_roadm = _create_roadm_cassette_module_type(wdm_manufacturer)
+
+        dt, _ = DeviceType.objects.get_or_create(
+            manufacturer=wdm_manufacturer,
+            slug="wdm-chassis-mixed",
+            defaults={"model": "WDM-CHASSIS-MIXED", "u_height": 1},
+        )
+        device = Device.objects.create(name="CHASSIS-MIXED", site=wdm_site, device_type=dt, role=wdm_roles["wdm-mux"])
+        bay_fixed = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
+        module_fixed = Module.objects.create(device=device, module_bay=bay_fixed, module_type=mt_fixed)
+        bay_roadm = ModuleBay.objects.create(device=device, name="ROADM1", position="ROADM1")
+        module_roadm = Module.objects.create(device=device, module_bay=bay_roadm, module_type=mt_roadm)
+
+        node = WdmNode.objects.create(device=device)
+        if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+            node.channels.all().delete()
+            node.line_ports.all().delete()
+            node._auto_populate()
+
+        # a. each group (fixed cassette, ROADM module) is judged by its own fixedness,
+        # and both are in sync right after auto-populate
+        assert node.channels.filter(module=module_fixed).count() == 8
+        assert node.channels.filter(module=module_roadm).count() == 2
+        assert check_port_sync(node) is True
+
+        # b. corrupt one PortMapping in the ROADM module's group only
+        roadm_ch = node.channels.filter(module=module_roadm).order_by("grid_position").first()
+        PortMapping.objects.filter(device=device, front_port_id=roadm_ch.mux_front_port_id).update(
+            rear_port_position=999
+        )
+        assert check_port_sync(node) is False
+
+        diff = compute_sync_diff(node)
+        # exactly the one corrupted mapping: the fixed cassette's group is untouched
+        assert diff["changes"]["port_mappings"]["delete"] == 1
+        assert diff["changes"]["port_mappings"]["create"] == 1
+
+        # c. apply_sync repairs the ROADM group via Phase 2 only (no ports are missing,
+        # so Phase 1 structural repair is a no-op) and the node is back in sync
+        result = apply_sync(node)
+        assert result["changes"]["port_mappings"]["delete"] == 1
+        assert result["changes"]["port_mappings"]["create"] == 1
+        assert result["changes"]["rear_ports"]["create"] == []
+        assert result["changes"]["front_ports"]["create"] == []
+        assert check_port_sync(node) is True
