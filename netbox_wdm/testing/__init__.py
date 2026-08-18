@@ -29,9 +29,9 @@ from .devices import (
 from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, mux_roadm_mux, sf_mux_pair
 
 __all__ = [
-    "ChassisBundle",
     "cable_duplex_through_pp_pair",
     "cable_through_pp_pair",
+    "ChassisBundle",
     "create_cwdm_cassette_module_type",
     "create_cwdm_mux_dx_type",
     "create_cwdm_mux_sf_type",
