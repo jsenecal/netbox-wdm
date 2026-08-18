@@ -2,6 +2,7 @@
 
 import pytest
 from dcim.models import Device, DeviceRole, DeviceType, FrontPort, Manufacturer, Module, ModuleBay, ModuleType, Site
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
 from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
@@ -199,6 +200,33 @@ class TestWdmChannel:
             grid_position=1,
         )
         assert "C21" in str(ch)
+
+    def test_module_scoped_channel_requires_effective_grid(self, device, manufacturer):
+        """A module-scoped channel needs a grid from somewhere: either its module's
+        ModuleType has a WdmProfile, or the node's own grid is set. Neither here, so
+        clean() must reject it instead of leaving a channel that 500s on render."""
+        node = WdmNode.objects.create(device=device)  # blank grid
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="No-Profile-MT")
+        bay = ModuleBay.objects.create(device=device, name="MB1")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel(wdm_node=node, module=module, grid_position=1)
+        with pytest.raises(ValidationError):
+            ch.full_clean()
+
+    def test_label_and_wavelength_degrade_when_grid_unresolvable(self, device, manufacturer):
+        """A pre-existing channel can end up with no resolvable grid (e.g. its
+        module's WdmProfile was deleted after the channel was created). label and
+        wavelength_nm must degrade to "" / None instead of raising KeyError, so the
+        row still renders."""
+        node = WdmNode.objects.create(device=device)  # blank grid
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="No-Profile-MT-2")
+        bay = ModuleBay.objects.create(device=device, name="MB2")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel(wdm_node=node, module=module, grid_position=1)
+
+        assert ch.label == ""
+        assert ch.wavelength_nm is None
+        assert str(ch)  # __str__ must not raise either
 
 
 @pytest.mark.django_db

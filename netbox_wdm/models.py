@@ -638,17 +638,31 @@ class WdmChannel(NetBoxModel):
 
     @property
     def label(self) -> str:
-        """ITU channel label derived from the effective grid and this channel's position."""
+        """ITU channel label derived from the effective grid and this channel's position.
+
+        Returns "" when the effective grid can't be resolved (e.g. a channel left
+        over after its module's ModuleType lost its WdmProfile) instead of raising,
+        so pre-existing bad rows still render rather than 500ing.
+        """
         from .wdm_constants import get_channel_info
 
-        return get_channel_info(self.effective_grid, self.grid_position)[0]
+        try:
+            return get_channel_info(self.effective_grid, self.grid_position)[0]
+        except KeyError:
+            return ""
 
     @property
-    def wavelength_nm(self) -> Decimal:
-        """Wavelength in nm derived from the effective grid and this channel's position."""
+    def wavelength_nm(self) -> Decimal | None:
+        """Wavelength in nm derived from the effective grid and this channel's position.
+
+        Returns None when the effective grid can't be resolved, mirroring `label`.
+        """
         from .wdm_constants import get_channel_info
 
-        return get_channel_info(self.effective_grid, self.grid_position)[1]
+        try:
+            return get_channel_info(self.effective_grid, self.grid_position)[1]
+        except KeyError:
+            return None
 
     def __str__(self) -> str:
         return f"{self.label} ({self.wavelength_nm}nm)"
@@ -674,7 +688,15 @@ class WdmChannel(NetBoxModel):
         self._check_fixed_fields()
         if self.module_id and self.module.device_id != self.wdm_node.device_id:
             raise ValidationError({"module": _("Module belongs to a different device than the WDM node.")})
-        if not self.module_id and not self.wdm_node.grid:
+        if not self.effective_grid:
+            if self.module_id:
+                raise ValidationError(
+                    _(
+                        "This channel's module has no WDM profile grid, and the node's "
+                        "grid is not set. Set a WdmProfile grid on the module's ModuleType "
+                        "or set the node's grid."
+                    )
+                )
             raise ValidationError(_("Channels without a module require the node's grid to be set."))
         for field in ("mux_front_port", "demux_front_port"):
             fp = getattr(self, field)

@@ -286,17 +286,16 @@ class TestModularAutoPopulate:
 
 
 class TestModuleLifecycleSignals:
-    def test_installing_module_populates_channels(self, wdm_site, wdm_manufacturer, wdm_roles):
+    def test_installing_module_populates_channels(
+        self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks
+    ):
         from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
 
         mt = create_cwdm_cassette_module_type(wdm_manufacturer)
         bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-SIG", mt, bays=("MUX1",))
         bay = ModuleBay.objects.create(device=bundle.device, name="MUX2", position="MUX2")
-        new_module = Module.objects.create(device=bundle.device, module_bay=bay, module_type=mt)
-        # transaction test mode: on_commit callbacks fire at outer commit; run the populate
-        # directly if the signal deferred it (mirrors the builder repair pattern)
-        if not bundle.node.channels.filter(module=new_module).exists():
-            bundle.node.populate_module(new_module)
+        with django_capture_on_commit_callbacks(execute=True):
+            new_module = Module.objects.create(device=bundle.device, module_bay=bay, module_type=mt)
         assert bundle.node.channels.filter(module=new_module).count() == 8
         assert bundle.node.line_ports.filter(module=new_module).count() == 2
 
@@ -542,6 +541,34 @@ def _create_roadm_cassette_module_type(manufacturer, num_channels=2):
     return mt
 
 
+@pytest.fixture
+def mixed_chassis(wdm_site, wdm_manufacturer, wdm_roles):
+    """Chassis mixing a fixed cassette module (MUX1) with a ROADM-profile module (ROADM1)."""
+    from netbox_wdm.testing import create_cwdm_cassette_module_type
+
+    mt_fixed = create_cwdm_cassette_module_type(wdm_manufacturer)
+    mt_roadm = _create_roadm_cassette_module_type(wdm_manufacturer)
+
+    dt, _ = DeviceType.objects.get_or_create(
+        manufacturer=wdm_manufacturer,
+        slug="wdm-chassis-mixed",
+        defaults={"model": "WDM-CHASSIS-MIXED", "u_height": 1},
+    )
+    device = Device.objects.create(name="CHASSIS-MIXED", site=wdm_site, device_type=dt, role=wdm_roles["wdm-mux"])
+    bay_fixed = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
+    module_fixed = Module.objects.create(device=device, module_bay=bay_fixed, module_type=mt_fixed)
+    bay_roadm = ModuleBay.objects.create(device=device, name="ROADM1", position="ROADM1")
+    module_roadm = Module.objects.create(device=device, module_bay=bay_roadm, module_type=mt_roadm)
+
+    node = WdmNode.objects.create(device=device)
+    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+        node.channels.all().delete()
+        node.line_ports.all().delete()
+        node._auto_populate()
+
+    return node, module_fixed, module_roadm
+
+
 class TestModularPortSync:
     def test_chassis_in_sync_after_populate(self, wdm_site, wdm_manufacturer, wdm_roles):
         from netbox_wdm.port_sync import check_port_sync
@@ -563,34 +590,16 @@ class TestModularPortSync:
         PortMapping.objects.filter(front_port=victim_ch.mux_front_port).delete()
         assert check_port_sync(bundle.node) is False
 
-    def test_mixed_fixed_and_roadm_module_chassis(self, wdm_site, wdm_manufacturer, wdm_roles):
+    def test_mixed_fixed_and_roadm_module_chassis(self, mixed_chassis):
         """A chassis mixing a fixed cassette module with a ROADM-profile module: each
         group is judged by its own fixedness, and compute_sync_diff/apply_sync operate
         correctly on module-scoped data (not just check_port_sync)."""
         from dcim.models import PortMapping
 
         from netbox_wdm.port_sync import apply_sync, check_port_sync, compute_sync_diff
-        from netbox_wdm.testing import create_cwdm_cassette_module_type
 
-        mt_fixed = create_cwdm_cassette_module_type(wdm_manufacturer)
-        mt_roadm = _create_roadm_cassette_module_type(wdm_manufacturer)
-
-        dt, _ = DeviceType.objects.get_or_create(
-            manufacturer=wdm_manufacturer,
-            slug="wdm-chassis-mixed",
-            defaults={"model": "WDM-CHASSIS-MIXED", "u_height": 1},
-        )
-        device = Device.objects.create(name="CHASSIS-MIXED", site=wdm_site, device_type=dt, role=wdm_roles["wdm-mux"])
-        bay_fixed = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
-        module_fixed = Module.objects.create(device=device, module_bay=bay_fixed, module_type=mt_fixed)
-        bay_roadm = ModuleBay.objects.create(device=device, name="ROADM1", position="ROADM1")
-        module_roadm = Module.objects.create(device=device, module_bay=bay_roadm, module_type=mt_roadm)
-
-        node = WdmNode.objects.create(device=device)
-        if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-            node.channels.all().delete()
-            node.line_ports.all().delete()
-            node._auto_populate()
+        node, module_fixed, module_roadm = mixed_chassis
+        device = node.device
 
         # a. each group (fixed cassette, ROADM module) is judged by its own fixedness,
         # and both are in sync right after auto-populate
@@ -618,6 +627,43 @@ class TestModularPortSync:
         assert result["changes"]["rear_ports"]["create"] == []
         assert result["changes"]["front_ports"]["create"] == []
         assert check_port_sync(node) is True
+
+    def test_apply_mapping_scoped_to_channel_module(self, mixed_chassis):
+        """_apply_mapping's create/delete loops must scope to the changed channel's
+        own module's line ports. Before the fix, both loops iterated every line port
+        on the node, so remapping a ROADM channel's front port also wrote garbage
+        PortMappings against the fixed cassette's COM rear ports.
+
+        Narrows the ROADM module's own line-port group down to its single EAST/TX
+        port first: fanning a front port out across >1 line port of the SAME module
+        already collides on PortMapping's (front_port, front_port_position) uniqueness
+        (a pre-existing, unrelated gap in _apply_mapping's role handling), which would
+        otherwise mask the module-scoping assertion this test exists to make.
+        """
+        from dcim.models import FrontPort, PortMapping
+
+        from netbox_wdm.api.views import _apply_mapping
+
+        node, module_fixed, module_roadm = mixed_chassis
+        fixed_rear_port_ids = set(node.line_ports.filter(module=module_fixed).values_list("rear_port_id", flat=True))
+        node.line_ports.filter(module=module_roadm).exclude(
+            direction=WdmLineDirectionChoices.EAST, role=WdmLineRoleChoices.TX
+        ).delete()
+        roadm_rear_port_ids = set(node.line_ports.filter(module=module_roadm).values_list("rear_port_id", flat=True))
+        assert fixed_rear_port_ids and roadm_rear_port_ids
+
+        roadm_ch = node.channels.filter(module=module_roadm).order_by("grid_position").first()
+        spare_fp = FrontPort.objects.create(
+            device=node.device, module=module_roadm, name="ROADM1 ADD-SPARE", type="lc-upc"
+        )
+
+        _apply_mapping(node, {roadm_ch.pk: {"mux": spare_fp.pk, "demux": None}})
+
+        created = PortMapping.objects.filter(front_port=spare_fp)
+        assert created.exists()
+        # only the ROADM module's own rear ports were written to
+        assert set(created.values_list("rear_port_id", flat=True)) <= roadm_rear_port_ids
+        assert not created.filter(rear_port_id__in=fixed_rear_port_ids).exists()
 
 
 class TestStructuralRepair:

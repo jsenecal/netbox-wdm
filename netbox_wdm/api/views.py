@@ -69,6 +69,14 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
     """
     channels = {ch.pk: ch for ch in wdm_node.channels.all()}
     line_ports = list(wdm_node.line_ports.select_related("rear_port").all())
+    # Group line ports by module so create/delete only ever touch the rear ports of
+    # the channel's own module (or the device-level group, for module=None). A
+    # mixed chassis has independent line-port groups per module/cassette; writing
+    # against every line port on the node cross-contaminates other groups' rear
+    # ports with garbage PortMappings.
+    line_ports_by_module: dict[int | None, list[Any]] = {}
+    for lp in line_ports:
+        line_ports_by_module.setdefault(lp.module_id, []).append(lp)
 
     added = removed = changed = 0
     channels_to_update = []
@@ -80,6 +88,8 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
         if ch is None:
             continue
 
+        module_line_ports = line_ports_by_module.get(ch.module_id, [])
+
         desired_mux = ports.get("mux")
         desired_demux = ports.get("demux")
         current_mux = ch.mux_front_port_id
@@ -90,11 +100,11 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
         for current_fp_pk in (current_mux, current_demux):
             if current_fp_pk is not None:
-                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position))
+                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position, module_line_ports))
 
         for desired_fp_pk in (desired_mux, desired_demux):
             if desired_fp_pk is not None:
-                for tp in line_ports:
+                for tp in module_line_ports:
                     new_mappings_to_create.append(
                         PortMapping(
                             device=wdm_node.device,
@@ -123,8 +133,8 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
     if old_fp_ids_to_delete:
         delete_q = Q()
-        for fp_id, grid_pos in old_fp_ids_to_delete:
-            for tp in line_ports:
+        for fp_id, grid_pos, module_line_ports in old_fp_ids_to_delete:
+            for tp in module_line_ports:
                 delete_q |= Q(front_port_id=fp_id, rear_port=tp.rear_port, rear_port_position=grid_pos)
         if delete_q:
             PortMapping.objects.filter(delete_q).delete()

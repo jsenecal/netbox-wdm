@@ -186,6 +186,10 @@ class WdmLinePortForm(NetBoxModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # Only scoped when editing: the node isn't known client-side on the add form,
+        # so an unscoped queryset there relies on model clean() as the backstop.
+        if self.instance.pk and self.instance.wdm_node_id:
+            self.fields["module"].queryset = Module.objects.filter(device=self.instance.wdm_node.device)
         if self.instance.pk and self.instance.is_fixed:
             for field_name in WdmLinePort.FIXED_FIELDS:
                 if field_name in self.fields:
@@ -230,6 +234,10 @@ class WdmChannelForm(NetBoxModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # Only scoped when editing: the node isn't known client-side on the add form,
+        # so an unscoped queryset there relies on model clean() as the backstop.
+        if self.instance.pk and self.instance.wdm_node_id:
+            self.fields["module"].queryset = Module.objects.filter(device=self.instance.wdm_node.device)
         if self.instance.pk and self.instance.is_fixed:
             for field_name in ("mux_front_port", "demux_front_port"):
                 if field_name in self.fields:
