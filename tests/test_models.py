@@ -3,7 +3,6 @@
 import pytest
 from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
 from django.db import IntegrityError
-from django.db.models import ProtectedError
 
 from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
 from netbox_wdm.models import (
@@ -282,7 +281,10 @@ class TestWdmWavelengthPath:
         )
         assert "1560.61" in str(path)
 
-    def test_channel_protect(self, device):
+    def test_channel_delete_cascades_path_entries(self, device):
+        """Wavelength paths are derived data, not a source of truth: deleting a
+        channel that is part of one must not be blocked, it should simply take
+        its path-channel entry down with it."""
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
@@ -293,8 +295,8 @@ class TestWdmWavelengthPath:
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
         WdmWavelengthPathChannel.objects.create(path=path, channel=ch, sequence=1)
-        with pytest.raises(ProtectedError):
-            ch.delete()
+        ch.delete()
+        assert not WdmWavelengthPathChannel.objects.filter(path=path).exists()
 
     def test_unique_path_sequence(self, device):
         node = WdmNode.objects.create(

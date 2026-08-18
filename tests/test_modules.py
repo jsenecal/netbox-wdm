@@ -11,7 +11,15 @@ from netbox_wdm.choices import (
     WdmLineRoleChoices,
     WdmNodeTypeChoices,
 )
-from netbox_wdm.models import WdmChannel, WdmLinePort, WdmLinePortPlan, WdmNode, WdmProfile
+from netbox_wdm.models import (
+    WdmChannel,
+    WdmLinePort,
+    WdmLinePortPlan,
+    WdmNode,
+    WdmProfile,
+    WdmWavelengthPath,
+    WdmWavelengthPathChannel,
+)
 from netbox_wdm.testing import (
     create_cwdm_mux_dx_type,
     create_cwdm_mux_sf_type,
@@ -295,3 +303,59 @@ class TestModuleLifecycleSignals:
         assert not node.line_ports.filter(module_id=victim_pk).exists()
         # the surviving module is untouched
         assert node.channels.filter(module=bundle.modules["MUX1"]).count() == 8
+
+    def test_removing_pathed_module_cascades_wavelength_path(
+        self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks
+    ):
+        """A module whose channels are part of a live wavelength path must still be
+        removable: wavelength paths are derived data, not something a channel
+        deletion should be blocked by (per the module-scoped-wdm design ruling)."""
+        from netbox_wdm.testing import (
+            cable_duplex_through_pp_pair,
+            create_cwdm_cassette_module_type,
+            create_fiber_pp_type,
+            create_modular_chassis,
+            create_patch_panel,
+        )
+        from netbox_wdm.trace import rebuild_wavelength_paths_for_node
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle_a = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-PATH-A", mt, bays=("MUX1",))
+        bundle_b = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-PATH-B", mt, bays=("MUX1",))
+        dt_pp = create_fiber_pp_type(wdm_manufacturer)
+        pp_a = create_patch_panel(wdm_site, dt_pp, wdm_roles["fiber-pp"], "PP-PATH-A")
+        pp_b = create_patch_panel(wdm_site, dt_pp, wdm_roles["fiber-pp"], "PP-PATH-B")
+
+        node_a = bundle_a.node
+        node_b = bundle_b.node
+        victim = bundle_a.modules["MUX1"]
+        survivor = bundle_b.modules["MUX1"]
+
+        cable_duplex_through_pp_pair(
+            device_a_tx_rp=RearPort.objects.get(device=bundle_a.device, name="MUX1 COM-TX"),
+            device_a_rx_rp=RearPort.objects.get(device=bundle_a.device, name="MUX1 COM-RX"),
+            pp_a_device=pp_a,
+            pp_b_device=pp_b,
+            device_b_rx_rp=RearPort.objects.get(device=bundle_b.device, name="MUX1 COM-RX"),
+            device_b_tx_rp=RearPort.objects.get(device=bundle_b.device, name="MUX1 COM-TX"),
+            label_prefix="PATH",
+        )
+        rebuild_wavelength_paths_for_node(node_a)
+        rebuild_wavelength_paths_for_node(node_b)
+
+        assert WdmWavelengthPath.objects.filter(path_channels__channel__module=victim).exists()
+        assert WdmWavelengthPath.objects.filter(path_channels__channel__module=survivor).exists()
+
+        victim_pk = victim.pk
+        with django_capture_on_commit_callbacks(execute=True):
+            victim.delete()  # must not raise ProtectedError from WdmWavelengthPathChannel.channel
+
+        assert not WdmChannel.objects.filter(module_id=victim_pk).exists()
+        assert not WdmLinePort.objects.filter(module_id=victim_pk).exists()
+        assert not WdmWavelengthPathChannel.objects.filter(channel__module_id=victim_pk).exists()
+        # no dangling one-entry (broken) paths left over from the half that cascaded away
+        assert not any(path.path_channels.count() < 2 for path in WdmWavelengthPath.objects.all())
+        # the far node's channels are back to having no path entries at all -- the
+        # only path they were part of was pruned along with the victim's half
+        for channel in WdmChannel.objects.filter(module=survivor):
+            assert not channel.wavelength_path_entries.exists()

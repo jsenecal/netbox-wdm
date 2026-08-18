@@ -179,16 +179,40 @@ def _module_post_save(sender: type, instance: Any, created: bool, **kwargs: Any)
     transaction.on_commit(lambda: node.populate_module(instance))
 
 
-def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Remove a module's WDM objects and refresh derived node state before it is deleted.
+def _cleanup_after_module_delete(nodes: set[Any], affected_path_ids: set[int]) -> None:
+    """Prune broken wavelength paths and retrace affected nodes after a module's rows cascade away.
 
-    Runs synchronously (not on_commit): plain FK cascades from dcim.Module already
-    remove the module's WdmChannel and WdmLinePort rows, but that bypasses our
-    wavelength-path bookkeeping (dropping now-empty WdmWavelengthPath rows) and the
-    node's rebuild/port-sync recheck, so this handler does the cleanup explicitly
-    ahead of the cascade.
+    Runs after the module (and its channels, line ports, and wavelength-path
+    entries) have already been deleted via plain FK cascades. A path that lost
+    some but not all of its channels is left partial (fewer than 2 entries) and
+    no longer means anything, so it and any leftover entries are dropped here;
+    surviving nodes are then retraced and rechecked for port sync.
     """
-    from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
+    from .models import WdmWavelengthPath
+
+    for path in WdmWavelengthPath.objects.filter(pk__in=affected_path_ids):
+        if path.path_channels.count() < 2:
+            path.path_channels.all().delete()
+            path.delete()
+
+    _rebuild_nodes(nodes)
+    _recheck_port_sync(nodes)
+
+
+def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Capture WDM nodes affected by a module's removal, then schedule cleanup for after it cascades.
+
+    Deleting the module cascades (plain FK on_delete=CASCADE) through its
+    WdmChannel and WdmLinePort rows, and further through any WdmWavelengthPathChannel
+    entries referencing those channels -- wavelength paths are derived data, not
+    source of truth, so none of that needs protecting. This handler only captures,
+    before the cascade runs, which nodes are affected (the module's own node, plus
+    any far-end node sharing a wavelength path with one of the module's channels)
+    and which paths those channels belonged to, then defers the actual pruning and
+    retrace to `_cleanup_after_module_delete` once the transaction commits (i.e.
+    once the cascade has already happened).
+    """
+    from .models import WdmChannel, WdmNode, WdmWavelengthPathChannel
 
     try:
         node = WdmNode.objects.get(device=instance.device)
@@ -196,13 +220,22 @@ def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
         return
 
     channel_ids = list(WdmChannel.objects.filter(module=instance).values_list("pk", flat=True))
+    nodes = {node}
+    affected_path_ids: set[int] = set()
+
     if channel_ids:
-        WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids).delete()
-        WdmWavelengthPath.objects.filter(path_channels__isnull=True).delete()
-        WdmChannel.objects.filter(pk__in=channel_ids).delete()
-    WdmLinePort.objects.filter(module=instance).delete()
-    _rebuild_nodes({node})
-    _recheck_port_sync({node})
+        entries = WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
+        affected_path_ids = set(entries.values_list("path_id", flat=True))
+        if affected_path_ids:
+            far_node_pks = (
+                WdmWavelengthPathChannel.objects.filter(path_id__in=affected_path_ids)
+                .exclude(channel_id__in=channel_ids)
+                .values_list("channel__wdm_node", flat=True)
+                .distinct()
+            )
+            nodes |= set(WdmNode.objects.filter(pk__in=far_node_pks))
+
+    transaction.on_commit(lambda: _cleanup_after_module_delete(nodes, affected_path_ids))
 
 
 def connect_signals() -> None:

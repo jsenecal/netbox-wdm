@@ -749,7 +749,16 @@ class WdmWavelengthPathChannel(models.Model):
     )
     channel = models.ForeignKey(
         to="netbox_wdm.WdmChannel",
-        on_delete=models.PROTECT,
+        # CASCADE, not PROTECT: wavelength paths are derived data retraced from the
+        # cable plant and channel plans, not a source of truth to protect a channel
+        # deletion against. PROTECT here also made module removal impossible: a
+        # module's channels cascade from dcim.Module (WdmChannel.module is CASCADE),
+        # and Django's delete collector evaluates this reverse relation while still
+        # walking that cascade, before any pre_delete signal runs -- so no signal
+        # could ever clear it in time. The module pre_delete handler now prunes
+        # left-over broken paths and retraces affected nodes after the cascade
+        # completes instead.
+        on_delete=models.CASCADE,
         related_name="wavelength_path_entries",
         verbose_name=_("channel"),
     )
