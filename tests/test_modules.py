@@ -618,3 +618,33 @@ class TestModularPortSync:
         assert result["changes"]["rear_ports"]["create"] == []
         assert result["changes"]["front_ports"]["create"] == []
         assert check_port_sync(node) is True
+
+
+class TestStructuralRepair:
+    def test_apply_sync_recreates_deleted_module_port_with_mapping(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from dcim.models import FrontPort, PortMapping
+
+        from netbox_wdm.port_sync import apply_sync
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-FIX", mt, bays=("MUX1",))
+        victim = FrontPort.objects.get(module=bundle.modules["MUX1"], name="MUX1 CH1-MUX")
+        victim.delete()
+
+        apply_sync(bundle.node)
+
+        recreated = FrontPort.objects.get(module=bundle.modules["MUX1"], name="MUX1 CH1-MUX")
+        assert PortMapping.objects.filter(front_port=recreated).exists()
+
+    def test_apply_sync_recreates_deleted_line_port_from_plan(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.port_sync import apply_sync
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-LP", mt, bays=("MUX1",))
+        bundle.node.line_ports.filter(role="tx").delete()
+
+        apply_sync(bundle.node)
+
+        assert bundle.node.line_ports.filter(module=bundle.modules["MUX1"], role="tx").exists()

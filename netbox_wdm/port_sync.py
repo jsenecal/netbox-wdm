@@ -231,6 +231,148 @@ def _compute_roadm_position_errors(node: WdmNode) -> tuple[set[tuple[int, int, i
     return to_delete, to_recreate
 
 
+def _missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Dry run: rear/front port templates (device- and module-level) missing on device.
+
+    Shared by `_repair_missing_ports` (which creates the missing ports) and
+    `compute_sync_diff` (which only reports what would be created).
+    """
+    from dcim.models import FrontPort, FrontPortTemplate, Module, RearPort, RearPortTemplate
+
+    rear_missing: list[dict[str, Any]] = []
+    front_missing: list[dict[str, Any]] = []
+
+    targets: list[tuple[Any, Any, Any]] = [
+        (
+            RearPortTemplate.objects.filter(device_type=device.device_type),
+            FrontPortTemplate.objects.filter(device_type=device.device_type),
+            None,
+        )
+    ]
+    for module in Module.objects.filter(device=device).select_related("module_type", "module_bay"):
+        targets.append(
+            (
+                RearPortTemplate.objects.filter(module_type=module.module_type),
+                FrontPortTemplate.objects.filter(module_type=module.module_type),
+                module,
+            )
+        )
+
+    for rpts, fpts, module in targets:
+        existing_rp_names = set(RearPort.objects.filter(device=device, module=module).values_list("name", flat=True))
+        for rpt in rpts:
+            name = rpt.resolve_name(module=module) if module else rpt.name
+            if name not in existing_rp_names:
+                rear_missing.append({"name": name, "type": rpt.type, "positions": rpt.positions})
+
+        existing_fp_names = set(FrontPort.objects.filter(device=device, module=module).values_list("name", flat=True))
+        for fpt in fpts:
+            name = fpt.resolve_name(module=module) if module else fpt.name
+            if name not in existing_fp_names:
+                front_missing.append({"name": name, "type": fpt.type})
+
+    return rear_missing, front_missing
+
+
+def _repair_missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Recreate device- and module-level ports (and their PortMappings) missing from templates."""
+    from collections import defaultdict
+
+    from dcim.models import FrontPort, FrontPortTemplate, Module, RearPort, RearPortTemplate
+    from dcim.models.device_component_templates import PortTemplateMapping
+
+    rear_created: list[dict[str, Any]] = []
+    front_created: list[dict[str, Any]] = []
+
+    missing_rear, missing_front = _missing_ports(device)
+    missing_rear_names = {m["name"] for m in missing_rear}
+    missing_front_names = {m["name"] for m in missing_front}
+    if not missing_rear_names and not missing_front_names:
+        return rear_created, front_created
+
+    targets: list[tuple[Any, Any, Any, Any]] = [
+        (
+            RearPortTemplate.objects.filter(device_type=device.device_type),
+            FrontPortTemplate.objects.filter(device_type=device.device_type),
+            PortTemplateMapping.objects.filter(device_type=device.device_type).select_related("rear_port"),
+            None,
+        )
+    ]
+    for module in Module.objects.filter(device=device).select_related("module_type", "module_bay"):
+        targets.append(
+            (
+                RearPortTemplate.objects.filter(module_type=module.module_type),
+                FrontPortTemplate.objects.filter(module_type=module.module_type),
+                PortTemplateMapping.objects.filter(module_type=module.module_type).select_related("rear_port"),
+                module,
+            )
+        )
+
+    for rpts, fpts, ptms, module in targets:
+        existing_rp = {rp.name: rp for rp in RearPort.objects.filter(device=device, module=module)}
+        for rpt in rpts:
+            name = rpt.resolve_name(module=module) if module else rpt.name
+            if name not in missing_rear_names or name in existing_rp:
+                continue
+            rp = RearPort.objects.create(
+                device=device, module=module, name=name, type=rpt.type, positions=rpt.positions
+            )
+            existing_rp[name] = rp
+            rear_created.append({"name": name, "type": rpt.type, "positions": rpt.positions})
+
+        ptms_by_fpt: dict[int, list[Any]] = defaultdict(list)
+        for ptm in ptms:
+            ptms_by_fpt[ptm.front_port_id].append(ptm)
+
+        existing_fp = set(FrontPort.objects.filter(device=device, module=module).values_list("name", flat=True))
+        for fpt in fpts:
+            name = fpt.resolve_name(module=module) if module else fpt.name
+            if name not in missing_front_names or name in existing_fp:
+                continue
+            fp = FrontPort.objects.create(device=device, module=module, name=name, type=fpt.type)
+            for ptm in ptms_by_fpt.get(fpt.pk, []):
+                rp_name = ptm.rear_port.resolve_name(module=module) if module else ptm.rear_port.name
+                rp = existing_rp.get(rp_name)
+                if rp:
+                    PortMapping.objects.create(
+                        device=device,
+                        front_port=fp,
+                        rear_port=rp,
+                        front_port_position=ptm.front_port_position,
+                        rear_port_position=ptm.rear_port_position,
+                    )
+            front_created.append({"name": name, "type": fpt.type})
+
+    return rear_created, front_created
+
+
+def _missing_line_ports(node: WdmNode) -> list[dict[str, Any]]:
+    """Line ports the profiles' plans prescribe but the node is missing (dry run of the repair)."""
+    from dcim.models import Module, RearPort
+
+    from .models import WdmLinePort, WdmProfile, _module_wdm_profile
+
+    missing: list[dict[str, Any]] = []
+
+    def check(profile: Any, module: Any) -> None:
+        if profile is None:
+            return
+        rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(device=node.device, module=module)}
+        for lpp in profile.line_port_plans.select_related("rear_port_template"):
+            name = lpp.rear_port_template.resolve_name(module=module) if module else lpp.rear_port_template.name
+            rp = rp_by_name.get(name)
+            if rp and not WdmLinePort.objects.filter(wdm_node=node, rear_port=rp).exists():
+                missing.append({"rear_port_name": name, "direction": lpp.direction, "role": lpp.role})
+
+    try:
+        check(node.device.device_type.wdm_profile, None)
+    except WdmProfile.DoesNotExist:
+        pass
+    for module in Module.objects.filter(device=node.device).select_related("module_type", "module_bay"):
+        check(_module_wdm_profile(module), module)
+    return missing
+
+
 def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
     """Compute the full diff between expected and actual port state, per group.
 
@@ -238,8 +380,6 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
     that group's own line ports. ROADM groups: only detect wrong-position
     mappings (direction assignment is dynamic). A node's groups may mix both.
     """
-    from dcim.models import FrontPort, FrontPortTemplate, RearPortTemplate
-
     expected = _build_expected_mappings(node)
     actual = _build_actual_mappings(node)
     to_create = expected - actual
@@ -248,20 +388,8 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
     to_delete |= roadm_to_delete
     to_create |= roadm_to_recreate
 
-    # Structural check: find expected ports from DeviceType template missing on device
-    device_type = node.device.device_type
-    front_ports_to_create: list[dict[str, Any]] = []
-    rear_ports_to_create: list[dict[str, Any]] = []
-
-    existing_rp_names = set(node.device.rearports.values_list("name", flat=True))
-    for rpt in RearPortTemplate.objects.filter(device_type=device_type):
-        if rpt.name not in existing_rp_names:
-            rear_ports_to_create.append({"name": rpt.name, "type": rpt.type, "positions": rpt.positions})
-
-    existing_fp_names = set(FrontPort.objects.filter(device=node.device).values_list("name", flat=True))
-    for fpt in FrontPortTemplate.objects.filter(device_type=device_type):
-        if fpt.name not in existing_fp_names:
-            front_ports_to_create.append({"name": fpt.name, "type": fpt.type})
+    # Structural check: dry-run of the device- and module-level template repair.
+    rear_ports_to_create, front_ports_to_create = _missing_ports(node.device)
 
     # Warnings: count cables connected to line port rear ports
     from dcim.models import CableTermination, RearPort
@@ -296,6 +424,7 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
         "changes": {
             "rear_ports": {"create": rear_ports_to_create},
             "front_ports": {"create": front_ports_to_create},
+            "line_ports": {"create": _missing_line_ports(node)},
             "port_mappings": {"delete": len(to_delete), "create": len(to_create)},
         },
     }
@@ -304,43 +433,22 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
 def apply_sync(node: WdmNode) -> dict[str, Any]:
     """Apply port sync: structural repair then PortMapping reset.
 
-    Phase 1: Create missing FrontPorts/RearPorts from DeviceType template.
+    Phase 1: Create missing FrontPorts/RearPorts (device- and module-level) from
+    templates, with their PortMappings, then re-run the idempotent profile
+    auto-populate so any channels/line ports pointing at the recreated ports are
+    filled back in.
     Phase 2: Delete all WDM-related PortMappings, recreate from channel grid.
     """
-    from dcim.models import FrontPort, FrontPortTemplate, RearPort, RearPortTemplate
     from django.db import transaction
 
     with transaction.atomic():
         device = node.device
-        device_type = device.device_type
 
-        # Phase 1: Create missing RearPorts
-        existing_rp_names = set(device.rearports.values_list("name", flat=True))
-        rear_ports_created: list[dict[str, Any]] = []
-        for rpt in RearPortTemplate.objects.filter(device_type=device_type):
-            if rpt.name not in existing_rp_names:
-                RearPort.objects.create(device=device, name=rpt.name, type=rpt.type, positions=rpt.positions)
-                rear_ports_created.append({"name": rpt.name, "type": rpt.type, "positions": rpt.positions})
-
-        # Phase 1: Create missing FrontPorts
-        existing_fp_names = set(FrontPort.objects.filter(device=device).values_list("name", flat=True))
-        front_ports_created: list[dict[str, Any]] = []
-        for fpt in FrontPortTemplate.objects.filter(device_type=device_type):
-            if fpt.name not in existing_fp_names:
-                from dcim.models.device_component_templates import PortTemplateMapping
-
-                ptm = PortTemplateMapping.objects.filter(device_type=device_type, front_port=fpt).first()
-                if ptm:
-                    rp = RearPort.objects.filter(device=device, name=ptm.rear_port.name).first()
-                    if rp:
-                        FrontPort.objects.create(
-                            device=device,
-                            name=fpt.name,
-                            type=fpt.type,
-                            rear_port=rp,
-                            rear_port_position=ptm.rear_port_position,
-                        )
-                        front_ports_created.append({"name": fpt.name, "type": fpt.type})
+        # Phase 1: Create missing RearPorts/FrontPorts (device- and module-level)
+        # and their PortMappings, then recreate missing channels/line ports from
+        # profiles (idempotent -- get_or_create throughout).
+        rear_ports_created, front_ports_created = _repair_missing_ports(device)
+        node._auto_populate()
 
         # Phase 2: PortMapping repair, per group (fixed groups get a full reset,
         # ROADM groups only get their wrong-position mappings corrected)
