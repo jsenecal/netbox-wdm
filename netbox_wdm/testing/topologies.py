@@ -7,13 +7,15 @@ Topologies:
 1. duplex_mux_pair      - DX-MUX <-> PP pair <-> DX-MUX
 2. sf_mux_pair          - SF-MUX <-> PP pair <-> SF-MUX
 3. dwdm_mux_to_roadm   - DWDM-MUX <-> PP pair <-> ROADM
+4. mux_roadm_mux       - DX-MUX <-> PP pair <-> ROADM <-> PP pair <-> DX-MUX
+5. modular_chassis_span - 2-cassette chassis <-> PP pairs <-> 2 single-cassette chassis
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dcim.models import Cable, Device, DeviceRole, DeviceType, Site
+from dcim.models import Cable, Device, DeviceRole, DeviceType, ModuleType, Site
 
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
 from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
@@ -232,3 +234,46 @@ def mux_roadm_mux(
         patch_panels=[pp_ea, pp_eb, pp_wa, pp_wb],
         cables=list(east_cables) + list(west_cables),
     )
+
+
+def modular_chassis_span(
+    site: Site,
+    mt_cassette: ModuleType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    name_prefix: str = "",
+) -> Topology:
+    """A 2-cassette chassis linked to two single-cassette peers through PP pairs."""
+    from .devices import create_modular_chassis
+
+    p = f"{name_prefix}" if name_prefix else ""
+    hub = create_modular_chassis(site, roles["wdm-mux"], f"{p}CHASSIS-HUB", mt_cassette, bays=("MUX1", "MUX2"))
+    peer1 = create_modular_chassis(site, roles["wdm-mux"], f"{p}CHASSIS-P1", mt_cassette, bays=("MUX1",))
+    peer2 = create_modular_chassis(site, roles["wdm-mux"], f"{p}CHASSIS-P2", mt_cassette, bays=("MUX1",))
+
+    cables: list[Cable] = []
+    panels: list[Device] = []
+    for i, (bay, peer) in enumerate((("MUX1", peer1), ("MUX2", peer2)), start=1):
+        pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-M{i}A")
+        pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-M{i}B")
+        panels += [pp_a, pp_b]
+        cables += cable_duplex_through_pp_pair(
+            device_a_tx_rp=hub.node.line_ports.get(module=hub.modules[bay], role="tx").rear_port,
+            device_a_rx_rp=hub.node.line_ports.get(module=hub.modules[bay], role="rx").rear_port,
+            pp_a_device=pp_a,
+            pp_b_device=pp_b,
+            device_b_rx_rp=peer.node.line_ports.get(role="rx").rear_port,
+            device_b_tx_rp=peer.node.line_ports.get(role="tx").rear_port,
+            label_prefix=f"{p}MODSPAN{i}",
+        )
+
+    bundles = {
+        "hub": WdmDeviceBundle(device=hub.device, node=hub.node, line_ports={}, channels=list(hub.node.channels.all())),
+        "peer1": WdmDeviceBundle(
+            device=peer1.device, node=peer1.node, line_ports={}, channels=list(peer1.node.channels.all())
+        ),
+        "peer2": WdmDeviceBundle(
+            device=peer2.device, node=peer2.node, line_ports={}, channels=list(peer2.node.channels.all())
+        ),
+    }
+    return Topology(name=f"{p}modular-chassis-span", bundles=bundles, patch_panels=panels, cables=cables)

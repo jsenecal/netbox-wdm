@@ -14,6 +14,7 @@ nav = [
     { "DeviceType Setup" = "user/device-types.md" },
     { "WDM Profiles" = "user/wdm-profiles.md" },
     { "WDM Nodes" = "user/wdm-nodes.md" },
+    { "Modular Chassis" = "user/modular-chassis.md" },
     { "ITU Channel Plans" = "user/itu-grids.md" },
     { "Cabling and Topologies" = "user/cabling.md" },
     { "Wavelength Editor" = "user/wavelength-editor.md" },

@@ -26,7 +26,7 @@ from .devices import (
     create_roadm,
     create_sf_mux,
 )
-from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, mux_roadm_mux, sf_mux_pair
+from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, modular_chassis_span, mux_roadm_mux, sf_mux_pair
 
 __all__ = [
     "cable_duplex_through_pp_pair",
@@ -50,6 +50,7 @@ __all__ = [
     "create_site",
     "duplex_mux_pair",
     "dwdm_mux_to_roadm",
+    "modular_chassis_span",
     "mux_roadm_mux",
     "sf_mux_pair",
     "Topology",
