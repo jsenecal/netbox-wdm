@@ -17,6 +17,7 @@ class NetBoxWDMConfig(PluginConfig):
     base_url = "wdm"
     min_version = "4.6.6"
     default_settings = {}
+    graphql_schema = "graphql.schema.schema"
 
     def ready(self):
         super().ready()

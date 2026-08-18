@@ -5,6 +5,7 @@ from .types import (
     WdmChannelPlanType,
     WdmChannelType,
     WdmCircuitType,
+    WdmLinePortPlanType,
     WdmLinePortType,
     WdmNodeInstanceType,
     WdmProfileType,
@@ -24,6 +25,9 @@ class WdmQuery:
 
     wdm_line_port: WdmLinePortType = strawberry_django.field()
     wdm_line_port_list: list[WdmLinePortType] = strawberry_django.field()
+
+    wdm_line_port_plan: WdmLinePortPlanType = strawberry_django.field()
+    wdm_line_port_plan_list: list[WdmLinePortPlanType] = strawberry_django.field()
 
     wdm_channel: WdmChannelType = strawberry_django.field()
     wdm_channel_list: list[WdmChannelType] = strawberry_django.field()

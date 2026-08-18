@@ -1,6 +1,6 @@
 import strawberry_django
 
-from ..models import WdmChannel, WdmCircuit, WdmNode, WdmProfile
+from ..models import WdmChannel, WdmCircuit, WdmLinePortPlan, WdmNode, WdmProfile
 
 
 @strawberry_django.filters.filter_type(WdmProfile)
@@ -24,6 +24,7 @@ class WdmChannelFilter:
     wdm_node_id: int | None
     status: str | None
     grid_position: int | None
+    module_id: int | None
 
 
 @strawberry_django.filters.filter_type(WdmCircuit)
@@ -31,3 +32,11 @@ class WdmCircuitFilter:
     id: int | None
     name: str | None
     status: str | None
+
+
+@strawberry_django.filters.filter_type(WdmLinePortPlan)
+class WdmLinePortPlanFilter:
+    id: int | None
+    profile_id: int | None
+    direction: str | None
+    role: str | None
