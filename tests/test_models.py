@@ -1,7 +1,7 @@
 """Tests for WDM models."""
 
 import pytest
-from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+from dcim.models import Device, DeviceRole, DeviceType, FrontPort, Manufacturer, Module, ModuleBay, ModuleType, Site
 from django.db import IntegrityError
 
 from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
@@ -257,6 +257,25 @@ class TestValidateChannelMapping:
         ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
         assert errors == []
+
+    def test_reject_cross_module_port(self, device, manufacturer):
+        """A FrontPort belonging to a different module than the channel is rejected."""
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="Cassette")
+        bay = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel.objects.create(wdm_node=node, module=module, grid_position=1)
+        # FrontPort belongs to no module, while the channel is module-scoped: mismatch.
+        other_fp = FrontPort.objects.create(device=device, name="OTHER1", type="lc-upc", positions=1)
+
+        errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": other_fp.pk, "demux": None}})
+        assert len(errors) == 1
+        assert "does not belong to channel" in errors[0]
+        assert "MUX" in errors[0]
 
 
 @pytest.mark.django_db

@@ -11,12 +11,13 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from ..dataclasses import CableSegment, CableSegmentItem, ChannelTraceData, path_element_from_channel
+from ..dataclasses import ChannelTraceData
 from ..filters import (
     WdmChannelFilterSet,
     WdmChannelPlanFilterSet,
     WdmCircuitFilterSet,
     WdmLinePortFilterSet,
+    WdmLinePortPlanFilterSet,
     WdmNodeFilterSet,
     WdmProfileFilterSet,
     WdmWavelengthPathFilterSet,
@@ -26,6 +27,7 @@ from ..models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -34,6 +36,7 @@ from .serializers import (
     WdmChannelPlanSerializer,
     WdmChannelSerializer,
     WdmCircuitSerializer,
+    WdmLinePortPlanSerializer,
     WdmLinePortSerializer,
     WdmNodeSerializer,
     WdmProfileSerializer,
@@ -51,6 +54,12 @@ class WdmChannelPlanViewSet(NetBoxModelViewSet):
     queryset = WdmChannelPlan.objects.select_related("profile").prefetch_related("tags")
     serializer_class = WdmChannelPlanSerializer
     filterset_class = WdmChannelPlanFilterSet
+
+
+class WdmLinePortPlanViewSet(NetBoxModelViewSet):
+    queryset = WdmLinePortPlan.objects.select_related("profile", "rear_port_template")
+    serializer_class = WdmLinePortPlanSerializer
+    filterset_class = WdmLinePortPlanFilterSet
 
 
 def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | None]]) -> dict[str, int]:
@@ -232,11 +241,16 @@ class WdmChannelViewSet(NetBoxModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request: Any, pk: int | None = None) -> Response:
-        """Return the full wavelength path trace for this channel."""
-        from dcim.models import Cable, CableTermination
-        from django.contrib.contenttypes.models import ContentType
+        """Return the full wavelength path trace for this channel.
 
+        Delegates segment building to views._build_trace_data_for_path, which
+        (via _trace_cable_segment) scopes the TX/BIDI line-port lookup to each
+        hop channel's module and picks the port whose cable chain actually
+        reaches the next hop's node/module -- instead of an arbitrary
+        module- and destination-blind ``.first()``.
+        """
         from ..models import WdmWavelengthPathChannel
+        from ..views import _build_trace_data_for_path
 
         channel = self.get_object()
 
@@ -258,98 +272,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
                 )
             )
 
-        wl_path = path_entry.path
-
-        # Build elements
-        elements = []
-        for entry in wl_path.path_channels.select_related(
-            "channel__wdm_node__device",
-            "channel__mux_front_port",
-            "channel__demux_front_port",
-        ).order_by("sequence"):
-            elements.append(path_element_from_channel(entry.channel, entry.sequence))
-
-        # Build cable segments between consecutive elements
-        cable_segments: list[CableSegment] = []
-        rp_ct = ContentType.objects.get_for_model(RearPort)
-        hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
-
-        for i in range(len(hop_entries) - 1):
-            from_node = hop_entries[i].channel.wdm_node
-            items: list[CableSegmentItem] = []
-
-            tx_lp = (
-                WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"])
-                .select_related("rear_port")
-                .first()
-            )
-
-            if tx_lp and tx_lp.rear_port.cable_id:
-                # Source rear port
-                items.append(
-                    CableSegmentItem(
-                        type="rear_port",
-                        id=tx_lp.rear_port_id,
-                        name=tx_lp.rear_port.name,
-                        device=from_node.device.name,
-                        url=tx_lp.rear_port.get_absolute_url(),
-                    )
-                )
-
-                # Cable
-                try:
-                    cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
-                    items.append(
-                        CableSegmentItem(
-                            type="cable",
-                            id=cable.pk,
-                            name=cable.label or f"Cable #{cable.pk}",
-                            status=cable.status,
-                            color=cable.color or "",
-                            url=cable.get_absolute_url(),
-                        )
-                    )
-                except Cable.DoesNotExist:
-                    pass
-
-                # Far-end rear port
-                far_terms = CableTermination.objects.filter(
-                    cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
-                ).exclude(termination_id=tx_lp.rear_port_id)
-                far_term = far_terms.first()
-                if far_term:
-                    far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
-                    if far_rp:
-                        items.append(
-                            CableSegmentItem(
-                                type="rear_port",
-                                id=far_rp.pk,
-                                name=far_rp.name,
-                                device=far_rp.device.name,
-                                url=far_rp.get_absolute_url(),
-                            )
-                        )
-
-            cable_segments.append(
-                CableSegment(
-                    from_sequence=hop_entries[i].sequence,
-                    to_sequence=hop_entries[i + 1].sequence,
-                    items=items,
-                )
-            )
-
-        trace_data = ChannelTraceData(
-            channel_id=channel.pk,
-            wavelength_path_id=wl_path.pk,
-            wavelength_nm=wl_path.wavelength_nm,
-            grid_position=wl_path.grid_position,
-            is_complete=wl_path.is_complete,
-            is_active=wl_path.is_active,
-            is_valid=wl_path.is_valid,
-            elements=elements,
-            cable_segments=cable_segments,
-        )
-
+        trace_data = _build_trace_data_for_path(path_entry.path, channel_id=channel.pk)
         return Response(asdict(trace_data))
 
 

@@ -20,6 +20,8 @@ urlpatterns = [
     path("wdm-profiles/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmprofile"))),
     # WDM Channel Plan
     path("wdm-channel-plans/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmchannelplan"))),
+    # WDM Line Port Plan
+    path("wdm-line-port-plans/<int:pk>/", include(get_model_urls("netbox_wdm", "wdmlineportplan"))),
     # WDM Node
     path("wdm-nodes/", views.WdmNodeListView.as_view(), name="wdmnode_list"),
     path("wdm-nodes/add/", views.WdmNodeEditView.as_view(), name="wdmnode_add"),

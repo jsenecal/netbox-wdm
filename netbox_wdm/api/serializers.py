@@ -8,6 +8,7 @@ from ..models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -22,6 +23,7 @@ class WdmProfileSerializer(NetBoxModelSerializer):
             "url",
             "display",
             "device_type",
+            "module_type",
             "node_type",
             "grid",
             "fiber_type",
@@ -55,6 +57,25 @@ class WdmChannelPlanSerializer(NetBoxModelSerializer):
         brief_fields = ("id", "url", "display", "label", "wavelength_nm")
 
 
+class WdmLinePortPlanSerializer(NetBoxModelSerializer):
+    class Meta:
+        model = WdmLinePortPlan
+        fields = (
+            "id",
+            "url",
+            "display",
+            "profile",
+            "rear_port_template",
+            "direction",
+            "role",
+            "tags",
+            "custom_fields",
+            "created",
+            "last_updated",
+        )
+        brief_fields = ("id", "url", "display", "direction", "role")
+
+
 class WdmNodeSerializer(NetBoxModelSerializer):
     class Meta:
         model = WdmNode
@@ -84,6 +105,7 @@ class WdmLinePortSerializer(NetBoxModelSerializer):
             "url",
             "display",
             "wdm_node",
+            "module",
             "rear_port",
             "direction",
             "role",
@@ -106,6 +128,7 @@ class WdmChannelSerializer(NetBoxModelSerializer):
             "url",
             "display",
             "wdm_node",
+            "module",
             "grid_position",
             "wavelength_nm",
             "label",

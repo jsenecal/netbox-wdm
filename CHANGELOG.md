@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- REST API, filtersets, forms, tables, and views for `WdmProfile.module_type`, `WdmChannel.module`, and `WdmLinePort.module`.
+- Full CRUD for `WdmLinePortPlan`: `wdm-line-port-plans` REST route, `wdmlineportplan` detail/edit/delete views, and a Line Port Plans card on the WDM Profile and DeviceType WDM Profile tab pages.
+
 ### Changed
 
 - **Breaking:** raised the minimum supported NetBox version from 4.5.0 to 4.6.6. Upcoming changes rely on profile-aware `link_peers` (NetBox 4.6.0) and the `FrontPortFormMixin._save_m2m` template-mapping `post_save` fix in NetBox 4.6.6 (see the Fixed entry below). ([#38](https://github.com/jsenecal/netbox-wdm/issues/38))
@@ -15,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
+- `WdmChannelViewSet.trace` no longer picks an arbitrary TX/BIDI line port on a modular chassis or multi-degree ROADM; it now delegates to the same module- and destination-aware port selection the UI trace view already used, instead of a module- and destination-blind `.first()`.
+- The ROADM live wavelength editor no longer offers front ports from unrelated modules as MUX/DEMUX candidates. `WdmNode.validate_channel_mapping` also now rejects a proposed mapping that assigns a channel a front port belonging to a different module.
 
 ## [0.2.2] - 2026-04-28
 

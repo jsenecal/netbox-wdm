@@ -5,6 +5,7 @@ from typing import Any
 
 from dcim.models import DeviceType, FrontPort
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Q
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from netbox.object_actions import BulkDelete, DeleteObject, EditObject
@@ -30,6 +31,7 @@ from .forms import (
     WdmCircuitForm,
     WdmCircuitImportForm,
     WdmLinePortForm,
+    WdmLinePortPlanForm,
     WdmNodeFilterForm,
     WdmNodeForm,
     WdmNodeImportForm,
@@ -42,6 +44,7 @@ from .models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -70,7 +73,12 @@ class WdmProfileListView(generic.ObjectListView):
 
 @register_model_view(WdmProfile)
 class WdmProfileView(generic.ObjectView):
-    queryset = WdmProfile.objects.select_related("device_type")
+    queryset = WdmProfile.objects.select_related("device_type", "module_type")
+
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
+        return {
+            "line_port_plans": list(instance.line_port_plans.select_related("rear_port_template")),
+        }
 
 
 @register_model_view(WdmProfile, "edit")
@@ -151,6 +159,25 @@ class WdmChannelPlanEditView(generic.ObjectEditView):
 @register_model_view(WdmChannelPlan, "delete")
 class WdmChannelPlanDeleteView(generic.ObjectDeleteView):
     queryset = WdmChannelPlan.objects.select_related("profile__device_type")
+
+
+# ---- WdmLinePortPlan ----
+
+
+@register_model_view(WdmLinePortPlan)
+class WdmLinePortPlanView(generic.ObjectView):
+    queryset = WdmLinePortPlan.objects.select_related("profile", "rear_port_template")
+
+
+@register_model_view(WdmLinePortPlan, "edit")
+class WdmLinePortPlanEditView(generic.ObjectEditView):
+    queryset = WdmLinePortPlan.objects.select_related("profile", "rear_port_template")
+    form = WdmLinePortPlanForm
+
+
+@register_model_view(WdmLinePortPlan, "delete")
+class WdmLinePortPlanDeleteView(generic.ObjectDeleteView):
+    queryset = WdmLinePortPlan.objects.select_related("profile", "rear_port_template")
 
 
 # ---- WdmNode ----
@@ -313,12 +340,29 @@ class WdmNodeWavelengthEditorView(generic.ObjectView):
             instance.channels.select_related("mux_front_port", "demux_front_port").order_by("grid_position")
         )
         assigned_fp_ids = set()
+        module_ids: set[int] = set()
+        include_unmoduled = False
         for ch in channels:
             if ch.mux_front_port_id:
                 assigned_fp_ids.add(ch.mux_front_port_id)
             if ch.demux_front_port_id:
                 assigned_fp_ids.add(ch.demux_front_port_id)
-        available_ports = FrontPort.objects.filter(device=instance.device).exclude(pk__in=assigned_fp_ids)
+            if ch.module_id:
+                module_ids.add(ch.module_id)
+            else:
+                include_unmoduled = True
+
+        # Scope candidates to the module(s) actually represented among this node's
+        # channels: a channel's mux/demux front port must belong to the same module
+        # as the channel (or be module-less, for non-modular nodes). Without this,
+        # front ports from unrelated modules on the same device would appear as
+        # selectable options.
+        module_scope = Q(module_id__in=module_ids) if module_ids else Q(pk__in=[])
+        if include_unmoduled:
+            module_scope |= Q(module__isnull=True)
+        available_ports = (
+            FrontPort.objects.filter(device=instance.device).filter(module_scope).exclude(pk__in=assigned_fp_ids)
+        )
 
         channel_ids = [ch.pk for ch in channels]
         svc_by_channel = {}
@@ -826,10 +870,12 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
     def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         profile = WdmProfile.objects.filter(device_type=instance).first()
         channel_plans = []
+        line_port_plans = []
         if profile:
             channel_plans = list(
                 profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
                     "grid_position"
                 )
             )
-        return {"profile": profile, "channel_plans": channel_plans}
+            line_port_plans = list(profile.line_port_plans.select_related("rear_port_template"))
+        return {"profile": profile, "channel_plans": channel_plans, "line_port_plans": line_port_plans}

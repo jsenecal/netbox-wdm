@@ -25,6 +25,10 @@
                     <th scope="row">{% trans "Channel Plans" %}</th>
                     <td>{{ channel_plans|length }}</td>
                 </tr>
+                <tr>
+                    <th scope="row">{% trans "Line Port Plans" %}</th>
+                    <td>{{ line_port_plans|length }}</td>
+                </tr>
             </table>
         </div>
     </div>
@@ -64,6 +68,33 @@
                         <td>{{ cp.wavelength_nm }}</td>
                         <td>{{ cp.mux_front_port_template|default:"" }}</td>
                         <td>{{ cp.demux_front_port_template|default:"" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% if line_port_plans %}
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">{% trans "Line Port Plans" %}</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>{% trans "Rear Port Template" %}</th>
+                        <th>{% trans "Direction" %}</th>
+                        <th>{% trans "Role" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lpp in line_port_plans %}
+                    <tr>
+                        <td>{{ lpp.rear_port_template }}</td>
+                        <td>{{ lpp.get_direction_display }}</td>
+                        <td>{{ lpp.get_role_display }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

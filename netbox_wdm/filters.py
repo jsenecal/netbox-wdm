@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import django_filters
-from dcim.models import Device
+from dcim.models import Device, DeviceType, Module, ModuleType
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from netbox.filtersets import NetBoxModelFilterSet
@@ -18,6 +18,7 @@ from .models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -41,6 +42,12 @@ class SearchFieldsMixin:
 class WdmProfileFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     node_type = django_filters.MultipleChoiceFilter(choices=WdmNodeTypeChoices)
     grid = django_filters.MultipleChoiceFilter(choices=WdmGridChoices)
+    device_type_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=DeviceType.objects.all(), field_name="device_type", label=_("Device Type (ID)")
+    )
+    module_type_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=ModuleType.objects.all(), field_name="module_type", label=_("Module Type (ID)")
+    )
     search_fields = ("device_type__model__icontains",)
 
     class Meta:
@@ -57,6 +64,17 @@ class WdmChannelPlanFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     class Meta:
         model = WdmChannelPlan
         fields = ("id", "profile", "grid_position", "wavelength_nm", "label")
+
+
+class WdmLinePortPlanFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
+    profile_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=WdmProfile.objects.all(), field_name="profile", label=_("Profile (ID)")
+    )
+    search_fields = ("direction__icontains",)
+
+    class Meta:
+        model = WdmLinePortPlan
+        fields = ("id", "profile", "direction", "role")
 
 
 class WdmNodeFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
@@ -76,6 +94,9 @@ class WdmLinePortFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     wdm_node_id = django_filters.ModelMultipleChoiceFilter(
         queryset=WdmNode.objects.all(), field_name="wdm_node", label=_("WDM Node (ID)")
     )
+    module_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Module.objects.all(), field_name="module", label=_("Module (ID)")
+    )
     search_fields = ("direction__icontains",)
 
     class Meta:
@@ -86,6 +107,9 @@ class WdmLinePortFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
 class WdmChannelFilterSet(SearchFieldsMixin, NetBoxModelFilterSet):
     wdm_node_id = django_filters.ModelMultipleChoiceFilter(
         queryset=WdmNode.objects.all(), field_name="wdm_node", label=_("WDM Node (ID)")
+    )
+    module_id = django_filters.ModelMultipleChoiceFilter(
+        queryset=Module.objects.all(), field_name="module", label=_("Module (ID)")
     )
     status = django_filters.MultipleChoiceFilter(choices=WdmChannelStatusChoices)
     search_fields = ("grid_position",)

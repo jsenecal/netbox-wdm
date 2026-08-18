@@ -304,6 +304,8 @@ class WdmNode(NetBoxModel):
         desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
         Returns list of error strings. Empty list means validation passed.
         """
+        from dcim.models import FrontPort
+
         errors = []
         channels = {ch.pk: ch for ch in self.channels.all()}
 
@@ -322,6 +324,12 @@ class WdmNode(NetBoxModel):
         for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             label = ch.label if ch else f"pk={ch_pk}"
+
+            for fp_pk, kind in ((ports.get("mux"), "MUX"), (ports.get("demux"), "DEMUX")):
+                if fp_pk is not None and ch is not None:
+                    fp_module_id = FrontPort.objects.filter(pk=fp_pk).values_list("module_id", flat=True).first()
+                    if fp_module_id != ch.module_id:
+                        errors.append(f"{kind} FrontPort pk={fp_pk} does not belong to channel {label}'s module.")
 
             mux_fp_pk = ports.get("mux")
             if mux_fp_pk is not None:
