@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_delete
 
 
 def _device_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
@@ -164,9 +164,50 @@ def _rearport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     _recheck_port_sync({node})
 
 
+def _module_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
+    """Populate channels and line ports when a profiled module is installed into a WDM node's device."""
+    if not created:
+        return
+
+    from .models import WdmNode
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    transaction.on_commit(lambda: node.populate_module(instance))
+
+
+def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Remove a module's WDM objects and refresh derived node state before it is deleted.
+
+    Runs synchronously (not on_commit): plain FK cascades from dcim.Module already
+    remove the module's WdmChannel and WdmLinePort rows, but that bypasses our
+    wavelength-path bookkeeping (dropping now-empty WdmWavelengthPath rows) and the
+    node's rebuild/port-sync recheck, so this handler does the cleanup explicitly
+    ahead of the cascade.
+    """
+    from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    channel_ids = list(WdmChannel.objects.filter(module=instance).values_list("pk", flat=True))
+    if channel_ids:
+        WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids).delete()
+        WdmWavelengthPath.objects.filter(path_channels__isnull=True).delete()
+        WdmChannel.objects.filter(pk__in=channel_ids).delete()
+    WdmLinePort.objects.filter(module=instance).delete()
+    _rebuild_nodes({node})
+    _recheck_port_sync({node})
+
+
 def connect_signals() -> None:
     """Connect device signals. Called from AppConfig.ready()."""
-    from dcim.models import Cable, Device, FrontPort, PortMapping, RearPort
+    from dcim.models import Cable, Device, FrontPort, Module, PortMapping, RearPort
     from dcim.models.cables import trace_paths
 
     from .models import WdmChannel, WdmLinePort
@@ -184,3 +225,5 @@ def connect_signals() -> None:
     post_delete.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
     post_save.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
     post_delete.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")
+    post_save.connect(_module_post_save, sender=Module, dispatch_uid="wdm_module_post_save")
+    pre_delete.connect(_module_pre_delete, sender=Module, dispatch_uid="wdm_module_pre_delete")

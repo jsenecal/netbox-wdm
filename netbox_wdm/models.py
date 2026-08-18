@@ -451,7 +451,13 @@ class WdmLinePort(NetBoxModel):
     )
     rear_port = models.ForeignKey(
         to="dcim.RearPort",
-        on_delete=models.PROTECT,
+        # CASCADE, not PROTECT: this field is non-nullable and a line port has no
+        # meaning without its rear port, so it mirrors the module FK above. PROTECT
+        # also made module removal impossible: Django's delete collector checks
+        # protected reverse relations while still walking the cascade, before any
+        # pre_delete signal runs, so a module's own pre_delete handler never got a
+        # chance to clear this relation first.
+        on_delete=models.CASCADE,
         related_name="+",
         verbose_name=_("rear port"),
     )

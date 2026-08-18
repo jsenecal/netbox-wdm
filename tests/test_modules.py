@@ -263,3 +263,35 @@ class TestModularAutoPopulate:
         mt = create_cwdm_cassette_module_type(wdm_manufacturer)
         bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-B", mt)
         assert bundle.node.channels.filter(grid_position=1).count() == 2
+
+
+class TestModuleLifecycleSignals:
+    def test_installing_module_populates_channels(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-SIG", mt, bays=("MUX1",))
+        bay = ModuleBay.objects.create(device=bundle.device, name="MUX2", position="MUX2")
+        new_module = Module.objects.create(device=bundle.device, module_bay=bay, module_type=mt)
+        # transaction test mode: on_commit callbacks fire at outer commit; run the populate
+        # directly if the signal deferred it (mirrors the builder repair pattern)
+        if not bundle.node.channels.filter(module=new_module).exists():
+            bundle.node.populate_module(new_module)
+        assert bundle.node.channels.filter(module=new_module).count() == 8
+        assert bundle.node.line_ports.filter(module=new_module).count() == 2
+
+    def test_removing_module_cleans_up_without_protect_error(self, wdm_site, wdm_manufacturer, wdm_roles):
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        bundle = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "CHASSIS-DEL", mt)
+        node = bundle.node
+        victim = bundle.modules["MUX2"]
+        victim_pk = victim.pk
+        assert node.line_ports.filter(module=victim).exists()
+        victim.delete()  # must not raise ProtectedError from WdmLinePort.rear_port
+        # delete() clears victim.pk; filter by the saved pk instead of the (now unsaved) instance
+        assert not node.channels.filter(module_id=victim_pk).exists()
+        assert not node.line_ports.filter(module_id=victim_pk).exists()
+        # the surviving module is untouched
+        assert node.channels.filter(module=bundle.modules["MUX1"]).count() == 8
