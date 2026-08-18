@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Breaking:** raised the minimum supported NetBox version from 4.5.0 to 4.6.6. Upcoming changes rely on profile-aware `link_peers` (NetBox 4.6.0) and the `FrontPortFormMixin._save_m2m` template-mapping `post_save` fix in NetBox 4.6.6 (see the Fixed entry below). ([#38](https://github.com/jsenecal/netbox-wdm/issues/38))
+- `WdmLinePort.rear_port` and `WdmWavelengthPathChannel.channel` moved from `PROTECT` to `CASCADE`. Deleting a module, a rear port, or a device now cascades its WDM overlay objects (channels, line ports, wavelength-path entries) instead of raising `ProtectedError`; wavelength paths are derived data, so any path left broken by the cascade is pruned, and affected nodes are automatically retraced and rechecked for port sync.
 
 ### Fixed
 

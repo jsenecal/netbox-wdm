@@ -359,3 +359,23 @@ class TestModuleLifecycleSignals:
         # only path they were part of was pruned along with the victim's half
         for channel in WdmChannel.objects.filter(module=survivor):
             assert not channel.wavelength_path_entries.exists()
+
+
+class TestDeviceLevelRearPortDeletion:
+    def test_deleting_rear_port_cascades_line_port(self, wdm_site, wdm_manufacturer, wdm_roles):
+        """Device-level (non-modular) line ports also cascade when their rear port is
+        deleted directly. WdmLinePort.rear_port is CASCADE, not PROTECT, matching the
+        module-scoped case: this is a deliberate, silent behavior change (deleting a
+        COM rear port used to raise ProtectedError; now it just takes the line port
+        down with it), so it needs its own coverage independent of module removal."""
+        dt = create_cwdm_mux_dx_type(wdm_manufacturer)
+        bundle = create_duplex_mux(wdm_site, dt, wdm_roles["wdm-mux"], "MUX-RP-DEL")
+        node = bundle.node
+        channel_count = node.channels.count()
+        tx_rear_port = bundle.line_ports["tx"].rear_port
+
+        tx_rear_port.delete()  # must not raise ProtectedError from WdmLinePort.rear_port
+
+        assert not WdmLinePort.objects.filter(wdm_node=node, role=WdmLineRoleChoices.TX).exists()
+        assert WdmLinePort.objects.filter(wdm_node=node, role=WdmLineRoleChoices.RX).exists()
+        assert node.channels.count() == channel_count
