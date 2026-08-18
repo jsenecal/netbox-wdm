@@ -687,6 +687,13 @@ class TestModularPortSync:
         assert not mux_mappings.filter(rear_port_id__in=roadm_rx_rear_port_ids | fixed_rear_port_ids).exists()
         assert not demux_mappings.filter(rear_port_id__in=roadm_tx_rear_port_ids | fixed_rear_port_ids).exists()
 
+        # FrontPort.clean() requires positions >= its mapped-rear-port count; a front
+        # port fanned out to 2 same-role line ports must have had its positions grown
+        # to match, or a later full_clean() (UI edit, REST PATCH/PUT) would reject it.
+        spare_mux_fp.refresh_from_db()
+        assert spare_mux_fp.positions == len(roadm_tx_rear_port_ids)
+        spare_mux_fp.full_clean()
+
 
 class TestStructuralRepair:
     def test_apply_sync_recreates_deleted_module_port_with_mapping(self, wdm_site, wdm_manufacturer, wdm_roles):

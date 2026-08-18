@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from dcim.models import PortMapping, RearPort
+from dcim.models import FrontPort, PortMapping, RearPort
 from django.db import transaction
 from django.db.models import Q
 from netbox.api.viewsets import NetBoxModelViewSet
@@ -83,6 +83,12 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
     channels_to_update = []
     old_fp_ids_to_delete = []
     new_mappings_to_create = []
+    # FrontPort.clean() requires positions >= its mapped-rear-port count (NetBox
+    # core constraint). bulk_create below skips that check, but a later full_clean()
+    # (UI edit, REST PATCH/PUT) on a front port fanned out to N same-role line ports
+    # would then fail. Track the minimum positions each newly-assigned front port
+    # needs so we can grow it up front.
+    fp_min_positions: dict[int, int] = {}
 
     for ch_pk, ports in desired_mapping.items():
         ch = channels.get(ch_pk)
@@ -112,6 +118,8 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
         for desired_fp_pk, role_line_ports in ((desired_mux, tx_line_ports), (desired_demux, rx_line_ports)):
             if desired_fp_pk is not None:
+                if role_line_ports:
+                    fp_min_positions[desired_fp_pk] = max(fp_min_positions.get(desired_fp_pk, 0), len(role_line_ports))
                 for position, tp in enumerate(role_line_ports, start=1):
                     new_mappings_to_create.append(
                         PortMapping(
@@ -146,6 +154,16 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
                 delete_q |= Q(front_port_id=fp_id, rear_port=tp.rear_port, rear_port_position=grid_pos)
         if delete_q:
             PortMapping.objects.filter(delete_q).delete()
+
+    if fp_min_positions:
+        front_ports_to_grow = []
+        for fp in FrontPort.objects.filter(pk__in=fp_min_positions):
+            required = fp_min_positions[fp.pk]
+            if fp.positions < required:
+                fp.positions = required
+                front_ports_to_grow.append(fp)
+        if front_ports_to_grow:
+            FrontPort.objects.bulk_update(front_ports_to_grow, ["positions"])
 
     if new_mappings_to_create:
         PortMapping.objects.bulk_create(new_mappings_to_create)
