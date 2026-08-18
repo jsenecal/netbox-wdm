@@ -3,6 +3,6 @@
 {% load i18n %}
 
 {% block content %}
-{% blocktrans asvar no_profile_message %}No WDM profile is assigned to this device type.{% endblocktrans %}
+{% blocktrans asvar no_profile_message %}No WDM profile is assigned to this module type.{% endblocktrans %}
 {% include 'netbox_wdm/inc/wdm_profile_tab_body.html' with no_profile_message=no_profile_message %}
 {% endblock %}

@@ -11,7 +11,11 @@
             <table class="table table-hover attr-table">
                 <tr>
                     <th scope="row">{% trans "Device Type" %}</th>
-                    <td>{{ object.device_type|linkify }}</td>
+                    <td>{% if object.device_type %}{{ object.device_type|linkify }}{% else %}&mdash;{% endif %}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "Module Type" %}</th>
+                    <td>{% if object.module_type %}{{ object.module_type|linkify }}{% else %}&mdash;{% endif %}</td>
                 </tr>
                 <tr>
                     <th scope="row">{% trans "Node Type" %}</th>
@@ -39,5 +43,32 @@
         {% include 'inc/panels/custom_fields.html' %}
     </div>
 </div>
+{% if line_port_plans %}
+<div class="row mb-3">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">{% trans "Line Port Plans" %}</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>{% trans "Rear Port Template" %}</th>
+                        <th>{% trans "Direction" %}</th>
+                        <th>{% trans "Role" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lpp in line_port_plans %}
+                    <tr>
+                        <td><a href="{{ lpp.get_absolute_url }}">{{ lpp.rear_port_template }}</a></td>
+                        <td>{{ lpp.get_direction_display }}</td>
+                        <td>{{ lpp.get_role_display }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% plugin_full_width_page object %}
 {% endblock %}

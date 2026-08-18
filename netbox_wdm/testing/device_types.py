@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, Manufacturer, RearPortTemplate
+from dcim.models import DeviceType, FrontPortTemplate, InterfaceTemplate, Manufacturer, ModuleType, RearPortTemplate
 from dcim.models.device_component_templates import PortTemplateMapping
 
-from netbox_wdm.choices import WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
-from netbox_wdm.models import WdmChannelPlan, WdmProfile
+from netbox_wdm.choices import (
+    WdmFiberTypeChoices,
+    WdmGridChoices,
+    WdmLineDirectionChoices,
+    WdmLineRoleChoices,
+    WdmNodeTypeChoices,
+)
+from netbox_wdm.models import WdmChannelPlan, WdmLinePortPlan, WdmProfile
 from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_100GHZ_CHANNELS
 
 
@@ -91,6 +97,13 @@ def create_cwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 8) -
             },
         )
 
+    for rpt, role in ((com_tx, WdmLineRoleChoices.TX), (com_rx, WdmLineRoleChoices.RX)):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": WdmLineDirectionChoices.COMMON, "role": role},
+        )
+
     return dt
 
 
@@ -147,6 +160,12 @@ def create_cwdm_mux_sf_type(manufacturer: Manufacturer, num_channels: int = 8) -
                 "demux_front_port_template": None,
             },
         )
+
+    WdmLinePortPlan.objects.get_or_create(
+        profile=profile,
+        rear_port_template=com,
+        defaults={"direction": WdmLineDirectionChoices.COMMON, "role": WdmLineRoleChoices.BIDI},
+    )
 
     return dt
 
@@ -225,6 +244,13 @@ def create_dwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 44) 
             },
         )
 
+    for rpt, role in ((com_tx, WdmLineRoleChoices.TX), (com_rx, WdmLineRoleChoices.RX)):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": WdmLineDirectionChoices.COMMON, "role": role},
+        )
+
     return dt
 
 
@@ -266,10 +292,10 @@ def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> 
     line_east_rx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-EAST-RX", defaults={"type": "lc-apc", "positions": 44}
     )
-    RearPortTemplate.objects.get_or_create(
+    line_west_tx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-WEST-TX", defaults={"type": "lc-apc", "positions": 44}
     )
-    RearPortTemplate.objects.get_or_create(
+    line_west_rx, _ = RearPortTemplate.objects.get_or_create(
         device_type=dt, name="LINE-WEST-RX", defaults={"type": "lc-apc", "positions": 44}
     )
 
@@ -323,6 +349,18 @@ def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> 
             },
         )
 
+    for rpt, direction, role in (
+        (line_east_tx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.TX),
+        (line_east_rx, WdmLineDirectionChoices.EAST, WdmLineRoleChoices.RX),
+        (line_west_tx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.TX),
+        (line_west_rx, WdmLineDirectionChoices.WEST, WdmLineRoleChoices.RX),
+    ):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": direction, "role": role},
+        )
+
     return dt
 
 
@@ -347,6 +385,90 @@ def create_fiber_pp_type(manufacturer: Manufacturer, num_ports: int = 24) -> Dev
         )
 
     return dt
+
+
+def create_cwdm_cassette_module_type(manufacturer: Manufacturer, num_channels: int = 8) -> ModuleType:
+    """CWDM duplex cassette ModuleType with {module}-tokenized templates and a module profile."""
+    mt, _ = ModuleType.objects.get_or_create(
+        manufacturer=manufacturer,
+        model=f"CWDM-CASSETTE-{num_channels}-DX",
+    )
+
+    num_positions = num_channels + 2
+    com_tx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} COM-TX", defaults={"type": "lc-apc", "positions": num_positions}
+    )
+    com_rx, _ = RearPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} COM-RX", defaults={"type": "lc-apc", "positions": num_positions}
+    )
+
+    mux_fps, demux_fps = [], []
+    for i in range(1, num_channels + 1):
+        fp_mux, _ = FrontPortTemplate.objects.get_or_create(
+            module_type=mt, name=f"{{module}} CH{i}-MUX", defaults={"type": "lc-upc"}
+        )
+        fp_demux, _ = FrontPortTemplate.objects.get_or_create(
+            module_type=mt, name=f"{{module}} CH{i}-DEMUX", defaults={"type": "lc-upc"}
+        )
+        mux_fps.append(fp_mux)
+        demux_fps.append(fp_demux)
+
+    exp_mux, _ = FrontPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} EXP-MUX", defaults={"type": "lc-upc"}
+    )
+    exp_demux, _ = FrontPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} EXP-DEMUX", defaults={"type": "lc-upc"}
+    )
+    gray_mux, _ = FrontPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} 1310-MUX", defaults={"type": "lc-upc"}
+    )
+    gray_demux, _ = FrontPortTemplate.objects.get_or_create(
+        module_type=mt, name="{module} 1310-DEMUX", defaults={"type": "lc-upc"}
+    )
+
+    all_mux = mux_fps + [exp_mux, gray_mux]
+    all_demux = demux_fps + [exp_demux, gray_demux]
+    for pos_idx, (fp_mux, fp_demux) in enumerate(zip(all_mux, all_demux, strict=True), start=1):
+        PortTemplateMapping.objects.get_or_create(
+            module_type=mt,
+            front_port=fp_mux,
+            rear_port=com_tx,
+            defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+        PortTemplateMapping.objects.get_or_create(
+            module_type=mt,
+            front_port=fp_demux,
+            rear_port=com_rx,
+            defaults={"front_port_position": 1, "rear_port_position": pos_idx},
+        )
+
+    profile, _ = WdmProfile.objects.get_or_create(
+        module_type=mt,
+        defaults={
+            "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
+            "grid": WdmGridChoices.CWDM,
+            "fiber_type": WdmFiberTypeChoices.DUPLEX,
+        },
+    )
+    for i, (fp_mux, fp_demux) in enumerate(zip(mux_fps, demux_fps, strict=True)):
+        pos, label, wl = CWDM_CHANNELS[i]
+        WdmChannelPlan.objects.get_or_create(
+            profile=profile,
+            grid_position=pos,
+            defaults={
+                "wavelength_nm": wl,
+                "label": label,
+                "mux_front_port_template": fp_mux,
+                "demux_front_port_template": fp_demux,
+            },
+        )
+    for rpt, role in ((com_tx, WdmLineRoleChoices.TX), (com_rx, WdmLineRoleChoices.RX)):
+        WdmLinePortPlan.objects.get_or_create(
+            profile=profile,
+            rear_port_template=rpt,
+            defaults={"direction": WdmLineDirectionChoices.COMMON, "role": role},
+        )
+    return mt
 
 
 def create_router_type(manufacturer: Manufacturer, num_interfaces: int = 8) -> DeviceType:

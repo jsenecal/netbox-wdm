@@ -21,16 +21,53 @@ from .choices import (
 from .dataclasses import PathElement, path_element_from_channel
 
 
-class WdmProfile(NetBoxModel):
-    """WDM capability profile attached to a DeviceType."""
+def _module_wdm_profile(module: Any) -> WdmProfile | None:
+    """Return the WdmProfile attached to a module's ModuleType, or None."""
+    if module is None:
+        return None
+    try:
+        return module.module_type.wdm_profile
+    except WdmProfile.DoesNotExist:
+        return None
 
-    prerequisite_models = ("dcim.DeviceType",)
+
+def _effective_is_fixed(node: WdmNode, module: Any) -> bool:
+    """Fixedness from the module's profile when module-scoped, else the node's.
+
+    Only ROADM nodes (or ROADM-profile modules) allow runtime changes to
+    channels and line ports.
+    """
+    profile = _module_wdm_profile(module)
+    if profile is not None:
+        return profile.node_type != WdmNodeTypeChoices.ROADM
+    return node.is_fixed
+
+
+def resolve_template_name(template: Any, module: Any) -> str:
+    """Resolve a component template's instance name, module-tokenized when module-scoped."""
+    return template.resolve_name(module=module) if module else template.name
+
+
+class WdmProfile(NetBoxModel):
+    """WDM capability profile attached to a DeviceType or a ModuleType."""
+
+    prerequisite_models = ("dcim.DeviceType", "dcim.ModuleType")
 
     device_type = models.OneToOneField(
         to="dcim.DeviceType",
         on_delete=models.CASCADE,
         related_name="wdm_profile",
+        blank=True,
+        null=True,
         verbose_name=_("device type"),
+    )
+    module_type = models.OneToOneField(
+        to="dcim.ModuleType",
+        on_delete=models.CASCADE,
+        related_name="wdm_profile",
+        blank=True,
+        null=True,
+        verbose_name=_("module type"),
     )
     node_type = models.CharField(
         max_length=50,
@@ -53,15 +90,34 @@ class WdmProfile(NetBoxModel):
     clone_fields = ("node_type", "grid", "fiber_type")
 
     class Meta:
-        ordering = ("device_type",)
+        ordering = ("device_type", "module_type")
         verbose_name = _("WDM profile")
         verbose_name_plural = _("WDM profiles")
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device_type__isnull=False, module_type__isnull=True)
+                    | models.Q(device_type__isnull=True, module_type__isnull=False)
+                ),
+                name="wdmprofile_exactly_one_anchor",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"WDM Profile: {self.device_type}"
+        return f"WDM Profile: {self.anchor}"
 
     def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmprofile", args=[self.pk])
+
+    @property
+    def anchor(self):
+        """The DeviceType or ModuleType this profile is attached to."""
+        return self.device_type or self.module_type
+
+    def clean(self) -> None:
+        super().clean()
+        if bool(self.device_type) == bool(self.module_type):
+            raise ValidationError(_("A WDM profile must be attached to exactly one of device type or module type."))
 
 
 class WdmChannelPlan(NetBoxModel):
@@ -128,6 +184,78 @@ class WdmChannelPlan(NetBoxModel):
     def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmchannelplan", args=[self.pk])
 
+    def clean(self) -> None:
+        super().clean()
+        if not self.profile_id:
+            return
+        for field in ("mux_front_port_template", "demux_front_port_template"):
+            fpt = getattr(self, field)
+            if fpt is None:
+                continue
+            if self.profile.device_type_id and fpt.device_type_id != self.profile.device_type_id:
+                raise ValidationError({field: _("Template does not belong to the profile's device type.")})
+            if self.profile.module_type_id and fpt.module_type_id != self.profile.module_type_id:
+                raise ValidationError({field: _("Template does not belong to the profile's module type.")})
+
+
+class WdmLinePortPlan(NetBoxModel):
+    """Line port blueprint on a WdmProfile: which rear port template is a trunk, and its direction/role."""
+
+    profile = models.ForeignKey(
+        to="netbox_wdm.WdmProfile",
+        on_delete=models.CASCADE,
+        related_name="line_port_plans",
+        verbose_name=_("profile"),
+    )
+    rear_port_template = models.ForeignKey(
+        to="dcim.RearPortTemplate",
+        on_delete=models.CASCADE,
+        related_name="+",
+        verbose_name=_("rear port template"),
+    )
+    direction = models.CharField(
+        max_length=50,
+        choices=WdmLineDirectionChoices,
+        verbose_name=_("direction"),
+    )
+    role = models.CharField(
+        max_length=50,
+        choices=WdmLineRoleChoices,
+        default=WdmLineRoleChoices.BIDI,
+        verbose_name=_("role"),
+    )
+
+    class Meta:
+        ordering = ("profile", "direction", "role")
+        verbose_name = _("WDM line port plan")
+        verbose_name_plural = _("WDM line port plans")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "rear_port_template"],
+                name="unique_lineportplan_rear_port_template",
+            ),
+            models.UniqueConstraint(
+                fields=["profile", "direction", "role"],
+                name="unique_lineportplan_direction_role",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.direction}/{self.role}: {self.rear_port_template}"
+
+    def get_absolute_url(self) -> str:
+        return reverse("plugins:netbox_wdm:wdmlineportplan", args=[self.pk])
+
+    def clean(self) -> None:
+        super().clean()
+        if not self.profile_id or not self.rear_port_template_id:
+            return
+        rpt = self.rear_port_template
+        if self.profile.device_type_id and rpt.device_type_id != self.profile.device_type_id:
+            raise ValidationError({"rear_port_template": _("Template does not belong to the profile's device type.")})
+        if self.profile.module_type_id and rpt.module_type_id != self.profile.module_type_id:
+            raise ValidationError({"rear_port_template": _("Template does not belong to the profile's module type.")})
+
 
 class WdmNode(NetBoxModel):
     """WDM node instance attached to a Device."""
@@ -143,11 +271,15 @@ class WdmNode(NetBoxModel):
     node_type = models.CharField(
         max_length=50,
         choices=WdmNodeTypeChoices,
+        blank=True,
+        default="",
         verbose_name=_("node type"),
     )
     grid = models.CharField(
         max_length=50,
         choices=WdmGridChoices,
+        blank=True,
+        default="",
         verbose_name=_("grid"),
     )
     description = models.TextField(blank=True, verbose_name=_("description"))
@@ -189,6 +321,8 @@ class WdmNode(NetBoxModel):
         desired_mapping format: { channel_pk: {"mux": port_id|None, "demux": port_id|None} }
         Returns list of error strings. Empty list means validation passed.
         """
+        from dcim.models import FrontPort
+
         errors = []
         channels = {ch.pk: ch for ch in self.channels.all()}
 
@@ -207,6 +341,12 @@ class WdmNode(NetBoxModel):
         for ch_pk, ports in desired_mapping.items():
             ch = channels.get(ch_pk)
             label = ch.label if ch else f"pk={ch_pk}"
+
+            for fp_pk, kind in ((ports.get("mux"), "MUX"), (ports.get("demux"), "DEMUX")):
+                if fp_pk is not None and ch is not None:
+                    fp_module_id = FrontPort.objects.filter(pk=fp_pk).values_list("module_id", flat=True).first()
+                    if fp_module_id != ch.module_id:
+                        errors.append(f"{kind} FrontPort pk={fp_pk} does not belong to channel {label}'s module.")
 
             mux_fp_pk = ports.get("mux")
             if mux_fp_pk is not None:
@@ -231,45 +371,92 @@ class WdmNode(NetBoxModel):
         return errors
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Save and auto-populate channels from device type profile on creation."""
+        """Save and auto-populate channels and line ports from profiles on creation."""
         is_new = self._state.adding
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if is_new and self.node_type != WdmNodeTypeChoices.AMPLIFIER:
-                self._auto_populate_channels()
+            if is_new:
+                self._auto_populate()
 
-    def _auto_populate_channels(self) -> None:
-        """Create WdmChannel rows from the device type's WDM profile channel plans."""
-        from dcim.models import FrontPort
+    def _auto_populate(self) -> None:
+        """Create channels and line ports from the device type profile and installed module profiles.
+
+        Idempotent: uses get_or_create throughout so repeated calls (module install
+        signal, port sync repair) only fill gaps.
+        """
+        from dcim.models import Module
+
+        self._populate_from_device_profile()
+        for module in Module.objects.filter(device=self.device).select_related("module_type", "module_bay"):
+            self.populate_module(module)
+
+    def _populate_from_device_profile(self) -> None:
+        from dcim.models import FrontPort, RearPort
 
         try:
             profile = self.device.device_type.wdm_profile
         except WdmProfile.DoesNotExist:
             return
 
-        plans = list(profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").all())
-        if not plans:
+        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device, module__isnull=True)}
+        rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(device=self.device, module__isnull=True)}
+        self._create_channels(profile, None, fp_by_name)
+        self._create_line_ports(profile, None, rp_by_name)
+
+    def populate_module(self, module: Any) -> None:
+        """Create channels and line ports for one installed module, if its ModuleType has a profile."""
+        from dcim.models import FrontPort, RearPort
+
+        profile = _module_wdm_profile(module)
+        if profile is None:
             return
 
-        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device)}
+        fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(module=module)}
+        rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(module=module)}
+        self._create_channels(profile, module, fp_by_name)
+        self._create_line_ports(profile, module, rp_by_name)
 
-        channels = []
+    def _create_channels(self, profile: WdmProfile, module: Any, fp_by_name: dict) -> None:
+        # Device-scoped: the node's own node_type is authoritative (matches historical
+        # behavior and lets a WdmNode be marked AMPLIFIER regardless of its device
+        # type's profile). Module-scoped: the module's own profile decides, since the
+        # node-level node_type says nothing about what role an individual module plays.
+        node_type = profile.node_type if module is not None else self.node_type
+        if node_type == WdmNodeTypeChoices.AMPLIFIER:
+            return
+        plans = profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template")
         for cp in plans:
-            mux_front_port = None
-            if cp.mux_front_port_template:
-                mux_front_port = fp_by_name.get(cp.mux_front_port_template.name)
-            demux_front_port = None
-            if cp.demux_front_port_template:
-                demux_front_port = fp_by_name.get(cp.demux_front_port_template.name)
-            channels.append(
-                WdmChannel(
-                    wdm_node=self,
-                    grid_position=cp.grid_position,
-                    mux_front_port=mux_front_port,
-                    demux_front_port=demux_front_port,
-                )
+            mux_fp = (
+                fp_by_name.get(resolve_template_name(cp.mux_front_port_template, module))
+                if cp.mux_front_port_template
+                else None
             )
-        WdmChannel.objects.bulk_create(channels)
+            demux_fp = (
+                fp_by_name.get(resolve_template_name(cp.demux_front_port_template, module))
+                if cp.demux_front_port_template
+                else None
+            )
+            WdmChannel.objects.get_or_create(
+                wdm_node=self,
+                module=module,
+                grid_position=cp.grid_position,
+                defaults={"mux_front_port": mux_fp, "demux_front_port": demux_fp},
+            )
+
+    def _create_line_ports(self, profile: WdmProfile, module: Any, rp_by_name: dict) -> None:
+        # Deliberately not gated on node_type == AMPLIFIER (unlike _create_channels above).
+        # Amplifiers are pass-through devices: their trunk rear ports ARE line ports and
+        # must still be created from the profile's line port plans. Amplifier-profile
+        # modules get line ports but never channels, mirroring the node-level rule.
+        for lpp in profile.line_port_plans.select_related("rear_port_template"):
+            rp = rp_by_name.get(resolve_template_name(lpp.rear_port_template, module))
+            if rp is None:
+                continue
+            WdmLinePort.objects.get_or_create(
+                wdm_node=self,
+                rear_port=rp,
+                defaults={"direction": lpp.direction, "role": lpp.role, "module": module},
+            )
 
 
 class WdmLinePort(NetBoxModel):
@@ -281,9 +468,23 @@ class WdmLinePort(NetBoxModel):
         related_name="line_ports",
         verbose_name=_("WDM node"),
     )
+    module = models.ForeignKey(
+        to="dcim.Module",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="wdm_line_ports",
+        verbose_name=_("module"),
+    )
     rear_port = models.ForeignKey(
         to="dcim.RearPort",
-        on_delete=models.PROTECT,
+        # CASCADE, not PROTECT: this field is non-nullable and a line port has no
+        # meaning without its rear port, so it mirrors the module FK above. PROTECT
+        # also made module removal impossible: Django's delete collector checks
+        # protected reverse relations while still walking the cascade, before any
+        # pre_delete signal runs, so a module's own pre_delete handler never got a
+        # chance to clear this relation first.
+        on_delete=models.CASCADE,
         related_name="+",
         verbose_name=_("rear port"),
     )
@@ -310,7 +511,13 @@ class WdmLinePort(NetBoxModel):
             ),
             models.UniqueConstraint(
                 fields=["wdm_node", "direction", "role"],
+                condition=models.Q(module__isnull=True),
                 name="unique_lineport_direction_role",
+            ),
+            models.UniqueConstraint(
+                fields=["wdm_node", "module", "direction", "role"],
+                condition=models.Q(module__isnull=False),
+                name="unique_lineport_module_direction_role",
             ),
         ]
 
@@ -322,9 +529,14 @@ class WdmLinePort(NetBoxModel):
     def get_absolute_url(self) -> str:
         return reverse("plugins:netbox_wdm:wdmlineport", args=[self.pk])
 
+    @property
+    def is_fixed(self) -> bool:
+        """Fixedness from the module's profile when module-scoped, else the node's."""
+        return _effective_is_fixed(self.wdm_node, self.module)
+
     def _check_fixed_fields(self) -> None:
         """Check that fixed fields haven't changed on a fixed node."""
-        if not self.pk or not self.wdm_node.is_fixed:
+        if not self.pk or not self.is_fixed:
             return
         db_obj = WdmLinePort.objects.get(pk=self.pk)
         for field in self.FIXED_FIELDS:
@@ -336,6 +548,10 @@ class WdmLinePort(NetBoxModel):
         """On fixed nodes, line port configuration cannot be changed after creation."""
         super().clean()
         self._check_fixed_fields()
+        if self.module_id and self.module.device_id != self.wdm_node.device_id:
+            raise ValidationError({"module": _("Module belongs to a different device than the WDM node.")})
+        if self.rear_port_id and self.rear_port.module_id != self.module_id:
+            raise ValidationError({"rear_port": _("Rear port does not belong to the line port's module.")})
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Enforce fixed node constraints at save time.
@@ -357,6 +573,14 @@ class WdmChannel(NetBoxModel):
         on_delete=models.CASCADE,
         related_name="channels",
         verbose_name=_("WDM node"),
+    )
+    module = models.ForeignKey(
+        to="dcim.Module",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="wdm_channels",
+        verbose_name=_("module"),
     )
     grid_position = models.PositiveIntegerField(verbose_name=_("grid position"))
     mux_front_port = models.ForeignKey(
@@ -390,7 +614,13 @@ class WdmChannel(NetBoxModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["wdm_node", "grid_position"],
+                condition=models.Q(module__isnull=True),
                 name="unique_channel_grid_position",
+            ),
+            models.UniqueConstraint(
+                fields=["wdm_node", "module", "grid_position"],
+                condition=models.Q(module__isnull=False),
+                name="unique_channel_module_grid_position",
             ),
             models.UniqueConstraint(
                 fields=["wdm_node", "mux_front_port"],
@@ -407,18 +637,45 @@ class WdmChannel(NetBoxModel):
     FIXED_FIELDS = ("mux_front_port", "demux_front_port")
 
     @property
-    def label(self) -> str:
-        """ITU channel label derived from the node's grid and this channel's position."""
-        from .wdm_constants import get_channel_info
-
-        return get_channel_info(self.wdm_node.grid, self.grid_position)[0]
+    def effective_grid(self) -> str:
+        """Grid from the module's profile when module-scoped, else the node's grid."""
+        profile = _module_wdm_profile(self.module)
+        if profile is not None:
+            return profile.grid
+        return self.wdm_node.grid
 
     @property
-    def wavelength_nm(self) -> Decimal:
-        """Wavelength in nm derived from the node's grid and this channel's position."""
+    def is_fixed(self) -> bool:
+        """Fixedness from the module's profile when module-scoped, else the node's."""
+        return _effective_is_fixed(self.wdm_node, self.module)
+
+    @property
+    def label(self) -> str:
+        """ITU channel label derived from the effective grid and this channel's position.
+
+        Returns "" when the effective grid can't be resolved (e.g. a channel left
+        over after its module's ModuleType lost its WdmProfile) instead of raising,
+        so pre-existing bad rows still render rather than 500ing.
+        """
         from .wdm_constants import get_channel_info
 
-        return get_channel_info(self.wdm_node.grid, self.grid_position)[1]
+        try:
+            return get_channel_info(self.effective_grid, self.grid_position)[0]
+        except KeyError:
+            return ""
+
+    @property
+    def wavelength_nm(self) -> Decimal | None:
+        """Wavelength in nm derived from the effective grid and this channel's position.
+
+        Returns None when the effective grid can't be resolved, mirroring `label`.
+        """
+        from .wdm_constants import get_channel_info
+
+        try:
+            return get_channel_info(self.effective_grid, self.grid_position)[1]
+        except KeyError:
+            return None
 
     def __str__(self) -> str:
         return f"{self.label} ({self.wavelength_nm}nm)"
@@ -428,7 +685,7 @@ class WdmChannel(NetBoxModel):
 
     def _check_fixed_fields(self) -> None:
         """Check that fixed fields haven't changed on a fixed node."""
-        if not self.pk or not self.wdm_node.is_fixed:
+        if not self.pk or not self.is_fixed:
             return
         db_obj = WdmChannel.objects.get(pk=self.pk)
         for field in self.FIXED_FIELDS:
@@ -442,6 +699,22 @@ class WdmChannel(NetBoxModel):
         """On fixed nodes, only status may be changed after creation."""
         super().clean()
         self._check_fixed_fields()
+        if self.module_id and self.module.device_id != self.wdm_node.device_id:
+            raise ValidationError({"module": _("Module belongs to a different device than the WDM node.")})
+        if not self.effective_grid:
+            if self.module_id:
+                raise ValidationError(
+                    _(
+                        "This channel's module has no WDM profile grid, and the node's "
+                        "grid is not set. Set a WdmProfile grid on the module's ModuleType "
+                        "or set the node's grid."
+                    )
+                )
+            raise ValidationError(_("Channels without a module require the node's grid to be set."))
+        for field in ("mux_front_port", "demux_front_port"):
+            fp = getattr(self, field)
+            if fp is not None and fp.module_id != self.module_id:
+                raise ValidationError({field: _("Front port does not belong to the channel's module.")})
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Enforce fixed node constraints at save time."""
@@ -519,7 +792,16 @@ class WdmWavelengthPathChannel(models.Model):
     )
     channel = models.ForeignKey(
         to="netbox_wdm.WdmChannel",
-        on_delete=models.PROTECT,
+        # CASCADE, not PROTECT: wavelength paths are derived data retraced from the
+        # cable plant and channel plans, not a source of truth to protect a channel
+        # deletion against. PROTECT here also made module removal impossible: a
+        # module's channels cascade from dcim.Module (WdmChannel.module is CASCADE),
+        # and Django's delete collector evaluates this reverse relation while still
+        # walking that cascade, before any pre_delete signal runs -- so no signal
+        # could ever clear it in time. The module pre_delete handler now prunes
+        # left-over broken paths and retraces affected nodes after the cascade
+        # completes instead.
+        on_delete=models.CASCADE,
         related_name="wavelength_path_entries",
         verbose_name=_("channel"),
     )

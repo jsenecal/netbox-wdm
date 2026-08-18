@@ -31,6 +31,7 @@ class Command(BaseCommand):
 
         # -- DCIM foundation --
         from netbox_wdm.testing import (
+            create_cwdm_cassette_module_type,
             create_cwdm_mux_dx_type,
             create_cwdm_mux_sf_type,
             create_device_roles,
@@ -41,6 +42,7 @@ class Command(BaseCommand):
             create_site,
             duplex_mux_pair,
             dwdm_mux_to_roadm,
+            modular_chassis_span,
             mux_roadm_mux,
             sf_mux_pair,
         )
@@ -55,6 +57,7 @@ class Command(BaseCommand):
         dt_dwdm = create_dwdm_mux_dx_type(mfr)
         dt_roadm = create_roadm_2d_type(mfr)
         dt_pp = create_fiber_pp_type(mfr)
+        mt_cassette = create_cwdm_cassette_module_type(mfr)
 
         # Tag foundation objects
         for obj in [mfr, site, *roles.values()]:
@@ -64,20 +67,28 @@ class Command(BaseCommand):
             # Tag associated WDM profile if present
             if hasattr(dt, "wdm_profile"):
                 self._tag(dt.wdm_profile, tag)
+        self._tag(mt_cassette, tag)
+        if hasattr(mt_cassette, "wdm_profile"):
+            self._tag(mt_cassette.wdm_profile, tag)
 
         # -- Build topologies --
         topo1 = duplex_mux_pair(site, dt_cwdm_dx, dt_pp, roles, name_prefix="CWDM-DX-")
         topo2 = sf_mux_pair(site, dt_cwdm_sf, dt_pp, roles, name_prefix="CWDM-SF-")
         topo3 = dwdm_mux_to_roadm(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix="DWDM-")
         topo4 = mux_roadm_mux(site, dt_dwdm, dt_roadm, dt_pp, roles, name_prefix="PASS-")
+        topo5 = modular_chassis_span(site, mt_cassette, dt_pp, roles, name_prefix="MOD-")
 
         # Tag all topology objects
-        all_topos = [topo1, topo2, topo3, topo4]
+        all_topos = [topo1, topo2, topo3, topo4, topo5]
         for topo in all_topos:
             for bundle in topo.bundles.values():
                 self._tag(bundle.device, tag)
                 self._tag(bundle.node, tag)
-                for lp in bundle.line_ports.values():
+                self._tag(bundle.device.device_type, tag)
+                # Tag every line port on the node directly rather than the (sometimes
+                # empty, e.g. modular_chassis_span) bundle.line_ports dict, so the
+                # "Line Ports" summary count always reflects the real object count.
+                for lp in bundle.node.line_ports.all():
                     self._tag(lp, tag)
             for pp in topo.patch_panels:
                 self._tag(pp, tag)
@@ -133,7 +144,7 @@ class Command(BaseCommand):
             self.stdout.write("  No sample data tag found, nothing to flush.")
             return
 
-        from dcim.models import Cable, Device, DeviceRole, DeviceType, Manufacturer, Site
+        from dcim.models import Cable, Device, DeviceRole, DeviceType, Manufacturer, ModuleType, Site
 
         # Delete cables first (they hold termination references to ports)
         Cable.objects.filter(tags=tag).delete()
@@ -150,9 +161,13 @@ class Command(BaseCommand):
         WdmChannelPlan.objects.filter(profile__tags=tag).delete()
         WdmProfile.objects.filter(tags=tag).delete()
 
-        # Then DCIM objects
+        # Then DCIM objects. Module-scoped WDM objects (channels, line ports) cascade
+        # away with their Module when the chassis Device is deleted below, so only
+        # the ModuleType (the module-scoped analog of DeviceType) needs its own
+        # explicit cleanup, run after devices/modules are gone and before Manufacturer.
         Device.objects.filter(tags=tag).delete()
         DeviceType.objects.filter(tags=tag).delete()
+        ModuleType.objects.filter(tags=tag).delete()
         DeviceRole.objects.filter(tags=tag).delete()
         Manufacturer.objects.filter(tags=tag).delete()
         Site.objects.filter(tags=tag).delete()
@@ -318,7 +333,7 @@ class Command(BaseCommand):
     # ================================================================
 
     def _print_summary(self):
-        from dcim.models import Cable, Device, DeviceType, Site
+        from dcim.models import Cable, Device, DeviceType, ModuleType, Site
 
         from netbox_wdm.models import (
             WdmChannel,
@@ -333,6 +348,7 @@ class Command(BaseCommand):
         self.stdout.write("\n--- Summary ---")
         self.stdout.write(f"  Sites:              {Site.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  DeviceTypes:        {DeviceType.objects.filter(tags__slug=SAMPLE_TAG).count()}")
+        self.stdout.write(f"  ModuleTypes:        {ModuleType.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Devices:            {Device.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  Cables:             {Cable.objects.filter(tags__slug=SAMPLE_TAG).count()}")
         self.stdout.write(f"  WDM Profiles:       {WdmProfile.objects.filter(tags__slug=SAMPLE_TAG).count()}")

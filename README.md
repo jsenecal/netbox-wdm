@@ -1,10 +1,10 @@
 # netbox-wdm
 
-> A [NetBox](https://github.com/netbox-community/netbox) 4.5+ plugin for WDM (Wavelength Division Multiplexing) device management.
+> A [NetBox](https://github.com/netbox-community/netbox) 4.6.6+ plugin for WDM (Wavelength Division Multiplexing) device management.
 
 [![PyPI](https://img.shields.io/pypi/v/netbox-wdm.svg)](https://pypi.org/project/netbox-wdm/)
 [![Python](https://img.shields.io/pypi/pyversions/netbox-wdm.svg)](https://pypi.org/project/netbox-wdm/)
-[![NetBox](https://img.shields.io/badge/NetBox-4.5%2B-success.svg)](https://github.com/netbox-community/netbox)
+[![NetBox](https://img.shields.io/badge/NetBox-4.6.6%2B-success.svg)](https://github.com/netbox-community/netbox)
 [![CI](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml/badge.svg)](https://github.com/jsenecal/netbox-wdm/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/jsenecal/netbox-wdm/branch/main/graph/badge.svg)](https://codecov.io/gh/jsenecal/netbox-wdm)
 [![Documentation](https://img.shields.io/badge/docs-jsenecal.github.io-blue)](https://jsenecal.github.io/netbox-wdm/)
@@ -23,6 +23,7 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 - **EXP / 1310 ports** -- express upgrade and 1310 nm gray optic pass-through as COM rear port positions.
 - **Auto-population** -- channels automatically created from profile templates when a device is added.
 - **DeviceType integration** -- WDM Profile tab on DeviceType detail pages.
+- **Modular chassis support** -- a WDM profile can also attach to a `ModuleType`, so a multi-bay chassis gets one independent set of channels and line ports per installed cassette module.
 - **Wavelength editor** -- TypeScript frontend with undo/redo, dirty state, optimistic concurrency, conditional MUX/DEMUX columns.
 - **Wavelength services** -- end-to-end service tracking with sequenced channel assignments and PROTECT guards.
 - **Circuit trace visualization** -- interactive horizontal flow diagram on `WdmCircuit` detail pages.
@@ -33,9 +34,10 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 ## Compatibility
 
-| Plugin version | NetBox version | Python    |
-|----------------|----------------|-----------|
-| 0.2.x          | 4.5            | 3.12-3.14 |
+| Plugin version    | NetBox version | Python    |
+|-------------------|----------------|-----------|
+| main (unreleased) | 4.6.6+         | 3.12-3.14 |
+| 0.2.x             | 4.5            | 3.12-3.14 |
 
 ## Installation
 
@@ -63,6 +65,7 @@ Full documentation: **[jsenecal.github.io/netbox-wdm](https://jsenecal.github.io
 Key references:
 - `docs/developer/architecture` -- overlay pattern, port topology, position-stack alignment.
 - `docs/developer/style-guide` -- frontend conventions for the TypeScript components.
+- `docs/user/modular-chassis` -- WDM profiles on ModuleType, per-module channels and line ports, install/remove lifecycle.
 
 ## Models
 
@@ -75,6 +78,19 @@ Key references:
 | `WdmChannel`           | Per-channel instance with MUX and DEMUX front port assignments |
 | `WdmWavelengthPath`    | End-to-end traced path through the cable plant between WDM nodes |
 | `WdmCircuit`           | Logical service grouping one or more wavelength paths |
+
+## Modular chassis support
+
+Some WDM hardware is a bare chassis that takes swappable cassette modules
+(for example, a 1RU shelf with two CWDM MUX/DEMUX bays). netbox-wdm models
+this by letting a `WdmProfile` attach to a `dcim.ModuleType` instead of a
+`DeviceType`: each installed `Module` gets its own `WdmChannel` and
+`WdmLinePort` rows, scoped to that module, so two cassettes in the same
+chassis behave as independent WDM nodes that happen to share a device shell.
+Installing or removing a module creates or tears down its channels and line
+ports automatically; wavelength paths and port-sync state are retraced for
+any node affected by the change. See `docs/user/modular-chassis` for the
+full lifecycle and a worked example.
 
 ## Related plugins
 

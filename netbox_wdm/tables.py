@@ -12,6 +12,7 @@ from .models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -22,6 +23,7 @@ class WdmProfileTable(NetBoxTable):
     pk = columns.ToggleColumn()
     name = tables.Column(verbose_name=_("Profile"), linkify=True, accessor="pk")
     device_type = tables.Column(linkify=True, verbose_name=_("Device Type"))
+    module_type = tables.Column(linkify=True, verbose_name=_("Module Type"))
     node_type = tables.Column(verbose_name=_("Node Type"))
     grid = tables.Column(verbose_name=_("Grid"))
     fiber_type = tables.Column(verbose_name=_("Fiber Type"))
@@ -29,7 +31,18 @@ class WdmProfileTable(NetBoxTable):
 
     class Meta(NetBoxTable.Meta):
         model = WdmProfile
-        fields = ("pk", "id", "name", "device_type", "node_type", "grid", "fiber_type", "description", "actions")
+        fields = (
+            "pk",
+            "id",
+            "name",
+            "device_type",
+            "module_type",
+            "node_type",
+            "grid",
+            "fiber_type",
+            "description",
+            "actions",
+        )
         default_columns = ("pk", "name", "device_type", "node_type", "grid", "fiber_type", "actions")
 
     def render_name(self, record: Any) -> str:
@@ -70,6 +83,20 @@ class WdmChannelPlanTable(NetBoxTable):
         )
 
 
+class WdmLinePortPlanTable(NetBoxTable):
+    pk = columns.ToggleColumn()
+    profile = tables.Column(linkify=True, verbose_name=_("Profile"))
+    rear_port_template = tables.Column(linkify=True, verbose_name=_("Rear Port Template"))
+    direction = tables.Column(verbose_name=_("Direction"))
+    role = tables.Column(verbose_name=_("Role"))
+    actions = columns.ActionsColumn()
+
+    class Meta(NetBoxTable.Meta):
+        model = WdmLinePortPlan
+        fields = ("pk", "id", "profile", "rear_port_template", "direction", "role", "actions")
+        default_columns = ("pk", "profile", "rear_port_template", "direction", "role", "actions")
+
+
 class WdmNodeTable(NetBoxTable):
     pk = columns.ToggleColumn()
     name = tables.Column(verbose_name=_("Node"), linkify=True, accessor="pk")
@@ -90,6 +117,7 @@ class WdmNodeTable(NetBoxTable):
 class WdmLinePortTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
+    module = tables.Column(linkify=True, verbose_name=_("Module"))
     rear_port = tables.Column(linkify=True, verbose_name=_("Rear Port"))
     direction = tables.Column(verbose_name=_("Direction"))
     role = tables.Column(verbose_name=_("Role"))
@@ -97,8 +125,8 @@ class WdmLinePortTable(NetBoxTable):
 
     class Meta(NetBoxTable.Meta):
         model = WdmLinePort
-        fields = ("pk", "id", "wdm_node", "rear_port", "direction", "role", "actions")
-        default_columns = ("pk", "wdm_node", "rear_port", "direction", "role", "actions")
+        fields = ("pk", "id", "wdm_node", "module", "rear_port", "direction", "role", "actions")
+        default_columns = ("pk", "wdm_node", "module", "rear_port", "direction", "role", "actions")
 
 
 CHANNEL_TRACE_BUTTONS = (
@@ -117,6 +145,7 @@ CHANNEL_TRACE_BUTTONS = (
 class WdmChannelTable(NetBoxTable):
     pk = columns.ToggleColumn()
     wdm_node = tables.Column(linkify=True, verbose_name=_("WDM Node"))
+    module = tables.Column(linkify=True, verbose_name=_("Module"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
     label = tables.Column(linkify=True, verbose_name=_("Label"), order_by="grid_position")
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"), order_by="-grid_position")
@@ -131,6 +160,7 @@ class WdmChannelTable(NetBoxTable):
             "pk",
             "id",
             "wdm_node",
+            "module",
             "grid_position",
             "label",
             "wavelength_nm",
@@ -142,6 +172,7 @@ class WdmChannelTable(NetBoxTable):
         default_columns = (
             "pk",
             "wdm_node",
+            "module",
             "label",
             "grid_position",
             "wavelength_nm",
@@ -156,6 +187,7 @@ class WdmNodeChannelTable(NetBoxTable):
 
     pk = columns.ToggleColumn()
     label = tables.Column(linkify=True, verbose_name=_("Label"), order_by="grid_position")
+    module = tables.Column(linkify=True, verbose_name=_("Module"))
     grid_position = tables.Column(verbose_name=_("Grid Position"))
     wavelength_nm = tables.Column(verbose_name=_("Wavelength (nm)"), order_by="-grid_position")
     mux_front_port = tables.Column(linkify=True, verbose_name=_("MUX Front Port"))
@@ -169,6 +201,7 @@ class WdmNodeChannelTable(NetBoxTable):
             "pk",
             "id",
             "label",
+            "module",
             "grid_position",
             "wavelength_nm",
             "mux_front_port",
@@ -176,7 +209,16 @@ class WdmNodeChannelTable(NetBoxTable):
             "status",
             "actions",
         )
-        default_columns = ("pk", "label", "grid_position", "wavelength_nm", "mux_front_port", "status", "actions")
+        default_columns = (
+            "pk",
+            "label",
+            "module",
+            "grid_position",
+            "wavelength_nm",
+            "mux_front_port",
+            "status",
+            "actions",
+        )
 
 
 class WdmWavelengthPathTable(NetBoxTable):

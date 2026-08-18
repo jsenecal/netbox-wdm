@@ -1,9 +1,9 @@
 """Tests for WDM models."""
 
 import pytest
-from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+from dcim.models import Device, DeviceRole, DeviceType, FrontPort, Manufacturer, Module, ModuleBay, ModuleType, Site
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import ProtectedError
 
 from netbox_wdm.choices import WdmChannelStatusChoices, WdmFiberTypeChoices, WdmGridChoices, WdmNodeTypeChoices
 from netbox_wdm.models import (
@@ -201,6 +201,33 @@ class TestWdmChannel:
         )
         assert "C21" in str(ch)
 
+    def test_module_scoped_channel_requires_effective_grid(self, device, manufacturer):
+        """A module-scoped channel needs a grid from somewhere: either its module's
+        ModuleType has a WdmProfile, or the node's own grid is set. Neither here, so
+        clean() must reject it instead of leaving a channel that 500s on render."""
+        node = WdmNode.objects.create(device=device)  # blank grid
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="No-Profile-MT")
+        bay = ModuleBay.objects.create(device=device, name="MB1")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel(wdm_node=node, module=module, grid_position=1)
+        with pytest.raises(ValidationError):
+            ch.full_clean()
+
+    def test_label_and_wavelength_degrade_when_grid_unresolvable(self, device, manufacturer):
+        """A pre-existing channel can end up with no resolvable grid (e.g. its
+        module's WdmProfile was deleted after the channel was created). label and
+        wavelength_nm must degrade to "" / None instead of raising KeyError, so the
+        row still renders."""
+        node = WdmNode.objects.create(device=device)  # blank grid
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="No-Profile-MT-2")
+        bay = ModuleBay.objects.create(device=device, name="MB2")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel(wdm_node=node, module=module, grid_position=1)
+
+        assert ch.label == ""
+        assert ch.wavelength_nm is None
+        assert str(ch)  # __str__ must not raise either
+
 
 @pytest.mark.django_db
 class TestValidateChannelMapping:
@@ -259,6 +286,25 @@ class TestValidateChannelMapping:
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
         assert errors == []
 
+    def test_reject_cross_module_port(self, device, manufacturer):
+        """A FrontPort belonging to a different module than the channel is rejected."""
+        node = WdmNode.objects.create(
+            device=device,
+            node_type=WdmNodeTypeChoices.TERMINAL_MUX,
+            grid=WdmGridChoices.DWDM_100GHZ,
+        )
+        module_type = ModuleType.objects.create(manufacturer=manufacturer, model="Cassette")
+        bay = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
+        module = Module.objects.create(device=device, module_bay=bay, module_type=module_type)
+        ch = WdmChannel.objects.create(wdm_node=node, module=module, grid_position=1)
+        # FrontPort belongs to no module, while the channel is module-scoped: mismatch.
+        other_fp = FrontPort.objects.create(device=device, name="OTHER1", type="lc-upc", positions=1)
+
+        errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": other_fp.pk, "demux": None}})
+        assert len(errors) == 1
+        assert "does not belong to channel" in errors[0]
+        assert "MUX" in errors[0]
+
 
 @pytest.mark.django_db
 class TestWdmWavelengthPath:
@@ -282,7 +328,10 @@ class TestWdmWavelengthPath:
         )
         assert "1560.61" in str(path)
 
-    def test_channel_protect(self, device):
+    def test_channel_delete_cascades_path_entries(self, device):
+        """Wavelength paths are derived data, not a source of truth: deleting a
+        channel that is part of one must not be blocked, it should simply take
+        its path-channel entry down with it."""
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
@@ -293,8 +342,8 @@ class TestWdmWavelengthPath:
             grid_position=1, wavelength_nm=1560.61, is_complete=True, is_active=True
         )
         WdmWavelengthPathChannel.objects.create(path=path, channel=ch, sequence=1)
-        with pytest.raises(ProtectedError):
-            ch.delete()
+        ch.delete()
+        assert not WdmWavelengthPathChannel.objects.filter(path=path).exists()
 
     def test_unique_path_sequence(self, device):
         node = WdmNode.objects.create(

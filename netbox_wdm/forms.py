@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from dcim.models import Device, DeviceType, FrontPort, FrontPortTemplate, RearPort
+from dcim.models import (
+    Device,
+    DeviceType,
+    FrontPort,
+    FrontPortTemplate,
+    Module,
+    ModuleType,
+    RearPort,
+    RearPortTemplate,
+)
 from django import forms
 from django.utils.translation import gettext_lazy as _
 from netbox.forms import NetBoxModelBulkEditForm, NetBoxModelFilterSetForm, NetBoxModelForm, NetBoxModelImportForm
@@ -21,6 +30,7 @@ from .models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -30,16 +40,17 @@ from .models import (
 
 
 class WdmProfileForm(NetBoxModelForm):
-    device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all(), label=_("Device Type"))
+    device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all(), required=False, label=_("Device Type"))
+    module_type = DynamicModelChoiceField(queryset=ModuleType.objects.all(), required=False, label=_("Module Type"))
 
     fieldsets = (
-        FieldSet("device_type", "node_type", "grid", "fiber_type", name=_("WDM Profile")),
+        FieldSet("device_type", "module_type", "node_type", "grid", "fiber_type", name=_("WDM Profile")),
         FieldSet("description", "tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmProfile
-        fields = ("device_type", "node_type", "grid", "fiber_type", "description", "tags")
+        fields = ("device_type", "module_type", "node_type", "grid", "fiber_type", "description", "tags")
 
 
 class WdmProfileFilterForm(NetBoxModelFilterSetForm):
@@ -54,13 +65,14 @@ class WdmProfileFilterForm(NetBoxModelFilterSetForm):
 
 
 class WdmProfileImportForm(NetBoxModelImportForm):
-    device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all())
+    device_type = DynamicModelChoiceField(queryset=DeviceType.objects.all(), required=False)
+    module_type = DynamicModelChoiceField(queryset=ModuleType.objects.all(), required=False)
     node_type = forms.ChoiceField(choices=WdmNodeTypeChoices)
     grid = forms.ChoiceField(choices=WdmGridChoices)
 
     class Meta:
         model = WdmProfile
-        fields = ("device_type", "node_type", "grid", "fiber_type", "description")
+        fields = ("device_type", "module_type", "node_type", "grid", "fiber_type", "description")
 
 
 # --- WdmChannelPlan ---
@@ -99,6 +111,23 @@ class WdmChannelPlanForm(NetBoxModelForm):
             "demux_front_port_template",
             "tags",
         )
+
+
+# --- WdmLinePortPlan ---
+
+
+class WdmLinePortPlanForm(NetBoxModelForm):
+    profile = DynamicModelChoiceField(queryset=WdmProfile.objects.all(), label=_("Profile"))
+    rear_port_template = DynamicModelChoiceField(queryset=RearPortTemplate.objects.all(), label=_("Rear Port Template"))
+
+    fieldsets = (
+        FieldSet("profile", "rear_port_template", "direction", "role", name=_("Line Port Plan")),
+        FieldSet("tags", name=_("Additional")),
+    )
+
+    class Meta:
+        model = WdmLinePortPlan
+        fields = ("profile", "rear_port_template", "direction", "role", "tags")
 
 
 # --- WdmNode ---
@@ -143,20 +172,25 @@ class WdmNodeImportForm(NetBoxModelImportForm):
 
 class WdmLinePortForm(NetBoxModelForm):
     wdm_node = DynamicModelChoiceField(queryset=WdmNode.objects.all(), label=_("WDM Node"))
+    module = DynamicModelChoiceField(queryset=Module.objects.all(), required=False, label=_("Module"))
     rear_port = DynamicModelChoiceField(queryset=RearPort.objects.all(), label=_("Rear Port"))
 
     fieldsets = (
-        FieldSet("wdm_node", "rear_port", "direction", "role", name=_("Line Port")),
+        FieldSet("wdm_node", "module", "rear_port", "direction", "role", name=_("Line Port")),
         FieldSet("tags", name=_("Additional")),
     )
 
     class Meta:
         model = WdmLinePort
-        fields = ("wdm_node", "rear_port", "direction", "role", "tags")
+        fields = ("wdm_node", "module", "rear_port", "direction", "role", "tags")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.wdm_node.is_fixed:
+        # Only scoped when editing: the node isn't known client-side on the add form,
+        # so an unscoped queryset there relies on model clean() as the backstop.
+        if self.instance.pk and self.instance.wdm_node_id:
+            self.fields["module"].queryset = Module.objects.filter(device=self.instance.wdm_node.device)
+        if self.instance.pk and self.instance.is_fixed:
             for field_name in WdmLinePort.FIXED_FIELDS:
                 if field_name in self.fields:
                     self.fields[field_name].disabled = True
@@ -167,6 +201,7 @@ class WdmLinePortForm(NetBoxModelForm):
 
 class WdmChannelForm(NetBoxModelForm):
     wdm_node = DynamicModelChoiceField(queryset=WdmNode.objects.all(), label=_("WDM Node"))
+    module = DynamicModelChoiceField(queryset=Module.objects.all(), required=False, label=_("Module"))
     mux_front_port = DynamicModelChoiceField(
         queryset=FrontPort.objects.all(), required=False, label=_("MUX Front Port")
     )
@@ -177,6 +212,7 @@ class WdmChannelForm(NetBoxModelForm):
     fieldsets = (
         FieldSet(
             "wdm_node",
+            "module",
             "mux_front_port",
             "demux_front_port",
             "status",
@@ -189,6 +225,7 @@ class WdmChannelForm(NetBoxModelForm):
         model = WdmChannel
         fields = (
             "wdm_node",
+            "module",
             "mux_front_port",
             "demux_front_port",
             "status",
@@ -197,7 +234,11 @@ class WdmChannelForm(NetBoxModelForm):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.wdm_node.is_fixed:
+        # Only scoped when editing: the node isn't known client-side on the add form,
+        # so an unscoped queryset there relies on model clean() as the backstop.
+        if self.instance.pk and self.instance.wdm_node_id:
+            self.fields["module"].queryset = Module.objects.filter(device=self.instance.wdm_node.device)
+        if self.instance.pk and self.instance.is_fixed:
             for field_name in ("mux_front_port", "demux_front_port"):
                 if field_name in self.fields:
                     self.fields[field_name].disabled = True

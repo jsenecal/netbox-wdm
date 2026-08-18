@@ -7,9 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Module-scoped WDM overlay: `WdmProfile.module_type`, `WdmChannel.module`, and `WdmLinePort.module` let a `dcim.ModuleType` (rather than only a `DeviceType`) carry a WDM profile, so cassette-style modular chassis get one independent set of channels and line ports per installed module.
+- WDM Profile tab on `ModuleType` detail pages, matching the existing DeviceType tab: profile summary, channel plans, and line port plans.
+- Full CRUD for `WdmLinePortPlan`: `wdm-line-port-plans` REST route, `wdmlineportplan` detail/edit/delete views, and a Line Port Plans card on the WDM Profile and DeviceType/ModuleType WDM Profile tab pages.
+- REST API, filtersets, forms, tables, and views for `WdmProfile.module_type`, `WdmChannel.module`, and `WdmLinePort.module`.
+- Sample data: a fifth topology, `modular_chassis_span` (2-cassette hub chassis linked through patch panels to two single-cassette peer chassis), demonstrating the module-scoped overlay end to end.
+- `docs/user/modular-chassis.md` -- user guide for modular chassis support (profile on ModuleType, per-module channel/line-port grid, install/remove lifecycle, line port plans).
+
+### Changed
+
+- **Breaking:** raised the minimum supported NetBox version from 4.5.0 to 4.6.6. Upcoming changes rely on profile-aware `link_peers` (NetBox 4.6.0) and the `FrontPortFormMixin._save_m2m` template-mapping `post_save` fix in NetBox 4.6.6 (see the Fixed entry below). ([#38](https://github.com/jsenecal/netbox-wdm/issues/38))
+- `WdmLinePort.rear_port` and `WdmWavelengthPathChannel.channel` moved from `PROTECT` to `CASCADE`. Deleting a module, a rear port, or a device now cascades its WDM overlay objects (channels, line ports, wavelength-path entries) instead of raising `ProtectedError`; wavelength paths are derived data, so any path left broken by the cascade is pruned, and affected nodes are automatically retraced and rechecked for port sync.
+- Port-sync hash format changed: `expected_port_hash` and the computed actual-port hash now include the module (or `0` for device-level ports) in every hashed tuple so fixed and ROADM port groups are diffed per module instead of pooling all of a device's ports together. Hashes computed under the old format no longer match; after upgrading, run `python manage.py wdm_rehash_ports` once to recompute `expected_port_hash` for existing `WdmNode` rows.
+
 ### Fixed
 
 - Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
+- `WdmChannelViewSet.trace` no longer picks an arbitrary TX/BIDI line port on a modular chassis or multi-degree ROADM; it now delegates to the same module- and destination-aware port selection the UI trace view already used, instead of a module- and destination-blind `.first()`.
+- The ROADM live wavelength editor no longer offers front ports from unrelated modules as MUX/DEMUX candidates. `WdmNode.validate_channel_mapping` also now rejects a proposed mapping that assigns a channel a front port belonging to a different module.
+- The plugin's GraphQL schema was never registered with NetBox: `NetBoxWDMConfig` did not set `graphql_schema`, so NetBox's default resource lookup could not resolve the nested `graphql.schema` module, and every `wdm_*` query field (`wdm_profile`, `wdm_node`, `wdm_channel`, etc.) was silently absent from the live schema, with no error. `graphql_schema = "graphql.schema.schema"` is now set explicitly, matching the convention already used by other owned plugins.
+- Structural port repair (`apply_sync`) now rebuilds module-level RearPorts and FrontPorts, not just device-level ones, on NetBox 4.6: a FrontPort or RearPort deleted (or never created) on an installed module is recreated from its ModuleType template, with its PortMapping, the same way device-level ports were already repaired. A deleted `WdmLinePort` is likewise recreated from its `WdmLinePortPlan` on the correct module.
 
 ## [0.2.2] - 2026-04-28
 

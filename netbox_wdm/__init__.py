@@ -15,8 +15,9 @@ class NetBoxWDMConfig(PluginConfig):
     author = "Jonathan Senecal"
     author_email = "contact@jonathansenecal.com"
     base_url = "wdm"
-    min_version = "4.5.0"
+    min_version = "4.6.6"
     default_settings = {}
+    graphql_schema = "graphql.schema.schema"
 
     def ready(self):
         super().ready()

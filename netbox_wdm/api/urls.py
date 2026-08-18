@@ -6,6 +6,7 @@ router = NetBoxRouter()
 
 router.register("wdm-profiles", views.WdmProfileViewSet)
 router.register("wdm-channel-plans", views.WdmChannelPlanViewSet)
+router.register("wdm-line-port-plans", views.WdmLinePortPlanViewSet)
 router.register("wdm-nodes", views.WdmNodeViewSet)
 router.register("wdm-line-ports", views.WdmLinePortViewSet)
 router.register("wdm-channels", views.WdmChannelViewSet)

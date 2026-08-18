@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from dcim.models import PortMapping, RearPort
+from dcim.models import FrontPort, PortMapping, RearPort
 from django.db import transaction
 from django.db.models import Q
 from netbox.api.viewsets import NetBoxModelViewSet
@@ -11,12 +11,14 @@ from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from ..dataclasses import CableSegment, CableSegmentItem, ChannelTraceData, path_element_from_channel
+from ..choices import WdmLineRoleChoices
+from ..dataclasses import ChannelTraceData
 from ..filters import (
     WdmChannelFilterSet,
     WdmChannelPlanFilterSet,
     WdmCircuitFilterSet,
     WdmLinePortFilterSet,
+    WdmLinePortPlanFilterSet,
     WdmNodeFilterSet,
     WdmProfileFilterSet,
     WdmWavelengthPathFilterSet,
@@ -26,6 +28,7 @@ from ..models import (
     WdmChannelPlan,
     WdmCircuit,
     WdmLinePort,
+    WdmLinePortPlan,
     WdmNode,
     WdmProfile,
     WdmWavelengthPath,
@@ -34,6 +37,7 @@ from .serializers import (
     WdmChannelPlanSerializer,
     WdmChannelSerializer,
     WdmCircuitSerializer,
+    WdmLinePortPlanSerializer,
     WdmLinePortSerializer,
     WdmNodeSerializer,
     WdmProfileSerializer,
@@ -53,6 +57,12 @@ class WdmChannelPlanViewSet(NetBoxModelViewSet):
     filterset_class = WdmChannelPlanFilterSet
 
 
+class WdmLinePortPlanViewSet(NetBoxModelViewSet):
+    queryset = WdmLinePortPlan.objects.select_related("profile", "rear_port_template")
+    serializer_class = WdmLinePortPlanSerializer
+    filterset_class = WdmLinePortPlanFilterSet
+
+
 def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | None]]) -> dict[str, int]:
     """Apply channel-to-port mapping changes. Uses bulk operations.
 
@@ -60,16 +70,39 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
     """
     channels = {ch.pk: ch for ch in wdm_node.channels.all()}
     line_ports = list(wdm_node.line_ports.select_related("rear_port").all())
+    # Group line ports by module so create/delete only ever touch the rear ports of
+    # the channel's own module (or the device-level group, for module=None). A
+    # mixed chassis has independent line-port groups per module/cassette; writing
+    # against every line port on the node cross-contaminates other groups' rear
+    # ports with garbage PortMappings.
+    line_ports_by_module: dict[int | None, list[Any]] = {}
+    for lp in line_ports:
+        line_ports_by_module.setdefault(lp.module_id, []).append(lp)
 
     added = removed = changed = 0
     channels_to_update = []
     old_fp_ids_to_delete = []
     new_mappings_to_create = []
+    # FrontPort.clean() requires positions >= its mapped-rear-port count (NetBox
+    # core constraint). bulk_create below skips that check, but a later full_clean()
+    # (UI edit, REST PATCH/PUT) on a front port fanned out to N same-role line ports
+    # would then fail. Track the minimum positions each newly-assigned front port
+    # needs so we can grow it up front.
+    fp_min_positions: dict[int, int] = {}
 
     for ch_pk, ports in desired_mapping.items():
         ch = channels.get(ch_pk)
         if ch is None:
             continue
+
+        module_line_ports = line_ports_by_module.get(ch.module_id, [])
+        # A channel's MUX (TX) front port only ever fans out to that module group's
+        # TX/BIDI line ports, and DEMUX (RX) only to RX/BIDI. Without this split, a
+        # front port fanned across every line port in the group collides with
+        # PortMapping's (front_port, front_port_position) uniqueness as soon as a
+        # group has more than one line port -- any real ROADM (east/west TX+RX: 4).
+        tx_line_ports = [lp for lp in module_line_ports if lp.role in (WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI)]
+        rx_line_ports = [lp for lp in module_line_ports if lp.role in (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI)]
 
         desired_mux = ports.get("mux")
         desired_demux = ports.get("demux")
@@ -79,19 +112,21 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
         if current_mux == desired_mux and current_demux == desired_demux:
             continue
 
-        for current_fp_pk in (current_mux, current_demux):
+        for current_fp_pk, role_line_ports in ((current_mux, tx_line_ports), (current_demux, rx_line_ports)):
             if current_fp_pk is not None:
-                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position))
+                old_fp_ids_to_delete.append((current_fp_pk, ch.grid_position, role_line_ports))
 
-        for desired_fp_pk in (desired_mux, desired_demux):
+        for desired_fp_pk, role_line_ports in ((desired_mux, tx_line_ports), (desired_demux, rx_line_ports)):
             if desired_fp_pk is not None:
-                for tp in line_ports:
+                if role_line_ports:
+                    fp_min_positions[desired_fp_pk] = max(fp_min_positions.get(desired_fp_pk, 0), len(role_line_ports))
+                for position, tp in enumerate(role_line_ports, start=1):
                     new_mappings_to_create.append(
                         PortMapping(
                             device=wdm_node.device,
                             front_port_id=desired_fp_pk,
                             rear_port=tp.rear_port,
-                            front_port_position=1,
+                            front_port_position=position,
                             rear_port_position=ch.grid_position,
                         )
                     )
@@ -114,11 +149,21 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
     if old_fp_ids_to_delete:
         delete_q = Q()
-        for fp_id, grid_pos in old_fp_ids_to_delete:
-            for tp in line_ports:
+        for fp_id, grid_pos, role_line_ports in old_fp_ids_to_delete:
+            for tp in role_line_ports:
                 delete_q |= Q(front_port_id=fp_id, rear_port=tp.rear_port, rear_port_position=grid_pos)
         if delete_q:
             PortMapping.objects.filter(delete_q).delete()
+
+    if fp_min_positions:
+        front_ports_to_grow = []
+        for fp in FrontPort.objects.filter(pk__in=fp_min_positions):
+            required = fp_min_positions[fp.pk]
+            if fp.positions < required:
+                fp.positions = required
+                front_ports_to_grow.append(fp)
+        if front_ports_to_grow:
+            FrontPort.objects.bulk_update(front_ports_to_grow, ["positions"])
 
     if new_mappings_to_create:
         PortMapping.objects.bulk_create(new_mappings_to_create)
@@ -232,11 +277,16 @@ class WdmChannelViewSet(NetBoxModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="trace")
     def trace(self, request: Any, pk: int | None = None) -> Response:
-        """Return the full wavelength path trace for this channel."""
-        from dcim.models import Cable, CableTermination
-        from django.contrib.contenttypes.models import ContentType
+        """Return the full wavelength path trace for this channel.
 
+        Delegates segment building to views._build_trace_data_for_path, which
+        (via _trace_cable_segment) scopes the TX/BIDI line-port lookup to each
+        hop channel's module and picks the port whose cable chain actually
+        reaches the next hop's node/module -- instead of an arbitrary
+        module- and destination-blind ``.first()``.
+        """
         from ..models import WdmWavelengthPathChannel
+        from ..views import _build_trace_data_for_path
 
         channel = self.get_object()
 
@@ -258,98 +308,7 @@ class WdmChannelViewSet(NetBoxModelViewSet):
                 )
             )
 
-        wl_path = path_entry.path
-
-        # Build elements
-        elements = []
-        for entry in wl_path.path_channels.select_related(
-            "channel__wdm_node__device",
-            "channel__mux_front_port",
-            "channel__demux_front_port",
-        ).order_by("sequence"):
-            elements.append(path_element_from_channel(entry.channel, entry.sequence))
-
-        # Build cable segments between consecutive elements
-        cable_segments: list[CableSegment] = []
-        rp_ct = ContentType.objects.get_for_model(RearPort)
-        hop_entries = list(wl_path.path_channels.select_related("channel__wdm_node__device").order_by("sequence"))
-
-        for i in range(len(hop_entries) - 1):
-            from_node = hop_entries[i].channel.wdm_node
-            items: list[CableSegmentItem] = []
-
-            tx_lp = (
-                WdmLinePort.objects.filter(wdm_node=from_node, role__in=["tx", "bidi"])
-                .select_related("rear_port")
-                .first()
-            )
-
-            if tx_lp and tx_lp.rear_port.cable_id:
-                # Source rear port
-                items.append(
-                    CableSegmentItem(
-                        type="rear_port",
-                        id=tx_lp.rear_port_id,
-                        name=tx_lp.rear_port.name,
-                        device=from_node.device.name,
-                        url=tx_lp.rear_port.get_absolute_url(),
-                    )
-                )
-
-                # Cable
-                try:
-                    cable = Cable.objects.get(pk=tx_lp.rear_port.cable_id)
-                    items.append(
-                        CableSegmentItem(
-                            type="cable",
-                            id=cable.pk,
-                            name=cable.label or f"Cable #{cable.pk}",
-                            status=cable.status,
-                            color=cable.color or "",
-                            url=cable.get_absolute_url(),
-                        )
-                    )
-                except Cable.DoesNotExist:
-                    pass
-
-                # Far-end rear port
-                far_terms = CableTermination.objects.filter(
-                    cable_id=tx_lp.rear_port.cable_id, termination_type=rp_ct
-                ).exclude(termination_id=tx_lp.rear_port_id)
-                far_term = far_terms.first()
-                if far_term:
-                    far_rp = RearPort.objects.filter(pk=far_term.termination_id).select_related("device").first()
-                    if far_rp:
-                        items.append(
-                            CableSegmentItem(
-                                type="rear_port",
-                                id=far_rp.pk,
-                                name=far_rp.name,
-                                device=far_rp.device.name,
-                                url=far_rp.get_absolute_url(),
-                            )
-                        )
-
-            cable_segments.append(
-                CableSegment(
-                    from_sequence=hop_entries[i].sequence,
-                    to_sequence=hop_entries[i + 1].sequence,
-                    items=items,
-                )
-            )
-
-        trace_data = ChannelTraceData(
-            channel_id=channel.pk,
-            wavelength_path_id=wl_path.pk,
-            wavelength_nm=wl_path.wavelength_nm,
-            grid_position=wl_path.grid_position,
-            is_complete=wl_path.is_complete,
-            is_active=wl_path.is_active,
-            is_valid=wl_path.is_valid,
-            elements=elements,
-            cable_segments=cable_segments,
-        )
-
+        trace_data = _build_trace_data_for_path(path_entry.path, channel_id=channel.pk)
         return Response(asdict(trace_data))
 
 

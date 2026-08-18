@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_delete
 
 
 def _device_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
@@ -164,9 +164,83 @@ def _rearport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     _recheck_port_sync({node})
 
 
+def _module_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
+    """Populate channels and line ports when a profiled module is installed into a WDM node's device."""
+    if not created:
+        return
+
+    from .models import WdmNode
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    transaction.on_commit(lambda: node.populate_module(instance))
+
+
+def _cleanup_after_module_delete(nodes: set[Any], affected_path_ids: set[int]) -> None:
+    """Prune broken wavelength paths and retrace affected nodes after a module's rows cascade away.
+
+    Runs after the module (and its channels, line ports, and wavelength-path
+    entries) have already been deleted via plain FK cascades. A path that lost
+    some but not all of its channels is left partial (fewer than 2 entries) and
+    no longer means anything, so it and any leftover entries are dropped here;
+    surviving nodes are then retraced and rechecked for port sync.
+    """
+    from .models import WdmWavelengthPath
+
+    for path in WdmWavelengthPath.objects.filter(pk__in=affected_path_ids):
+        if path.path_channels.count() < 2:
+            path.path_channels.all().delete()
+            path.delete()
+
+    _rebuild_nodes(nodes)
+    _recheck_port_sync(nodes)
+
+
+def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Capture WDM nodes affected by a module's removal, then schedule cleanup for after it cascades.
+
+    Deleting the module cascades (plain FK on_delete=CASCADE) through its
+    WdmChannel and WdmLinePort rows, and further through any WdmWavelengthPathChannel
+    entries referencing those channels -- wavelength paths are derived data, not
+    source of truth, so none of that needs protecting. This handler only captures,
+    before the cascade runs, which nodes are affected (the module's own node, plus
+    any far-end node sharing a wavelength path with one of the module's channels)
+    and which paths those channels belonged to, then defers the actual pruning and
+    retrace to `_cleanup_after_module_delete` once the transaction commits (i.e.
+    once the cascade has already happened).
+    """
+    from .models import WdmChannel, WdmNode, WdmWavelengthPathChannel
+
+    try:
+        node = WdmNode.objects.get(device=instance.device)
+    except WdmNode.DoesNotExist:
+        return
+
+    channel_ids = list(WdmChannel.objects.filter(module=instance).values_list("pk", flat=True))
+    nodes = {node}
+    affected_path_ids: set[int] = set()
+
+    if channel_ids:
+        entries = WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
+        affected_path_ids = set(entries.values_list("path_id", flat=True))
+        if affected_path_ids:
+            far_node_pks = (
+                WdmWavelengthPathChannel.objects.filter(path_id__in=affected_path_ids)
+                .exclude(channel_id__in=channel_ids)
+                .values_list("channel__wdm_node", flat=True)
+                .distinct()
+            )
+            nodes |= set(WdmNode.objects.filter(pk__in=far_node_pks))
+
+    transaction.on_commit(lambda: _cleanup_after_module_delete(nodes, affected_path_ids))
+
+
 def connect_signals() -> None:
     """Connect device signals. Called from AppConfig.ready()."""
-    from dcim.models import Cable, Device, FrontPort, PortMapping, RearPort
+    from dcim.models import Cable, Device, FrontPort, Module, PortMapping, RearPort
     from dcim.models.cables import trace_paths
 
     from .models import WdmChannel, WdmLinePort
@@ -184,3 +258,5 @@ def connect_signals() -> None:
     post_delete.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
     post_save.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
     post_delete.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")
+    post_save.connect(_module_post_save, sender=Module, dispatch_uid="wdm_module_post_save")
+    pre_delete.connect(_module_pre_delete, sender=Module, dispatch_uid="wdm_module_pre_delete")
