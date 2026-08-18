@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from dcim.models import DeviceType, FrontPort
+from dcim.models import DeviceType, FrontPort, ModuleType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db.models import Q
 from django.urls import reverse
@@ -869,6 +869,36 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
 
     def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
         profile = WdmProfile.objects.filter(device_type=instance).first()
+        channel_plans = []
+        line_port_plans = []
+        if profile:
+            channel_plans = list(
+                profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
+                    "grid_position"
+                )
+            )
+            line_port_plans = list(profile.line_port_plans.select_related("rear_port_template"))
+        return {"profile": profile, "channel_plans": channel_plans, "line_port_plans": line_port_plans}
+
+
+# ---- ModuleType WDM Profile Tab ----
+
+
+@register_model_view(ModuleType, "wdm_profile", path="wdm-profile")
+class ModuleTypeWdmProfileView(generic.ObjectView):
+    queryset = ModuleType.objects.all()
+    tab = ViewTab(
+        label=_("WDM Profile"),
+        visible=lambda obj: WdmProfile.objects.filter(module_type=obj).exists(),
+        permission="netbox_wdm.view_wdmprofile",
+        weight=1100,
+    )
+
+    def get_template_name(self) -> str:
+        return "netbox_wdm/moduletype_wdm_tab.html"
+
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
+        profile = WdmProfile.objects.filter(module_type=instance).first()
         channel_plans = []
         line_port_plans = []
         if profile:
