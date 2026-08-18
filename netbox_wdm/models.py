@@ -31,6 +31,23 @@ def _module_wdm_profile(module: Any) -> WdmProfile | None:
         return None
 
 
+def _effective_is_fixed(node: WdmNode, module: Any) -> bool:
+    """Fixedness from the module's profile when module-scoped, else the node's.
+
+    Only ROADM nodes (or ROADM-profile modules) allow runtime changes to
+    channels and line ports.
+    """
+    profile = _module_wdm_profile(module)
+    if profile is not None:
+        return profile.node_type != WdmNodeTypeChoices.ROADM
+    return node.is_fixed
+
+
+def resolve_template_name(template: Any, module: Any) -> str:
+    """Resolve a component template's instance name, module-tokenized when module-scoped."""
+    return template.resolve_name(module=module) if module else template.name
+
+
 class WdmProfile(NetBoxModel):
     """WDM capability profile attached to a DeviceType or a ModuleType."""
 
@@ -381,13 +398,10 @@ class WdmNode(NetBoxModel):
         except WdmProfile.DoesNotExist:
             return
 
-        def resolve(template: Any) -> str:
-            return template.name
-
         fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(device=self.device, module__isnull=True)}
         rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(device=self.device, module__isnull=True)}
-        self._create_channels(profile, None, resolve, fp_by_name)
-        self._create_line_ports(profile, None, resolve, rp_by_name)
+        self._create_channels(profile, None, fp_by_name)
+        self._create_line_ports(profile, None, rp_by_name)
 
     def populate_module(self, module: Any) -> None:
         """Create channels and line ports for one installed module, if its ModuleType has a profile."""
@@ -397,15 +411,12 @@ class WdmNode(NetBoxModel):
         if profile is None:
             return
 
-        def resolve(template: Any) -> str:
-            return template.resolve_name(module=module)
-
         fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(module=module)}
         rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(module=module)}
-        self._create_channels(profile, module, resolve, fp_by_name)
-        self._create_line_ports(profile, module, resolve, rp_by_name)
+        self._create_channels(profile, module, fp_by_name)
+        self._create_line_ports(profile, module, rp_by_name)
 
-    def _create_channels(self, profile: WdmProfile, module: Any, resolve: Any, fp_by_name: dict) -> None:
+    def _create_channels(self, profile: WdmProfile, module: Any, fp_by_name: dict) -> None:
         # Device-scoped: the node's own node_type is authoritative (matches historical
         # behavior and lets a WdmNode be marked AMPLIFIER regardless of its device
         # type's profile). Module-scoped: the module's own profile decides, since the
@@ -415,8 +426,16 @@ class WdmNode(NetBoxModel):
             return
         plans = profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template")
         for cp in plans:
-            mux_fp = fp_by_name.get(resolve(cp.mux_front_port_template)) if cp.mux_front_port_template else None
-            demux_fp = fp_by_name.get(resolve(cp.demux_front_port_template)) if cp.demux_front_port_template else None
+            mux_fp = (
+                fp_by_name.get(resolve_template_name(cp.mux_front_port_template, module))
+                if cp.mux_front_port_template
+                else None
+            )
+            demux_fp = (
+                fp_by_name.get(resolve_template_name(cp.demux_front_port_template, module))
+                if cp.demux_front_port_template
+                else None
+            )
             WdmChannel.objects.get_or_create(
                 wdm_node=self,
                 module=module,
@@ -424,13 +443,13 @@ class WdmNode(NetBoxModel):
                 defaults={"mux_front_port": mux_fp, "demux_front_port": demux_fp},
             )
 
-    def _create_line_ports(self, profile: WdmProfile, module: Any, resolve: Any, rp_by_name: dict) -> None:
+    def _create_line_ports(self, profile: WdmProfile, module: Any, rp_by_name: dict) -> None:
         # Deliberately not gated on node_type == AMPLIFIER (unlike _create_channels above).
         # Amplifiers are pass-through devices: their trunk rear ports ARE line ports and
         # must still be created from the profile's line port plans. Amplifier-profile
         # modules get line ports but never channels, mirroring the node-level rule.
         for lpp in profile.line_port_plans.select_related("rear_port_template"):
-            rp = rp_by_name.get(resolve(lpp.rear_port_template))
+            rp = rp_by_name.get(resolve_template_name(lpp.rear_port_template, module))
             if rp is None:
                 continue
             WdmLinePort.objects.get_or_create(
@@ -513,10 +532,7 @@ class WdmLinePort(NetBoxModel):
     @property
     def is_fixed(self) -> bool:
         """Fixedness from the module's profile when module-scoped, else the node's."""
-        profile = _module_wdm_profile(self.module)
-        if profile is not None:
-            return profile.node_type != WdmNodeTypeChoices.ROADM
-        return self.wdm_node.is_fixed
+        return _effective_is_fixed(self.wdm_node, self.module)
 
     def _check_fixed_fields(self) -> None:
         """Check that fixed fields haven't changed on a fixed node."""
@@ -631,10 +647,7 @@ class WdmChannel(NetBoxModel):
     @property
     def is_fixed(self) -> bool:
         """Fixedness from the module's profile when module-scoped, else the node's."""
-        profile = _module_wdm_profile(self.module)
-        if profile is not None:
-            return profile.node_type != WdmNodeTypeChoices.ROADM
-        return self.wdm_node.is_fixed
+        return _effective_is_fixed(self.wdm_node, self.module)
 
     @property
     def label(self) -> str:

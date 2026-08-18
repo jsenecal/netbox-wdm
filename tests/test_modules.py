@@ -544,7 +544,7 @@ def _create_roadm_cassette_module_type(manufacturer, num_channels=2):
 @pytest.fixture
 def mixed_chassis(wdm_site, wdm_manufacturer, wdm_roles):
     """Chassis mixing a fixed cassette module (MUX1) with a ROADM-profile module (ROADM1)."""
-    from netbox_wdm.testing import create_cwdm_cassette_module_type
+    from netbox_wdm.testing import create_cwdm_cassette_module_type, ensure_populated
 
     mt_fixed = create_cwdm_cassette_module_type(wdm_manufacturer)
     mt_roadm = _create_roadm_cassette_module_type(wdm_manufacturer)
@@ -561,10 +561,7 @@ def mixed_chassis(wdm_site, wdm_manufacturer, wdm_roles):
     module_roadm = Module.objects.create(device=device, module_bay=bay_roadm, module_type=mt_roadm)
 
     node = WdmNode.objects.create(device=device)
-    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-        node.channels.all().delete()
-        node.line_ports.all().delete()
-        node._auto_populate()
+    ensure_populated(node)
 
     return node, module_fixed, module_roadm
 

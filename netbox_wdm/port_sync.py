@@ -52,24 +52,19 @@ def _node_groups(node: WdmNode) -> dict[int | None, dict[str, Any]]:
     Key None is the device-level group. Each group carries its own fixedness,
     resolved from the module's profile (module groups) or the node (device group).
     """
-    from .choices import WdmNodeTypeChoices
-    from .models import _module_wdm_profile
+    from .models import _effective_is_fixed
 
     groups: dict[int | None, dict[str, Any]] = {}
 
     def group(module_id: int | None, module: Any) -> dict[str, Any]:
         if module_id not in groups:
-            profile = _module_wdm_profile(module)
-            if profile is not None:
-                is_fixed = profile.node_type != WdmNodeTypeChoices.ROADM
-            else:
-                is_fixed = node.is_fixed
             groups[module_id] = {
                 "channels": [],
                 "tx_rp_ids": [],
                 "rx_rp_ids": [],
                 "rp_ids": set(),
-                "is_fixed": is_fixed,
+                "fp_ids": set(),
+                "is_fixed": _effective_is_fixed(node, module),
             }
         return groups[module_id]
 
@@ -82,9 +77,32 @@ def _node_groups(node: WdmNode) -> dict[int | None, dict[str, Any]]:
             g["rx_rp_ids"].append(lp.rear_port_id)
 
     for ch in node.channels.select_related("module__module_type"):
-        group(ch.module_id, ch.module)["channels"].append(ch)
+        g = group(ch.module_id, ch.module)
+        g["channels"].append(ch)
+        if ch.mux_front_port_id is not None:
+            g["fp_ids"].add(ch.mux_front_port_id)
+        if ch.demux_front_port_id is not None:
+            g["fp_ids"].add(ch.demux_front_port_id)
 
     return groups
+
+
+def _group_mappings(node: WdmNode, g: dict[str, Any]) -> list[tuple[int, int, int]]:
+    """PortMapping (front_port_id, rear_port_id, rear_port_position) rows for one group.
+
+    Scoped to that group's own channel front ports and line port rear ports, so
+    cross-module pairs never match. Empty when the group has no front ports or
+    no rear ports to match against.
+    """
+    if not g["fp_ids"] or not g["rp_ids"]:
+        return []
+    return list(
+        PortMapping.objects.filter(
+            device=node.device,
+            front_port_id__in=g["fp_ids"],
+            rear_port_id__in=g["rp_ids"],
+        ).values_list("front_port_id", "rear_port_id", "rear_port_position")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -116,19 +134,7 @@ def compute_actual_port_hash(node: WdmNode) -> str:
     tuples: list[tuple[Any, ...]] = []
     for module_id, g in _node_groups(node).items():
         mid = module_id or 0
-        fp_ids = set()
-        for ch in g["channels"]:
-            if ch.mux_front_port_id is not None:
-                fp_ids.add(ch.mux_front_port_id)
-            if ch.demux_front_port_id is not None:
-                fp_ids.add(ch.demux_front_port_id)
-        if not fp_ids or not g["rp_ids"]:
-            continue
-        mappings = PortMapping.objects.filter(
-            device=node.device,
-            front_port_id__in=fp_ids,
-            rear_port_id__in=g["rp_ids"],
-        ).values_list("front_port_id", "rear_port_id", "rear_port_position")
+        mappings = _group_mappings(node, g)
         if g["is_fixed"]:
             tuples.extend(("f", mid, fp, rp, pos) for fp, rp, pos in mappings)
         else:
@@ -177,19 +183,7 @@ def _build_actual_mappings(node: WdmNode) -> set[tuple[int, int, int]]:
     for g in _node_groups(node).values():
         if not g["is_fixed"]:
             continue
-        fp_ids: set[int] = set()
-        for ch in g["channels"]:
-            if ch.mux_front_port_id is not None:
-                fp_ids.add(ch.mux_front_port_id)
-            if ch.demux_front_port_id is not None:
-                fp_ids.add(ch.demux_front_port_id)
-        if not fp_ids or not g["rp_ids"]:
-            continue
-        mappings = PortMapping.objects.filter(
-            device=node.device,
-            front_port_id__in=fp_ids,
-            rear_port_id__in=g["rp_ids"],
-        ).values_list("front_port_id", "rear_port_id", "rear_port_position")
+        mappings = _group_mappings(node, g)
         actual.update((fp, rp, pos) for fp, rp, pos in mappings)
     return actual
 
@@ -206,22 +200,13 @@ def _compute_roadm_position_errors(node: WdmNode) -> tuple[set[tuple[int, int, i
     for g in _node_groups(node).values():
         if g["is_fixed"]:
             continue
-        fp_ids: set[int] = set()
         fp_to_grid: dict[int, int] = {}
         for ch in g["channels"]:
             if ch.mux_front_port_id is not None:
-                fp_ids.add(ch.mux_front_port_id)
                 fp_to_grid[ch.mux_front_port_id] = ch.grid_position
             if ch.demux_front_port_id is not None:
-                fp_ids.add(ch.demux_front_port_id)
                 fp_to_grid[ch.demux_front_port_id] = ch.grid_position
-        if not fp_ids or not g["rp_ids"]:
-            continue
-        mappings = PortMapping.objects.filter(
-            device=node.device,
-            front_port_id__in=fp_ids,
-            rear_port_id__in=g["rp_ids"],
-        ).values_list("front_port_id", "rear_port_id", "rear_port_position")
+        mappings = _group_mappings(node, g)
         for fp_id, rp_id, pos in mappings:
             expected_pos = fp_to_grid.get(fp_id)
             if expected_pos is not None and pos != expected_pos:
@@ -238,6 +223,8 @@ def _missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[str, An
     `compute_sync_diff` (which only reports what would be created).
     """
     from dcim.models import FrontPort, FrontPortTemplate, Module, RearPort, RearPortTemplate
+
+    from .models import resolve_template_name
 
     rear_missing: list[dict[str, Any]] = []
     front_missing: list[dict[str, Any]] = []
@@ -261,13 +248,13 @@ def _missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[str, An
     for rpts, fpts, module in targets:
         existing_rp_names = set(RearPort.objects.filter(device=device, module=module).values_list("name", flat=True))
         for rpt in rpts:
-            name = rpt.resolve_name(module=module) if module else rpt.name
+            name = resolve_template_name(rpt, module)
             if name not in existing_rp_names:
                 rear_missing.append({"name": name, "type": rpt.type, "positions": rpt.positions})
 
         existing_fp_names = set(FrontPort.objects.filter(device=device, module=module).values_list("name", flat=True))
         for fpt in fpts:
-            name = fpt.resolve_name(module=module) if module else fpt.name
+            name = resolve_template_name(fpt, module)
             if name not in existing_fp_names:
                 front_missing.append({"name": name, "type": fpt.type})
 
@@ -280,6 +267,8 @@ def _repair_missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[
 
     from dcim.models import FrontPort, FrontPortTemplate, Module, RearPort, RearPortTemplate
     from dcim.models.device_component_templates import PortTemplateMapping
+
+    from .models import resolve_template_name
 
     rear_created: list[dict[str, Any]] = []
     front_created: list[dict[str, Any]] = []
@@ -311,7 +300,7 @@ def _repair_missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[
     for rpts, fpts, ptms, module in targets:
         existing_rp = {rp.name: rp for rp in RearPort.objects.filter(device=device, module=module)}
         for rpt in rpts:
-            name = rpt.resolve_name(module=module) if module else rpt.name
+            name = resolve_template_name(rpt, module)
             if name not in missing_rear_names or name in existing_rp:
                 continue
             rp = RearPort.objects.create(
@@ -326,12 +315,12 @@ def _repair_missing_ports(device: Any) -> tuple[list[dict[str, Any]], list[dict[
 
         existing_fp = set(FrontPort.objects.filter(device=device, module=module).values_list("name", flat=True))
         for fpt in fpts:
-            name = fpt.resolve_name(module=module) if module else fpt.name
+            name = resolve_template_name(fpt, module)
             if name not in missing_front_names or name in existing_fp:
                 continue
             fp = FrontPort.objects.create(device=device, module=module, name=name, type=fpt.type)
             for ptm in ptms_by_fpt.get(fpt.pk, []):
-                rp_name = ptm.rear_port.resolve_name(module=module) if module else ptm.rear_port.name
+                rp_name = resolve_template_name(ptm.rear_port, module)
                 rp = existing_rp.get(rp_name)
                 if rp:
                     PortMapping.objects.create(
@@ -350,7 +339,7 @@ def _missing_line_ports(node: WdmNode) -> list[dict[str, Any]]:
     """Line ports the profiles' plans prescribe but the node is missing (dry run of the repair)."""
     from dcim.models import Module, RearPort
 
-    from .models import WdmLinePort, WdmProfile, _module_wdm_profile
+    from .models import WdmLinePort, WdmProfile, _module_wdm_profile, resolve_template_name
 
     missing: list[dict[str, Any]] = []
 
@@ -359,7 +348,7 @@ def _missing_line_ports(node: WdmNode) -> list[dict[str, Any]]:
             return
         rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(device=node.device, module=module)}
         for lpp in profile.line_port_plans.select_related("rear_port_template"):
-            name = lpp.rear_port_template.resolve_name(module=module) if module else lpp.rear_port_template.name
+            name = resolve_template_name(lpp.rear_port_template, module)
             rp = rp_by_name.get(name)
             if rp and not WdmLinePort.objects.filter(wdm_node=node, rear_port=rp).exists():
                 missing.append({"rear_port_name": name, "direction": lpp.direction, "role": lpp.role})
@@ -373,12 +362,12 @@ def _missing_line_ports(node: WdmNode) -> list[dict[str, Any]]:
     return missing
 
 
-def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
-    """Compute the full diff between expected and actual port state, per group.
+def _compute_mapping_delta(node: WdmNode) -> tuple[set[tuple[int, int, int]], set[tuple[int, int, int]]]:
+    """Compute (to_create, to_delete) mapping tuples for the full node.
 
-    Fixed groups: full set comparison of expected vs actual mappings, scoped to
-    that group's own line ports. ROADM groups: only detect wrong-position
-    mappings (direction assignment is dynamic). A node's groups may mix both.
+    Fixed groups contribute a full set comparison of expected vs actual
+    mappings, scoped to that group's own line ports. ROADM groups contribute
+    only their wrong-position corrections (direction assignment is dynamic).
     """
     expected = _build_expected_mappings(node)
     actual = _build_actual_mappings(node)
@@ -387,6 +376,17 @@ def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
     roadm_to_delete, roadm_to_recreate = _compute_roadm_position_errors(node)
     to_delete |= roadm_to_delete
     to_create |= roadm_to_recreate
+    return to_create, to_delete
+
+
+def compute_sync_diff(node: WdmNode) -> dict[str, Any]:
+    """Compute the full diff between expected and actual port state, per group.
+
+    Fixed groups: full set comparison of expected vs actual mappings, scoped to
+    that group's own line ports. ROADM groups: only detect wrong-position
+    mappings (direction assignment is dynamic). A node's groups may mix both.
+    """
+    to_create, to_delete = _compute_mapping_delta(node)
 
     # Structural check: dry-run of the device- and module-level template repair.
     rear_ports_to_create, front_ports_to_create = _missing_ports(node.device)
@@ -452,13 +452,7 @@ def apply_sync(node: WdmNode) -> dict[str, Any]:
 
         # Phase 2: PortMapping repair, per group (fixed groups get a full reset,
         # ROADM groups only get their wrong-position mappings corrected)
-        expected = _build_expected_mappings(node)
-        actual = _build_actual_mappings(node)
-        to_create = expected - actual
-        to_delete = actual - expected
-        roadm_to_delete, roadm_to_recreate = _compute_roadm_position_errors(node)
-        to_delete |= roadm_to_delete
-        to_create |= roadm_to_recreate
+        to_create, to_delete = _compute_mapping_delta(node)
 
         deleted_count = 0
         if to_delete:

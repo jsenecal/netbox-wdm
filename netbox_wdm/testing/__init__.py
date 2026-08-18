@@ -25,6 +25,7 @@ from .devices import (
     create_patch_panel,
     create_roadm,
     create_sf_mux,
+    ensure_populated,
 )
 from .topologies import Topology, duplex_mux_pair, dwdm_mux_to_roadm, modular_chassis_span, mux_roadm_mux, sf_mux_pair
 
@@ -50,6 +51,7 @@ __all__ = [
     "create_site",
     "duplex_mux_pair",
     "dwdm_mux_to_roadm",
+    "ensure_populated",
     "modular_chassis_span",
     "mux_roadm_mux",
     "sf_mux_pair",

@@ -851,11 +851,35 @@ class WdmCircuitBulkDeleteView(generic.BulkDeleteView):
     table = WdmCircuitTable
 
 
-# ---- DeviceType WDM Profile Tab ----
+# ---- DeviceType / ModuleType WDM Profile Tabs ----
+
+
+class WdmProfileTabViewMixin:
+    """Shared extra-context lookup for the DeviceType and ModuleType WDM Profile tabs.
+
+    Both tabs show the same profile summary, channel plans, and line port plans;
+    only the anchor field (`device_type` vs `module_type`) they filter WdmProfile
+    on differs.
+    """
+
+    profile_anchor_field: str
+
+    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
+        profile = WdmProfile.objects.filter(**{self.profile_anchor_field: instance}).first()
+        channel_plans = []
+        line_port_plans = []
+        if profile:
+            channel_plans = list(
+                profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
+                    "grid_position"
+                )
+            )
+            line_port_plans = list(profile.line_port_plans.select_related("rear_port_template"))
+        return {"profile": profile, "channel_plans": channel_plans, "line_port_plans": line_port_plans}
 
 
 @register_model_view(DeviceType, "wdm_profile", path="wdm-profile")
-class DeviceTypeWdmProfileView(generic.ObjectView):
+class DeviceTypeWdmProfileView(WdmProfileTabViewMixin, generic.ObjectView):
     queryset = DeviceType.objects.all()
     tab = ViewTab(
         label=_("WDM Profile"),
@@ -863,29 +887,14 @@ class DeviceTypeWdmProfileView(generic.ObjectView):
         permission="netbox_wdm.view_wdmprofile",
         weight=1100,
     )
+    profile_anchor_field = "device_type"
 
     def get_template_name(self) -> str:
         return "netbox_wdm/devicetype_wdm_tab.html"
 
-    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
-        profile = WdmProfile.objects.filter(device_type=instance).first()
-        channel_plans = []
-        line_port_plans = []
-        if profile:
-            channel_plans = list(
-                profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
-                    "grid_position"
-                )
-            )
-            line_port_plans = list(profile.line_port_plans.select_related("rear_port_template"))
-        return {"profile": profile, "channel_plans": channel_plans, "line_port_plans": line_port_plans}
-
-
-# ---- ModuleType WDM Profile Tab ----
-
 
 @register_model_view(ModuleType, "wdm_profile", path="wdm-profile")
-class ModuleTypeWdmProfileView(generic.ObjectView):
+class ModuleTypeWdmProfileView(WdmProfileTabViewMixin, generic.ObjectView):
     queryset = ModuleType.objects.all()
     tab = ViewTab(
         label=_("WDM Profile"),
@@ -893,19 +902,7 @@ class ModuleTypeWdmProfileView(generic.ObjectView):
         permission="netbox_wdm.view_wdmprofile",
         weight=1100,
     )
+    profile_anchor_field = "module_type"
 
     def get_template_name(self) -> str:
         return "netbox_wdm/moduletype_wdm_tab.html"
-
-    def get_extra_context(self, request: Any, instance: Any) -> dict[str, Any]:
-        profile = WdmProfile.objects.filter(module_type=instance).first()
-        channel_plans = []
-        line_port_plans = []
-        if profile:
-            channel_plans = list(
-                profile.channel_plans.select_related("mux_front_port_template", "demux_front_port_template").order_by(
-                    "grid_position"
-                )
-            )
-            line_port_plans = list(profile.line_port_plans.select_related("rear_port_template"))
-        return {"profile": profile, "channel_plans": channel_plans, "line_port_plans": line_port_plans}

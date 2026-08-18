@@ -1,0 +1,107 @@
+{% load helpers %}
+{% load i18n %}
+{% if profile %}
+<div class="row mb-3">
+    <div class="col col-md-6">
+        <div class="card">
+            <h5 class="card-header"><a href="{{ profile.get_absolute_url }}">{% trans "WDM Profile" %} <i class="mdi mdi-open-in-new" style="font-size: 0.75em;"></i></a></h5>
+            <table class="table table-hover attr-table">
+                <tr>
+                    <th scope="row">{% trans "Node Type" %}</th>
+                    <td>{{ profile.get_node_type_display }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "Grid" %}</th>
+                    <td>{{ profile.get_grid_display }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "Fiber Type" %}</th>
+                    <td>{{ profile.get_fiber_type_display }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "Channel Plans" %}</th>
+                    <td>{{ channel_plans|length }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">{% trans "Line Port Plans" %}</th>
+                    <td>{{ line_port_plans|length }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    <div class="col col-md-6">
+        <div class="card">
+            <h5 class="card-header">{% trans "Description" %}</h5>
+            <div class="card-body">
+                {% if profile.description %}
+                    {{ profile.description|markdown }}
+                {% else %}
+                    <span class="text-muted">{% trans "None" %}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% if channel_plans %}
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">{% trans "Channel Plans" %}</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>{% trans "Position" %}</th>
+                        <th>{% trans "Label" %}</th>
+                        <th>{% trans "Wavelength (nm)" %}</th>
+                        <th>{% trans "MUX Port" %}</th>
+                        <th>{% trans "DEMUX Port" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cp in channel_plans %}
+                    <tr>
+                        <td>{{ cp.grid_position }}</td>
+                        <td>{{ cp.label }}</td>
+                        <td>{{ cp.wavelength_nm }}</td>
+                        <td>{{ cp.mux_front_port_template|default:"" }}</td>
+                        <td>{{ cp.demux_front_port_template|default:"" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% if line_port_plans %}
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <h5 class="card-header">{% trans "Line Port Plans" %}</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>{% trans "Rear Port Template" %}</th>
+                        <th>{% trans "Direction" %}</th>
+                        <th>{% trans "Role" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lpp in line_port_plans %}
+                    <tr>
+                        <td>{{ lpp.rear_port_template }}</td>
+                        <td>{{ lpp.get_direction_display }}</td>
+                        <td>{{ lpp.get_role_display }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% else %}
+<div class="alert alert-info">
+    {{ no_profile_message }}
+</div>
+{% endif %}

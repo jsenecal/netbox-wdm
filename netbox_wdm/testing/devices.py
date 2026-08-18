@@ -20,6 +20,19 @@ class WdmDeviceBundle:
     channels: list[WdmChannel]
 
 
+def ensure_populated(node: WdmNode) -> None:
+    """Repair a WdmNode whose auto-populate ran before its ports existed.
+
+    In transaction=True test mode, on_commit fires immediately during
+    Device.save(), causing auto-populate to run before FrontPorts/RearPorts
+    exist. Detect that (channels with no ports assigned) and repopulate.
+    """
+    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
+        node.channels.all().delete()
+        node.line_ports.all().delete()
+        node._auto_populate()
+
+
 def create_duplex_mux(
     site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.CWDM
 ) -> WdmDeviceBundle:
@@ -29,12 +42,7 @@ def create_duplex_mux(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.TERMINAL_MUX, "grid": grid},
     )
-    # In transaction=True test mode, on_commit fires immediately during Device.save(),
-    # causing auto-populate to run before FrontPorts exist. Detect and repair.
-    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-        node.channels.all().delete()
-        node.line_ports.all().delete()
-        node._auto_populate()
+    ensure_populated(node)
     lp_tx = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.TX)
     lp_rx = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.RX)
     channels = list(node.channels.order_by("grid_position"))
@@ -50,10 +58,7 @@ def create_sf_mux(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.TERMINAL_MUX, "grid": grid},
     )
-    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-        node.channels.all().delete()
-        node.line_ports.all().delete()
-        node._auto_populate()
+    ensure_populated(node)
     lp_bidi = WdmLinePort.objects.get(wdm_node=node, role=WdmLineRoleChoices.BIDI)
     channels = list(node.channels.order_by("grid_position"))
     return WdmDeviceBundle(device=device, node=node, line_ports={"bidi": lp_bidi}, channels=channels)
@@ -68,10 +73,7 @@ def create_roadm(
         device=device,
         defaults={"node_type": WdmNodeTypeChoices.ROADM, "grid": grid},
     )
-    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-        node.channels.all().delete()
-        node.line_ports.all().delete()
-        node._auto_populate()
+    ensure_populated(node)
     line_ports = {f"line_{lp.direction}_{lp.role}": lp for lp in node.line_ports.select_related("rear_port")}
     channels = list(node.channels.order_by("grid_position"))
     return WdmDeviceBundle(device=device, node=node, line_ports=line_ports, channels=channels)
@@ -110,8 +112,5 @@ def create_modular_chassis(
         bay = ModuleBay.objects.create(device=device, name=bay_name, position=bay_name)
         modules[bay_name] = Module.objects.create(device=device, module_bay=bay, module_type=mt_cassette)
     node = WdmNode.objects.create(device=device)
-    if node.channels.filter(mux_front_port__isnull=True, demux_front_port__isnull=True).exists():
-        node.channels.all().delete()
-        node.line_ports.all().delete()
-        node._auto_populate()
+    ensure_populated(node)
     return ChassisBundle(device=device, node=node, modules=modules)
