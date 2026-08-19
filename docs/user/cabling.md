@@ -161,13 +161,22 @@ termination that is a WDM line port (a trunk RearPort registered as a
 line ports are paired: **TX-to-TX** and **RX-to-RX** are both refused.
 TX-to-RX and anything involving a bidirectional (`bidi`) line port passes.
 
-For duplex multi-terminated cables the check follows the same fibre
-pairing as the tracer: the termination at index `i` on the A side pairs
-with index `i` on the B side, so `[A.COM-TX, A.COM-RX]` to
-`[B.COM-RX, B.COM-TX]` is accepted while `[A.COM-TX, A.COM-RX]` to
-`[B.COM-TX, B.COM-RX]` is rejected. Terminations that are not WDM line
-ports -- patch panel ports, client ports, anything on a non-WDM device --
-are never inspected and cable saves involving them are unaffected.
+For multi-terminated cables the check follows the same fibre pairing as
+the tracer, taken from the cable profile: the Nth termination on an end is
+that end's connector N, and the profile decides which far-end connector
+each of its positions reaches. On a symmetric profile such as
+`trunk-2c1p` that means connector 1 pairs with connector 1, so
+`[A.COM-TX, A.COM-RX]` to `[B.COM-RX, B.COM-TX]` is accepted while
+`[A.COM-TX, A.COM-RX]` to `[B.COM-TX, B.COM-RX]` is rejected. Shuffle and
+breakout profiles route one connector's positions to several connectors on
+the far end, and the check follows those fibres rather than termination
+order. A cable with no profile carries no strand identity, so pairing
+falls back to matching index against index -- the same guess the tracer
+degrades to, and a reason to set a profile on WDM trunk cables.
+
+Terminations that are not WDM line ports -- patch panel ports, client
+ports, anything on a non-WDM device -- are never inspected and cable saves
+involving them are unaffected.
 
 One caveat: `clean()` only runs where `full_clean()` is called, which
 covers the NetBox UI forms and the REST API. A bare `.save()` in a script

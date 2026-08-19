@@ -1,6 +1,7 @@
 """Tests for signal handlers."""
 
 import pytest
+from dcim.choices import CableProfileChoices
 from dcim.models import Cable, CablePath, Device, DeviceType, FrontPort, Interface, RearPort
 from django.core.exceptions import ValidationError
 
@@ -214,6 +215,24 @@ def test_cable_full_clean_duplex_pairing_by_index(mux_pair):
     invalid = Cable(a_terminations=[a_tx, a_rx], b_terminations=[b_tx, b_rx])
     with pytest.raises(ValidationError):
         invalid.full_clean()
+
+
+@pytest.mark.django_db
+def test_cable_full_clean_pairs_through_asymmetric_profile(mux_pair):
+    """Regression test for issue #42: fibre pairing follows the cable profile, not termination order.
+
+    The trunk-2c4p-shuffle profile maps A connector 1 position 3 to B connector 2,
+    so the first A termination shares a fibre with both B terminations. Pairing by
+    index sees only TX-to-RX and RX-to-TX here and accepts the miscable.
+    """
+    mux_a, mux_b = mux_pair
+    cable = Cable(
+        profile=CableProfileChoices.TRUNK_2C4P_SHUFFLE,
+        a_terminations=[mux_a.line_ports["tx"].rear_port, mux_a.line_ports["rx"].rear_port],
+        b_terminations=[mux_b.line_ports["rx"].rear_port, mux_b.line_ports["tx"].rear_port],
+    )
+    with pytest.raises(ValidationError):
+        cable.full_clean()
 
 
 @pytest.mark.django_db

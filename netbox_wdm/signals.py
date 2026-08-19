@@ -211,6 +211,50 @@ def _cable_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
     instance._wdm_affected_node_pks = node_pks
 
 
+def _fibre_pairs(instance: Any, a_terms: list, b_terms: list) -> list[tuple[Any, Any]]:
+    """Return the (A, B) termination pairs that share a fibre on this cable.
+
+    A profiled cable knows which A connector reaches which B connector: the Nth
+    termination on an end is that end's connector N, and the profile maps each
+    of its positions to a far-end connector. Shuffle and breakout profiles route
+    one connector's positions to several connectors on the other end, so a single
+    termination can pair with more than one.
+
+    Without a profile the cable carries no strand identity, so the Nth
+    termination on one end is presumed to pair with the Nth on the other, and
+    ends of differing length pair only when one side is a single termination.
+    That presumption is a guess -- the same one the tracer degrades to for
+    unprofiled cables.
+    """
+    from dcim.choices import CableEndChoices
+
+    if not instance.profile:
+        if len(a_terms) == len(b_terms):
+            return list(zip(a_terms, b_terms, strict=True))
+        if len(a_terms) == 1:
+            return [(a_terms[0], b) for b in b_terms]
+        if len(b_terms) == 1:
+            return [(a, b_terms[0]) for a in a_terms]
+        return []
+
+    profile = instance.profile_class()
+    pairs: list[tuple[Any, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for a_connector, term_a in enumerate(a_terms, start=1):
+        for position in range(1, profile.a_connectors.get(a_connector, 0) + 1):
+            mapped = profile.get_mapped_position(CableEndChoices.SIDE_A, a_connector, position)
+            if not mapped:
+                continue
+            b_connector = mapped[0]
+            if not 1 <= b_connector <= len(b_terms):
+                continue
+            if (a_connector, b_connector) in seen:
+                continue
+            seen.add((a_connector, b_connector))
+            pairs.append((term_a, b_terms[b_connector - 1]))
+    return pairs
+
+
 def _cable_post_clean(sender: type, instance: Any, **kwargs: Any) -> None:
     """Reject role-incompatible WDM trunk terminations while a cable is being validated.
 
@@ -219,13 +263,10 @@ def _cable_post_clean(sender: type, instance: Any, **kwargs: Any) -> None:
     the port-sync flagging machinery stays in place as a backstop: this handler
     is prevention on the common path, not a replacement for detection.
 
-    Duplex (multi-terminated) cables pair fibres by position index --
-    a_terminations[i] carries the same fibre as b_terminations[i] -- so roles
-    are compared per index pair. When one end has a single termination it is
-    compared against every termination on the other end. Ends with differing
-    multi-termination counts have no defined fibre pairing, so they are left
-    alone. Only terminations that are WdmLinePort-managed rear ports are
-    inspected; every other termination passes through untouched.
+    Fibre pairing comes from the cable profile, so shuffle and breakout profiles
+    are compared along the fibres they actually carry. Only terminations that are
+    WdmLinePort-managed rear ports are inspected; every other termination passes
+    through untouched.
     """
     from dcim.models import RearPort
     from django.core.exceptions import ValidationError
@@ -244,16 +285,7 @@ def _cable_post_clean(sender: type, instance: Any, **kwargs: Any) -> None:
     if not roles:
         return
 
-    if len(a_terms) == len(b_terms):
-        pairs = zip(a_terms, b_terms, strict=True)
-    elif len(a_terms) == 1:
-        pairs = ((a_terms[0], b) for b in b_terms)
-    elif len(b_terms) == 1:
-        pairs = ((a, b_terms[0]) for a in a_terms)
-    else:
-        return
-
-    for term_a, term_b in pairs:
+    for term_a, term_b in _fibre_pairs(instance, a_terms, b_terms):
         if not (isinstance(term_a, RearPort) and isinstance(term_b, RearPort)):
             continue
         role_a = roles.get(term_a.pk)
