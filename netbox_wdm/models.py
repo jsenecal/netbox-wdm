@@ -404,7 +404,12 @@ class WdmNode(NetBoxModel):
         self._create_line_ports(profile, None, rp_by_name)
 
     def populate_module(self, module: Any) -> None:
-        """Create channels and line ports for one installed module, if its ModuleType has a profile."""
+        """Create channels and line ports for one installed module, if its ModuleType has a profile.
+
+        Runs from the module install signal's on_commit callback, outside any
+        transaction, so the creates are wrapped in one: without it each channel
+        and line port commits separately and triggers its own path rebuild.
+        """
         from dcim.models import FrontPort, RearPort
 
         profile = _module_wdm_profile(module)
@@ -413,8 +418,9 @@ class WdmNode(NetBoxModel):
 
         fp_by_name = {fp.name: fp for fp in FrontPort.objects.filter(module=module)}
         rp_by_name = {rp.name: rp for rp in RearPort.objects.filter(module=module)}
-        self._create_channels(profile, module, fp_by_name)
-        self._create_line_ports(profile, module, rp_by_name)
+        with transaction.atomic():
+            self._create_channels(profile, module, fp_by_name)
+            self._create_line_ports(profile, module, rp_by_name)
 
     def _create_channels(self, profile: WdmProfile, module: Any, fp_by_name: dict) -> None:
         # Device-scoped: the node's own node_type is authoritative (matches historical

@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dcim.models import Cable, Device, DeviceRole, DeviceType, FrontPort, FrontPortTemplate, ModuleType, RearPort, Site
+from django.db import transaction
 
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
 from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
@@ -31,6 +32,7 @@ class Topology:
     cables: list[Cable]
 
 
+@transaction.atomic
 def duplex_mux_pair(
     site: Site, dt_mux: DeviceType, dt_pp: DeviceType, roles: dict[str, DeviceRole], name_prefix: str = ""
 ) -> Topology:
@@ -77,6 +79,7 @@ def duplex_mux_pair(
     )
 
 
+@transaction.atomic
 def sf_mux_pair(
     site: Site, dt_sf_mux: DeviceType, dt_pp: DeviceType, roles: dict[str, DeviceRole], name_prefix: str = ""
 ) -> Topology:
@@ -123,6 +126,7 @@ def sf_mux_pair(
     )
 
 
+@transaction.atomic
 def sf_mux_long_chain(
     site: Site,
     dt_sf_mux: DeviceType,
@@ -204,6 +208,7 @@ def sf_mux_long_chain(
     )
 
 
+@transaction.atomic
 def dwdm_mux_to_roadm(
     site: Site,
     dt_dwdm: DeviceType,
@@ -257,6 +262,7 @@ def dwdm_mux_to_roadm(
     )
 
 
+@transaction.atomic
 def mux_roadm_mux(
     site: Site,
     dt_dwdm: DeviceType,
@@ -317,6 +323,7 @@ def mux_roadm_mux(
     )
 
 
+@transaction.atomic
 def modular_chassis_span(
     site: Site,
     mt_cassette: ModuleType,

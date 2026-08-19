@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from dcim.models import Device, DeviceRole, DeviceType, Module, ModuleBay, ModuleType, Site
+from django.db import transaction
 
 from netbox_wdm.choices import WdmGridChoices, WdmLineRoleChoices, WdmNodeTypeChoices
 from netbox_wdm.models import WdmChannel, WdmLinePort, WdmNode
@@ -33,6 +34,7 @@ def ensure_populated(node: WdmNode) -> None:
         node._auto_populate()
 
 
+@transaction.atomic
 def create_duplex_mux(
     site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.CWDM
 ) -> WdmDeviceBundle:
@@ -49,6 +51,7 @@ def create_duplex_mux(
     return WdmDeviceBundle(device=device, node=node, line_ports={"tx": lp_tx, "rx": lp_rx}, channels=channels)
 
 
+@transaction.atomic
 def create_sf_mux(
     site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.CWDM
 ) -> WdmDeviceBundle:
@@ -64,6 +67,7 @@ def create_sf_mux(
     return WdmDeviceBundle(device=device, node=node, line_ports={"bidi": lp_bidi}, channels=channels)
 
 
+@transaction.atomic
 def create_roadm(
     site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.DWDM_100GHZ
 ) -> WdmDeviceBundle:
@@ -93,6 +97,7 @@ class ChassisBundle:
     modules: dict[str, Module]
 
 
+@transaction.atomic
 def create_modular_chassis(
     site: Site,
     role: DeviceRole,
