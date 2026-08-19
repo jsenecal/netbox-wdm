@@ -152,6 +152,29 @@ intent), but `is_active` stays false until every cable along it is
 connected. Use this to plan installs in advance and flip cables to
 `connected` as turn-up progresses.
 
+## Save-time validation
+
+The plugin rejects the most common miscable outright, before the cable is
+saved. A `post_clean` signal receiver on `dcim.Cable` inspects every
+termination that is a WDM line port (a trunk RearPort registered as a
+`WdmLinePort`) and raises a validation error when two role-incompatible
+line ports are paired: **TX-to-TX** and **RX-to-RX** are both refused.
+TX-to-RX and anything involving a bidirectional (`bidi`) line port passes.
+
+For duplex multi-terminated cables the check follows the same fibre
+pairing as the tracer: the termination at index `i` on the A side pairs
+with index `i` on the B side, so `[A.COM-TX, A.COM-RX]` to
+`[B.COM-RX, B.COM-TX]` is accepted while `[A.COM-TX, A.COM-RX]` to
+`[B.COM-TX, B.COM-RX]` is rejected. Terminations that are not WDM line
+ports -- patch panel ports, client ports, anything on a non-WDM device --
+are never inspected and cable saves involving them are unaffected.
+
+One caveat: `clean()` only runs where `full_clean()` is called, which
+covers the NetBox UI forms and the REST API. A bare `.save()` in a script
+bypasses validation, so the checks below (and the
+[port sync](port-sync.md) machinery) remain in place as a backstop. This
+is prevention on the common path, not a replacement for detection.
+
 ## Validity checks
 
 The trace flags a few cable-plant errors as `is_valid = false` on the
