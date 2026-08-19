@@ -505,6 +505,7 @@ def _trace_cable_segment(
     from django.contrib.contenttypes.models import ContentType
 
     from .models import WdmLinePort
+    from .trace import get_max_trace_hops, warn_max_trace_hops_reached
 
     items: list[CableSegmentItem] = []
     rp_ct = ContentType.objects.get_for_model(RearPort)
@@ -620,11 +621,13 @@ def _trace_cable_segment(
         return None, ""
 
     # Start: source rear port
-    current_rp = RearPort.objects.select_related("device").get(pk=tx_lp.rear_port_id)
+    source_rp = RearPort.objects.select_related("device").get(pk=tx_lp.rear_port_id)
+    current_rp = source_rp
     _add_rp(current_rp)
 
     visited_ports: set[int] = {current_rp.pk}
-    for _hop in range(20):  # max hops
+    max_hops = get_max_trace_hops()
+    for _hop in range(max_hops):
         fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=current_rp.pk)
         if not fresh_rp.cable_id:
             break
@@ -690,6 +693,8 @@ def _trace_cable_segment(
             continue
 
         break
+    else:
+        warn_max_trace_hops_reached(source_rp, max_hops)
 
     return items
 

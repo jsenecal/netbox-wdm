@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dcim.models import Cable, Device, DeviceRole, DeviceType, ModuleType, Site
+from dcim.models import Cable, Device, DeviceRole, DeviceType, FrontPort, FrontPortTemplate, ModuleType, RearPort, Site
 
 from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
 from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
@@ -119,6 +119,87 @@ def sf_mux_pair(
         name=f"{p}sf-mux-pair",
         bundles={"mux_a": mux_a, "mux_b": mux_b},
         patch_panels=[pp_a, pp_b],
+        cables=cables,
+    )
+
+
+def sf_mux_long_chain(
+    site: Site,
+    dt_sf_mux: DeviceType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    passthrough_units: int,
+    name_prefix: str = "",
+) -> Topology:
+    """Create two SF MUX endpoints joined by a long chain of patch panel pass-throughs.
+
+    Each pass-through unit occupies three patch panel ports (A, B, C) wired so
+    that the trace walker consumes one discovery hop per unit:
+
+        ...RP ->(patch)-> A.FP =PM= A.RP ->(trunk)-> B.RP =PM= B.FP ->(patch)-> C.FP =PM= C.RP...
+
+    A terminal patch panel port pair then patches into the far MUX COM rear
+    port, costing one more hop, so discovering the far end takes
+    passthrough_units + 1 hops. Patch panel devices are created as needed;
+    ports are allocated sequentially across them.
+
+    Args:
+        site: Site instance for all devices.
+        dt_sf_mux: DeviceType for single-fiber MUX devices.
+        dt_pp: DeviceType for patch panels.
+        roles: Dict with keys "wdm-mux" and "fiber-pp" mapping to DeviceRole instances.
+        passthrough_units: Number of three-port pass-through units in the chain.
+        name_prefix: Optional prefix for device names.
+
+    Returns:
+        Topology with bundles keyed "mux_a" and "mux_b".
+    """
+    p = f"{name_prefix}" if name_prefix else ""
+
+    mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-A")
+    mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-B")
+
+    ports_needed = 3 * passthrough_units + 2
+    ports_per_panel = FrontPortTemplate.objects.filter(device_type=dt_pp).count()
+    num_panels = -(-ports_needed // ports_per_panel)
+    panels = [create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-{i:02d}") for i in range(1, num_panels + 1)]
+
+    def pp_port(index: int) -> tuple[FrontPort, RearPort]:
+        device = panels[index // ports_per_panel]
+        num = index % ports_per_panel + 1
+        fp = FrontPort.objects.get(device=device, name=f"FP-{num:02d}")
+        rp = RearPort.objects.get(device=device, name=f"RP-{num:02d}")
+        return fp, rp
+
+    cables: list[Cable] = []
+
+    def add_cable(a_term, b_term, label: str) -> None:
+        cable = Cable(type="smf-os2", status="connected", label=label, a_terminations=[a_term], b_terminations=[b_term])
+        cable.save()
+        cables.append(cable)
+
+    current_rp = mux_a.line_ports["bidi"].rear_port
+    idx = 0
+    for unit in range(1, passthrough_units + 1):
+        a_fp, a_rp = pp_port(idx)
+        b_fp, b_rp = pp_port(idx + 1)
+        c_fp, c_rp = pp_port(idx + 2)
+        idx += 3
+        add_cable(current_rp, a_fp, f"{p}chain unit {unit} entry")
+        add_cable(a_rp, b_rp, f"{p}chain unit {unit} trunk")
+        add_cable(b_fp, c_fp, f"{p}chain unit {unit} link")
+        current_rp = c_rp
+
+    end_a_fp, end_a_rp = pp_port(idx)
+    end_b_fp, end_b_rp = pp_port(idx + 1)
+    add_cable(current_rp, end_a_fp, f"{p}chain end entry")
+    add_cable(end_a_rp, end_b_rp, f"{p}chain end trunk")
+    add_cable(end_b_fp, mux_b.line_ports["bidi"].rear_port, f"{p}chain end exit")
+
+    return Topology(
+        name=f"{p}sf-mux-long-chain",
+        bundles={"mux_a": mux_a, "mux_b": mux_b},
+        patch_panels=panels,
         cables=cables,
     )
 

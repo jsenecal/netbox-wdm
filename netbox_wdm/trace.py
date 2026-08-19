@@ -6,14 +6,34 @@ between WDM nodes, traversing through intermediate devices (patch panels, EDFAs)
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from dcim.models import CableTermination, FrontPort, PortMapping, RearPort
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
+from netbox.plugins import get_plugin_config
 
 from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
+
+logger = logging.getLogger(__name__)
+
+
+def get_max_trace_hops() -> int:
+    """Return the configured hop cap for cable-chain walks (max_trace_hops plugin setting)."""
+    return get_plugin_config("netbox_wdm", "max_trace_hops", 20)
+
+
+def warn_max_trace_hops_reached(start_rp: RearPort, max_hops: int) -> None:
+    """Log that a cable-chain walk was truncated by the hop cap, so the incomplete path is visible."""
+    logger.warning(
+        "Cable trace from rear port %s on device %s stopped after %d hops; the traced path may be "
+        "incomplete. Raise the max_trace_hops plugin setting if the chain is legitimately longer.",
+        start_rp,
+        start_rp.device,
+        max_hops,
+    )
 
 
 @dataclass
@@ -287,8 +307,9 @@ def _get_far_end_node(rear_port: RearPort) -> tuple[WdmNode | None, Any, RearPor
     """
     visited = {rear_port.pk}
     current_rp = rear_port
+    max_hops = get_max_trace_hops()
 
-    for _ in range(20):  # max hops to prevent infinite loops
+    for _ in range(max_hops):  # bounded to prevent infinite loops
         far_rp = _resolve_rearport_cable(current_rp, visited)
         if far_rp is None:
             return None, None, None
@@ -305,6 +326,7 @@ def _get_far_end_node(rear_port: RearPort) -> tuple[WdmNode | None, Any, RearPor
         # Not a WDM node — continue from this rear port
         current_rp = far_rp
 
+    warn_max_trace_hops_reached(rear_port, max_hops)
     return None, None, None
 
 
