@@ -30,38 +30,77 @@ def _device_post_save(sender: type, instance: Any, created: bool, **kwargs: Any)
     transaction.on_commit(_create_node)
 
 
+def _pending_nodes(kind: str) -> set[int]:
+    """Return the set of node pks awaiting `kind` work at the end of this transaction.
+
+    The set lives on the database connection, so concurrent threads accumulate
+    separately and each transaction starts from whatever the last flush left
+    behind. A rolled back transaction never runs its callbacks, so its pks stay
+    queued and are picked up by the next flush: the cost is a redundant rebuild,
+    never a missed one.
+    """
+    connection = transaction.get_connection()
+    store = getattr(connection, "_wdm_pending_nodes", None)
+    if store is None:
+        store = {}
+        connection._wdm_pending_nodes = store
+    return store.setdefault(kind, set())
+
+
+def _drain(kind: str) -> list[int]:
+    """Take every node pk queued for `kind`, leaving the queue empty."""
+    pending = _pending_nodes(kind)
+    node_pks = list(pending)
+    pending.clear()
+    return node_pks
+
+
 def _rebuild_nodes(nodes: set[Any]) -> None:
-    """Schedule path rebuilds for a set of WdmNode instances on transaction commit."""
+    """Queue path rebuilds for a set of WdmNode instances, to run once on commit."""
+    _pending_nodes("rebuild").update(node.pk for node in nodes if node.pk)
+    transaction.on_commit(_flush_rebuilds)
+
+
+def _flush_rebuilds() -> None:
+    """Rebuild every node queued during this transaction, each exactly once.
+
+    Every scheduling call registers this, so the first one to run does the work
+    and the rest find an empty queue. Registering unconditionally keeps the
+    queue and the callbacks from drifting apart when a transaction rolls back.
+    """
+    from .models import WdmNode
     from .trace import rebuild_wavelength_paths_for_node
 
-    for node in nodes:
-        transaction.on_commit(lambda n=node: rebuild_wavelength_paths_for_node(n))
+    node_pks = _drain("rebuild")
+    if not node_pks:
+        return
+    for node in WdmNode.objects.filter(pk__in=node_pks):
+        rebuild_wavelength_paths_for_node(node)
 
 
 def _recheck_port_sync(nodes: set[Any]) -> None:
-    """Schedule port sync hash recomputation for a set of WdmNode instances on transaction commit.
+    """Queue port sync hash recomputation for a set of WdmNode instances, to run once on commit."""
+    _pending_nodes("port_sync").update(node.pk for node in nodes if node.pk)
+    transaction.on_commit(_flush_port_sync)
 
-    Uses WdmNode.objects.filter(pk=n.pk).update(...) to avoid triggering the WdmNode
-    post_save signal (which would cause infinite recursion).
+
+def _flush_port_sync() -> None:
+    """Recompute port sync state for every node queued during this transaction.
+
+    Writes through queryset.update() rather than save() so the WdmNode post_save
+    signal does not fire and schedule this work all over again.
     """
     from .models import WdmNode
     from .port_sync import check_port_sync, compute_expected_port_hash
 
-    for node in nodes:
-
-        def _do_recheck(n: Any = node) -> None:
-            try:
-                fresh = WdmNode.objects.get(pk=n.pk)
-            except WdmNode.DoesNotExist:
-                return
-            expected_hash = compute_expected_port_hash(fresh)
-            in_sync = check_port_sync(fresh)
-            WdmNode.objects.filter(pk=fresh.pk).update(
-                expected_port_hash=expected_hash,
-                port_sync_valid=in_sync,
-            )
-
-        transaction.on_commit(_do_recheck)
+    node_pks = _drain("port_sync")
+    if not node_pks:
+        return
+    for node in WdmNode.objects.filter(pk__in=node_pks):
+        WdmNode.objects.filter(pk=node.pk).update(
+            expected_port_hash=compute_expected_port_hash(node),
+            port_sync_valid=check_port_sync(node),
+        )
 
 
 def _cable_trace_paths(sender: type, instance: Any, **kwargs: Any) -> None:
