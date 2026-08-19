@@ -103,41 +103,134 @@ def _flush_port_sync() -> None:
         )
 
 
-def _cable_trace_paths(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild wavelength paths for WDM nodes connected via this cable's rear port terminations."""
-    from dcim.models import CableTermination, RearPort
+def _pass_through_port_kinds() -> dict[int, str]:
+    """Map the FrontPort and RearPort content type ids to walkable port kinds."""
+    from dcim.models import FrontPort, RearPort
     from django.contrib.contenttypes.models import ContentType
 
-    from .models import WdmLinePort
+    return {
+        ContentType.objects.get_for_model(FrontPort).pk: "front",
+        ContentType.objects.get_for_model(RearPort).pk: "rear",
+    }
 
-    cable = instance
-    rp_ct = ContentType.objects.get_for_model(RearPort)
-    rp_ids = list(
-        CableTermination.objects.filter(cable=cable, termination_type=rp_ct).values_list("termination_id", flat=True)
-    )
-    if not rp_ids:
-        return
 
-    nodes = set()
-    for lp in WdmLinePort.objects.filter(rear_port_id__in=rp_ids).select_related("wdm_node"):
-        nodes.add(lp.wdm_node)
+def _wdm_nodes_reachable_from_cable(cable: Any) -> set[Any]:
+    """Find WDM nodes whose line ports are reachable from a cable's pass-through terminations.
 
+    A cable that lands directly on a WDM line port is trivially attributable, but
+    a mid-span trunk between two patch panels terminates only pass-through ports.
+    Walk outward from every front/rear port termination -- crossing pass-through
+    devices via their port mappings and following the cables hanging off them --
+    until rear ports registered as WDM line ports are reached. Line ports bound
+    the walk: it never descends into a WDM device's internals.
+    """
+    from collections import deque
+
+    from dcim.models import CableTermination, FrontPort, PortMapping, RearPort
+
+    from .models import WdmLinePort, WdmNode
+
+    kinds = _pass_through_port_kinds()
+
+    queue: deque[tuple[str, int]] = deque()
+    for ct_id, term_id in CableTermination.objects.filter(cable=cable).values_list(
+        "termination_type_id", "termination_id"
+    ):
+        if ct_id in kinds:
+            queue.append((kinds[ct_id], term_id))
+
+    node_pks: set[int] = set()
+    visited: set[tuple[str, int]] = set()
+    while queue:
+        kind, pk = queue.popleft()
+        if (kind, pk) in visited:
+            continue
+        visited.add((kind, pk))
+
+        if kind == "rear":
+            wdm_node_id = WdmLinePort.objects.filter(rear_port_id=pk).values_list("wdm_node_id", flat=True).first()
+            if wdm_node_id is not None:
+                node_pks.add(wdm_node_id)
+                continue
+            mapped = PortMapping.objects.filter(rear_port_id=pk).values_list("front_port_id", flat=True)
+            queue.extend(("front", fp_id) for fp_id in mapped)
+            port = RearPort.objects.only("pk", "cable", "cable_end").filter(pk=pk).first()
+        else:
+            mapped = PortMapping.objects.filter(front_port_id=pk).values_list("rear_port_id", flat=True)
+            queue.extend(("rear", rp_id) for rp_id in mapped)
+            port = FrontPort.objects.only("pk", "cable", "cable_end").filter(pk=pk).first()
+
+        if port is None or not port.cable_id:
+            continue
+        far_terminations = CableTermination.objects.filter(cable_id=port.cable_id).exclude(cable_end=port.cable_end)
+        for ct_id, term_id in far_terminations.values_list("termination_type_id", "termination_id"):
+            if ct_id in kinds:
+                queue.append((kinds[ct_id], term_id))
+
+    return set(WdmNode.objects.filter(pk__in=node_pks))
+
+
+def _cable_trace_paths(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Rebuild wavelength paths for WDM nodes reachable from this cable's terminations."""
+    nodes = _wdm_nodes_reachable_from_cable(instance)
     if nodes:
         _rebuild_nodes(nodes)
 
 
+def _cable_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Capture which WDM nodes have cable paths traversing this cable, before it is deleted.
+
+    Core NetBox retraces every affected CablePath in its own Cable post_delete
+    receiver, which runs before this plugin's; by the time our post_delete
+    handler fires, the deleted cable no longer appears in any CablePath's
+    flattened node list. Query here, while the rows still reference the cable,
+    map the paths' rear ports to WDM line ports, and stash the result on the
+    instance for _cable_post_delete.
+    """
+    from dcim.models import CablePath, RearPort
+    from django.contrib.contenttypes.models import ContentType
+
+    from .models import WdmLinePort
+
+    rp_ct_id = ContentType.objects.get_for_model(RearPort).pk
+
+    matched = False
+    rear_port_ids: set[int] = set()
+    for path in CablePath.objects.filter(_nodes__contains=instance):
+        matched = True
+        for node in path._nodes:
+            ct_id, _, object_id = node.partition(":")
+            if int(ct_id) == rp_ct_id:
+                rear_port_ids.add(int(object_id))
+
+    node_pks: set[int] = set()
+    if rear_port_ids:
+        node_pks = set(WdmLinePort.objects.filter(rear_port_id__in=rear_port_ids).values_list("wdm_node_id", flat=True))
+
+    instance._wdm_cablepath_matched = matched
+    instance._wdm_affected_node_pks = node_pks
+
+
 def _cable_post_delete(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Rebuild paths for all nodes that had paths — terminations are already gone after delete."""
-    from .models import WdmWavelengthPath, WdmWavelengthPathChannel
+    """Rebuild paths for the WDM nodes whose cable paths crossed the deleted cable.
 
-    node_pks = (
-        WdmWavelengthPathChannel.objects.filter(path__in=WdmWavelengthPath.objects.all())
-        .values_list("channel__wdm_node", flat=True)
-        .distinct()
-    )
-
+    Uses the node set captured by _cable_pre_delete. CablePath rows only exist
+    where a path endpoint (e.g. a client interface) is cabled at the edge, so a
+    dark trunk -- provisioned channels with nothing lit -- matches no CablePath
+    at all and cannot be scoped; fall back to rebuilding every node that
+    participates in any wavelength path, as before.
+    """
     from .models import WdmNode
 
+    if getattr(instance, "_wdm_cablepath_matched", False):
+        nodes = set(WdmNode.objects.filter(pk__in=instance._wdm_affected_node_pks))
+        if nodes:
+            _rebuild_nodes(nodes)
+        return
+
+    from .models import WdmWavelengthPathChannel
+
+    node_pks = WdmWavelengthPathChannel.objects.values_list("channel__wdm_node", flat=True).distinct()
     nodes = set(WdmNode.objects.filter(pk__in=node_pks))
     if nodes:
         _rebuild_nodes(nodes)
@@ -278,6 +371,7 @@ def connect_signals() -> None:
 
     post_save.connect(_device_post_save, sender=Device, dispatch_uid="wdm_device_post_save")
     trace_paths.connect(_cable_trace_paths, sender=Cable, dispatch_uid="wdm_cable_trace_paths")
+    pre_delete.connect(_cable_pre_delete, sender=Cable, dispatch_uid="wdm_cable_pre_delete")
     post_delete.connect(_cable_post_delete, sender=Cable, dispatch_uid="wdm_cable_post_delete")
     post_save.connect(_channel_changed, sender=WdmChannel, dispatch_uid="wdm_channel_post_save")
     post_delete.connect(_channel_changed, sender=WdmChannel, dispatch_uid="wdm_channel_post_delete")
