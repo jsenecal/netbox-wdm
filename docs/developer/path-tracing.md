@@ -72,28 +72,36 @@ The walk stops when:
 ## Cable-following helpers
 
 NetBox represents cables as `dcim.Cable` plus a list of
-`dcim.CableTermination` rows. The plugin's helpers all use the same
-A/B + position-index pattern:
+`dcim.CableTermination` rows. All cable hops resolve through one shared
+helper:
 
-- `_follow_cable_from_rearport(rp)` -- RearPort to RearPort (direct trunk
-  cable). Looks up every `CableTermination` for the cable, splits by
-  `cable_end`, finds the input rear port's `(side, index)`, returns the
-  termination at the **same index** on the other side.
-- `_follow_frontport_cable(fp)` -- FrontPort to FrontPort. Same logic
-  for FP-to-FP cables.
-- `_follow_cable_from_rearport_to_frontport(rp)` -- mixed rear-to-front
-  cables (e.g. trunk into a patch panel). Position-matches FP terms on
-  the far end.
+- `resolve_cable_far_end(port)` -- given a RearPort or FrontPort (a fresh
+  instance carrying its denormalized cable fields), returns the far-end
+  port paired with it on its cable strand, whatever its type. This is
+  also what the trace visualisation in `views.py` uses
+  (`_follow_cable_far_end`).
+- `_index_paired_far_end(port)` -- the legacy fallback for unprofiled
+  cables (see below).
 - `_resolve_rearport_cable(rp, visited)` -- glue function that follows a
   trunk cable, then a single pass-through device, then another trunk
   cable. This is what makes patch panel pairs invisible to the path
   hop count.
 
-The position-index matching is what handles **multi-terminated cables**.
-A duplex link uses one cable with two A-side ports and two B-side ports;
-position 0 on the A side maps to position 0 on the B side, position 1 to
-position 1, and so on. Without this, the trace would not know which of
-the two parallel fibres to follow.
+Strand pairing on **multi-terminated cables** (a duplex link is one
+cable with two A-side ports and two B-side ports) is resolved through
+the NetBox 4.6+ **cable profile**. A profiled cable persists a
+`connector` on every `CableTermination`, and `link_peers` maps connector
+N on one end to connector N on the other (for symmetric profiles such as
+`trunk-2c1p`). That stored pairing is authoritative: it does not depend
+on row creation order and survives re-terminations.
+
+Cables without a profile have no stored strand identity, so
+`resolve_cable_far_end` falls back to `_index_paired_far_end`: the Nth
+termination on one end (pk order) is presumed to pair with the Nth on
+the other end. This is a guess -- it breaks silently if a termination
+row is ever recreated out of order -- so every use logs a warning naming
+the cable. Assigning a profile to the cable moves it to the
+authoritative path.
 
 ## Pass-through device traversal
 

@@ -57,23 +57,38 @@ A duplex link between two MUXes via a patch panel pair therefore needs
 **three cables, not six**. Each cable's `a_terminations` and
 `b_terminations` are lists of two ports each.
 
-The trace code follows the right fibre by combining two pieces of
-information per hop:
-
-- The `cable_end` (A or B) of the port on the cable.
-- The position **index** of the port within its end's termination list.
-
-Position 0 in the A-end maps to position 0 in the B-end, and so on. This
-is how the tracer separates the TX leg from the RX leg through a single
-multi-terminated cable.
+**Duplex cables must carry a cable profile.** Assign the `trunk-2c1p`
+profile (NetBox 4.6+, "Trunk / 2C1P": two connectors per side, one
+position each) to every duplex WDM cable. The profile makes NetBox
+persist the strand identity on each termination (its *connector*), and
+the tracer resolves the far end of each strand through the profile's
+connector mapping (`link_peers`): connector 1 on the A side pairs with
+connector 1 on the B side, and so on.
 
 When you wire duplex cables in the NetBox UI:
 
 - Use the cable form's multi-termination support (a comma-separated list
-  of port names on each side).
-- The order of terminations on the A side defines the fibre indexing on
-  that cable. The corresponding port at the same index on the B side is
-  what the trace will follow.
+  of port names on each side) and select the `trunk-2c1p` profile.
+- The order in which you list the terminations assigns the connectors:
+  the first A-side port and the first B-side port become connector 1
+  (one strand), the second ports become connector 2 (the other strand).
+  Once assigned, the pairing is stored per termination and survives
+  later edits.
+
+## Cable profiles and legacy cables
+
+Simplex WDM cables should carry the `single-1c1p` profile (one
+connector, one position per side). It is unambiguous either way, but
+assigning it keeps the plant uniform and silences the fallback warning
+below.
+
+Cables **without** a profile store no strand identity, so the tracer
+falls back to guessing: the Nth termination on the A side (in creation
+order) is presumed to pair with the Nth on the B side. This works only
+while termination rows keep their creation order -- re-terminating one
+strand later breaks it silently. Every time the tracer has to use this
+fallback it logs a warning naming the cable; assign a profile to the
+named cable to make the pairing explicit and the warning go away.
 
 A duplex MUX always has its TX and RX listed **in TX, RX order on the MUX
 side**. On the patch panel side, list FrontPorts in the same TX, RX order
