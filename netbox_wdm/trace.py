@@ -46,166 +46,64 @@ class TraceResult:
     is_valid: bool
 
 
-def _follow_cable_from_rearport(rear_port: RearPort) -> RearPort | None:
-    """Follow a cable from a rear port to its paired far-end rear port.
+def _index_paired_far_end(termination: FrontPort | RearPort) -> FrontPort | RearPort | None:
+    """Legacy strand pairing for unprofiled cables: Nth A-side pairs with Nth B-side.
 
-    Handles multi-termination trunk cables by matching position in the ordered
-    termination list (first A-side maps to first B-side, etc).
-
-    Returns the far-end RearPort or None.
+    CableTermination rows carry no strand identity when the cable has no
+    profile, so the Nth termination on one end (in pk order) is presumed to
+    pair with the Nth termination on the other end. This only holds while
+    termination rows keep their creation order; callers must treat the
+    result as a guess.
     """
-    fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=rear_port.pk)
-    if not fresh_rp.cable_id:  # type: ignore[attr-defined]
-        return None
+    all_terms = list(CableTermination.objects.filter(cable_id=termination.cable_id).order_by("cable_end", "pk"))
+    my_ct = ContentType.objects.get_for_model(termination)
 
-    rp_ct = ContentType.objects.get_for_model(RearPort)
-
-    # Get all terminations for this cable, ordered by PK (creation order = position)
-    all_terms = list(
-        CableTermination.objects.filter(
-            cable_id=fresh_rp.cable_id,
-            termination_type=rp_ct,  # type: ignore[attr-defined]
-        ).order_by("cable_end", "pk")
+    my_terms = [t for t in all_terms if t.cable_end == termination.cable_end]
+    my_index = next(
+        (i for i, t in enumerate(my_terms) if t.termination_type_id == my_ct.pk and t.termination_id == termination.pk),
+        None,
     )
-
-    # Find which side and position our rear port is on
-    my_side = None
-    my_index = -1
-    a_terms = [t for t in all_terms if t.cable_end == "A"]
-    b_terms = [t for t in all_terms if t.cable_end == "B"]
-
-    for i, t in enumerate(a_terms):
-        if t.termination_id == fresh_rp.pk:
-            my_side = "A"
-            my_index = i
-            break
-
-    if my_side is None:
-        for i, t in enumerate(b_terms):
-            if t.termination_id == fresh_rp.pk:
-                my_side = "B"
-                my_index = i
-                break
-
-    if my_side is None or my_index < 0:
+    if my_index is None:
         return None
 
-    # Map to the corresponding position on the other side
-    far_terms = b_terms if my_side == "A" else a_terms
+    far_terms = [t for t in all_terms if t.cable_end != termination.cable_end]
     if my_index >= len(far_terms):
         return None
 
-    far_term = far_terms[my_index]
-    try:
-        return RearPort.objects.get(pk=far_term.termination_id)
-    except RearPort.DoesNotExist:
-        return None
+    far = far_terms[my_index].termination
+    return far if isinstance(far, (FrontPort, RearPort)) else None
 
 
-def _follow_frontport_cable(front_port: FrontPort) -> FrontPort | None:
-    """Follow a cable from a front port to its paired far-end front port.
+def resolve_cable_far_end(termination: FrontPort | RearPort) -> FrontPort | RearPort | None:
+    """Return the far-end port paired with this one on its cable strand.
 
-    Handles multi-termination cables by matching position.
-    Returns the far-end FrontPort or None.
+    Profiled cables (NetBox 4.6+ ``Cable.profile``) persist the strand
+    pairing on each ``CableTermination`` (connector/positions), and
+    ``link_peers`` resolves the far end through the profile's connector
+    mapping; that answer is authoritative.
+
+    Unprofiled legacy cables fall back to index pairing (see
+    ``_index_paired_far_end``), which may follow the wrong strand on
+    multi-strand cables; a warning is logged whenever it is used.
+
+    The termination must be a fresh instance carrying its denormalized
+    cable fields (cable, cable_end, cable_connector, cable_positions).
     """
-    if not front_port.cable_id:  # type: ignore[attr-defined]
+    if not termination.cable_id:  # type: ignore[attr-defined]
         return None
 
-    fp_ct = ContentType.objects.get_for_model(FrontPort)
-    all_terms = list(
-        CableTermination.objects.filter(
-            cable_id=front_port.cable_id,
-            termination_type=fp_ct,  # type: ignore[attr-defined]
-        ).order_by("cable_end", "pk")
+    cable = termination.cable
+    if cable.profile:
+        peers = [peer for peer in termination.link_peers if isinstance(peer, (FrontPort, RearPort))]
+        return peers[0] if peers else None
+
+    logger.warning(
+        "Cable %s (pk %d) has no profile; guessing strand pairing by termination order. "
+        "Assign a cable profile (e.g. trunk-2c1p for duplex trunks) to make strand pairing explicit.",
+        cable,
+        cable.pk,
     )
-
-    a_terms = [t for t in all_terms if t.cable_end == "A"]
-    b_terms = [t for t in all_terms if t.cable_end == "B"]
-
-    my_side = None
-    my_index = -1
-    for i, t in enumerate(a_terms):
-        if t.termination_id == front_port.pk:
-            my_side = "A"
-            my_index = i
-            break
-    if my_side is None:
-        for i, t in enumerate(b_terms):
-            if t.termination_id == front_port.pk:
-                my_side = "B"
-                my_index = i
-                break
-
-    if my_side is None or my_index < 0:
-        return None
-
-    far_terms = b_terms if my_side == "A" else a_terms
-    if my_index >= len(far_terms):
-        return None
-
-    try:
-        return FrontPort.objects.select_related("device").get(pk=far_terms[my_index].termination_id)
-    except FrontPort.DoesNotExist:
-        return None
-
-
-def _follow_cable_from_rearport_to_frontport(rear_port: RearPort) -> FrontPort | None:
-    """Follow a cable from a rear port to a far-end front port (patch cable pattern).
-
-    Returns the far-end FrontPort or None.
-    """
-    fresh_rp = RearPort.objects.only("pk", "cable_id").get(pk=rear_port.pk)
-    if not fresh_rp.cable_id:  # type: ignore[attr-defined]
-        return None
-
-    rp_ct = ContentType.objects.get_for_model(RearPort)
-    fp_ct = ContentType.objects.get_for_model(FrontPort)
-
-    # Find which side the rear port is on
-    rp_terms = list(
-        CableTermination.objects.filter(
-            cable_id=fresh_rp.cable_id,  # pyright: ignore[reportAttributeAccessIssue]
-            termination_type=rp_ct,  # type: ignore[attr-defined]
-        ).order_by("cable_end", "pk")
-    )
-    fp_terms = list(
-        CableTermination.objects.filter(
-            cable_id=fresh_rp.cable_id,  # pyright: ignore[reportAttributeAccessIssue]
-            termination_type=fp_ct,  # type: ignore[attr-defined]
-        ).order_by("cable_end", "pk")
-    )
-
-    if not fp_terms:
-        return None
-
-    my_side = None
-    my_index = -1
-    a_rp_terms = [t for t in rp_terms if t.cable_end == "A"]
-    b_rp_terms = [t for t in rp_terms if t.cable_end == "B"]
-
-    for i, t in enumerate(a_rp_terms):
-        if t.termination_id == fresh_rp.pk:
-            my_side = "A"
-            my_index = i
-            break
-    if my_side is None:
-        for i, t in enumerate(b_rp_terms):
-            if t.termination_id == fresh_rp.pk:
-                my_side = "B"
-                my_index = i
-                break
-
-    if my_side is None or my_index < 0:
-        return None
-
-    far_fp_terms = [t for t in fp_terms if t.cable_end != my_side]
-    if my_index >= len(far_fp_terms):
-        return None
-
-    try:
-        return FrontPort.objects.select_related("device").get(pk=far_fp_terms[my_index].termination_id)
-    except FrontPort.DoesNotExist:
-        return None
+    return _index_paired_far_end(termination)
 
 
 def _resolve_rearport_cable(current_rp: RearPort, visited: set[int]) -> RearPort | None:
@@ -216,18 +114,19 @@ def _resolve_rearport_cable(current_rp: RearPort, visited: set[int]) -> RearPort
 
     Returns the next RearPort or None. Updates visited set.
     """
-    # Try direct RearPort-to-RearPort cable first
-    far_rp = _follow_cable_from_rearport(current_rp)
-    if far_rp is not None:
-        return far_rp
+    fresh_rp = RearPort.objects.get(pk=current_rp.pk)
+    far = resolve_cable_far_end(fresh_rp)
 
-    # Try RearPort-to-FrontPort (patch cable into a pass-through device)
-    far_fp = _follow_cable_from_rearport_to_frontport(current_rp)
-    if far_fp is None:
+    # Direct RearPort-to-RearPort trunk cable
+    if isinstance(far, RearPort):
+        return far
+
+    # RearPort-to-FrontPort (patch cable into a pass-through device)
+    if not isinstance(far, FrontPort):
         return None
 
     # FrontPort → PortMapping → RearPort (enter the pass-through device)
-    pm_in = PortMapping.objects.filter(front_port=far_fp).select_related("rear_port").first()
+    pm_in = PortMapping.objects.filter(front_port=far).select_related("rear_port").first()
     if pm_in is None or pm_in.rear_port.pk in visited:
         return None
 
@@ -235,62 +134,32 @@ def _resolve_rearport_cable(current_rp: RearPort, visited: set[int]) -> RearPort
     visited.add(inner_rp.pk)
 
     # Follow cable from inner RearPort (e.g., trunk cable between patch panels)
-    next_rp = _follow_cable_from_rearport(inner_rp)
-    if next_rp is not None:
-        if next_rp.pk in visited:
-            return None
-        visited.add(next_rp.pk)
+    next_rp = resolve_cable_far_end(inner_rp)
+    if not isinstance(next_rp, RearPort):
+        return None
+    if next_rp.pk in visited:
+        return None
+    visited.add(next_rp.pk)
 
-        # Check if next_rp is a WDM node directly — if so return it
-        try:
-            WdmLinePort.objects.get(rear_port=next_rp)
-            return next_rp
-        except WdmLinePort.DoesNotExist:
-            pass
+    # Check if next_rp is a WDM node directly — if so return it
+    if WdmLinePort.objects.filter(rear_port=next_rp).exists():
+        return next_rp
 
-        # Otherwise pass through another device: PortMapping → FrontPort → cable → RearPort
-        pm_exit = PortMapping.objects.filter(rear_port=next_rp).select_related("front_port").first()
-        if pm_exit is None:
-            return None
+    # Otherwise pass through another device: PortMapping → FrontPort → cable
+    pm_exit = PortMapping.objects.filter(rear_port=next_rp).select_related("front_port").first()
+    if pm_exit is None:
+        return None
 
-        exit_fp = pm_exit.front_port
-        if not exit_fp.cable_id:  # type: ignore[attr-defined]
-            return None
-
-        # Follow FrontPort cable — could go to RearPort (patch cable out)
-        exit_far_fp = _follow_frontport_cable(exit_fp)
-        if exit_far_fp is not None:
-            # FP→FP link, then PortMapping→RP
-            exit_pm = PortMapping.objects.filter(front_port=exit_far_fp).select_related("rear_port").first()
-            if exit_pm is not None and exit_pm.rear_port.pk not in visited:
-                return exit_pm.rear_port
-
-        # Try FrontPort→RearPort cable (patch cable to WDM device)
-        # Check CableTermination for RearPort on far end of exit_fp's cable
-        rp_ct = ContentType.objects.get_for_model(RearPort)
-        fp_ct = ContentType.objects.get_for_model(FrontPort)
-        all_terms = list(
-            CableTermination.objects.filter(
-                cable_id=exit_fp.cable_id  # type: ignore[attr-defined]
-            ).order_by("cable_end", "pk")
-        )
-        my_side = None
-        for t in all_terms:
-            if t.termination_type == fp_ct and t.termination_id == exit_fp.pk:
-                my_side = t.cable_end
-                break
-        if my_side:
-            # Position-match: find exit_fp's index among FP terms on my side
-            my_fp_terms = [t for t in all_terms if t.cable_end == my_side and t.termination_type == fp_ct]
-            my_fp_idx = next((i for i, t in enumerate(my_fp_terms) if t.termination_id == exit_fp.pk), 0)
-
-            far_rp_terms = [t for t in all_terms if t.cable_end != my_side and t.termination_type == rp_ct]
-            if my_fp_idx < len(far_rp_terms):
-                try:
-                    return RearPort.objects.get(pk=far_rp_terms[my_fp_idx].termination_id)
-                except RearPort.DoesNotExist:
-                    pass
-
+    exit_far = resolve_cable_far_end(pm_exit.front_port)
+    if isinstance(exit_far, FrontPort):
+        # FP→FP link, then PortMapping→RP
+        exit_pm = PortMapping.objects.filter(front_port=exit_far).select_related("rear_port").first()
+        if exit_pm is not None and exit_pm.rear_port.pk not in visited:
+            return exit_pm.rear_port
+        return None
+    if isinstance(exit_far, RearPort):
+        # FP→RP patch cable directly to the next device
+        return exit_far
     return None
 
 
