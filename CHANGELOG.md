@@ -26,11 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` sends `post_save` with a hardcoded `sender=PortMapping` even when the instance is a `PortTemplateMapping`; the WDM signal handler now ignores template-level instances. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
+- Creating a FrontPort on a DeviceType no longer crashes with `AttributeError: 'PortTemplateMapping' object has no attribute 'device'`. NetBox's `FrontPortFormMixin._save_m2m` used to send `post_save` with a hardcoded `sender=PortMapping` even when the instance was a `PortTemplateMapping`; that upstream bug is fixed in NetBox 4.6.6, now the minimum supported version. ([#22](https://github.com/jsenecal/netbox-wdm/issues/22))
 - `WdmChannelViewSet.trace` no longer picks an arbitrary TX/BIDI line port on a modular chassis or multi-degree ROADM; it now delegates to the same module- and destination-aware port selection the UI trace view already used, instead of a module- and destination-blind `.first()`.
 - The ROADM live wavelength editor no longer offers front ports from unrelated modules as MUX/DEMUX candidates. `WdmNode.validate_channel_mapping` also now rejects a proposed mapping that assigns a channel a front port belonging to a different module.
 - The plugin's GraphQL schema was never registered with NetBox: `NetBoxWDMConfig` did not set `graphql_schema`, so NetBox's default resource lookup could not resolve the nested `graphql.schema` module, and every `wdm_*` query field (`wdm_profile`, `wdm_node`, `wdm_channel`, etc.) was silently absent from the live schema, with no error. `graphql_schema = "graphql.schema.schema"` is now set explicitly, matching the convention already used by other owned plugins.
 - Structural port repair (`apply_sync`) now rebuilds module-level RearPorts and FrontPorts, not just device-level ones, on NetBox 4.6: a FrontPort or RearPort deleted (or never created) on an installed module is recreated from its ModuleType template, with its PortMapping, the same way device-level ports were already repaired. A deleted `WdmLinePort` is likewise recreated from its `WdmLinePortPlan` on the correct module.
+
+### Removed
+
+- The `isinstance` guard in the `PortMapping` signal handler that ignored `PortTemplateMapping` instances. It worked around NetBox `FrontPortFormMixin._save_m2m` sending `post_save` with `sender=PortMapping` for template mappings on NetBox <4.6.6; the minimum supported version floor (4.6.6) now covers this upstream. ([#41](https://github.com/jsenecal/netbox-wdm/issues/41))
 
 ## [0.2.2] - 2026-04-28
 
