@@ -501,15 +501,12 @@ def _trace_cable_segment(
     modular chassis (None means the device-level group).
     Returns a list of CableSegmentItem entries in order.
     """
-    from dcim.models import Cable, CableTermination, FrontPort, PortMapping, RearPort
-    from django.contrib.contenttypes.models import ContentType
+    from dcim.models import Cable, FrontPort, PortMapping, RearPort
 
     from .models import WdmLinePort
-    from .trace import get_max_trace_hops, warn_max_trace_hops_reached
+    from .trace import get_max_trace_hops, resolve_cable_far_end, warn_max_trace_hops_reached
 
     items: list[CableSegmentItem] = []
-    rp_ct = ContentType.objects.get_for_model(RearPort)
-    fp_ct = ContentType.objects.get_for_model(FrontPort)
 
     # Select the correct TX port — for multi-TX nodes (ROADM), pick the one reaching to_node
     tx_lps = list(
@@ -571,53 +568,19 @@ def _trace_cable_segment(
             )
         )
 
-    def _follow_cable_far_end(cable_id: int, local_id: int, local_ct: Any) -> tuple[Any | None, str]:
-        """Find the far-end termination of a cable. Returns (object, type_str) or (None, '').
+    def _follow_cable_far_end(local_port: Any) -> tuple[Any | None, str]:
+        """Find the far-end port paired with local_port on its cable strand.
 
-        Uses cable_end (A/B) to find the opposite side and position-index
-        matching so that duplex/multi-strand cables follow the correct fibre.
-        For simplex cables (1 termination per side) this reduces to the
-        single far-end termination.
+        Delegates to resolve_cable_far_end, which follows the cable profile's
+        connector mapping (or index pairing for unprofiled legacy cables) so
+        that duplex/multi-strand cables follow the correct fibre.
+        Returns (object, type_str) or (None, '').
         """
-        local_term = CableTermination.objects.filter(
-            cable_id=cable_id, termination_type=local_ct, termination_id=local_id
-        ).first()
-        if not local_term:
-            return None, ""
-
-        far_end = "B" if local_term.cable_end == "A" else "A"
-
-        # Determine position index of local port within its cable end
-        same_end = list(
-            CableTermination.objects.filter(cable_id=cable_id, cable_end=local_term.cable_end).order_by("pk")
-        )
-        local_idx = next((i for i, t in enumerate(same_end) if t.pk == local_term.pk), 0)
-
-        far_terms = list(CableTermination.objects.filter(cable_id=cable_id, cable_end=far_end).order_by("pk"))
-
-        def _resolve(ft: Any) -> tuple[Any | None, str]:
-            if ft.termination_type == rp_ct:
-                rp = RearPort.objects.filter(pk=ft.termination_id).select_related("device").first()
-                if rp:
-                    return rp, "rear_port"
-            elif ft.termination_type == fp_ct:
-                fp = FrontPort.objects.filter(pk=ft.termination_id).select_related("device").first()
-                if fp:
-                    return fp, "front_port"
-            return None, ""
-
-        # Position match (same index on the far end)
-        if local_idx < len(far_terms):
-            obj, typ = _resolve(far_terms[local_idx])
-            if obj:
-                return obj, typ
-
-        # Fallback: first available on the far end
-        for ft in far_terms:
-            obj, typ = _resolve(ft)
-            if obj:
-                return obj, typ
-
+        far = resolve_cable_far_end(local_port)
+        if isinstance(far, RearPort):
+            return far, "rear_port"
+        if isinstance(far, FrontPort):
+            return far, "front_port"
         return None, ""
 
     # Start: source rear port
@@ -635,7 +598,7 @@ def _trace_cable_segment(
         cable = Cable.objects.get(pk=fresh_rp.cable_id)
         _add_cable(cable)
 
-        far_obj, far_type = _follow_cable_far_end(fresh_rp.cable_id, fresh_rp.pk, rp_ct)
+        far_obj, far_type = _follow_cable_far_end(fresh_rp)
         if far_obj is None:
             break
 
@@ -655,7 +618,7 @@ def _trace_cable_segment(
             exit_fp = pm.front_port
             exit_cable = Cable.objects.get(pk=exit_fp.cable_id)
             _add_cable(exit_cable)
-            far2, far2_type = _follow_cable_far_end(exit_cable.pk, exit_fp.pk, fp_ct)
+            far2, far2_type = _follow_cable_far_end(exit_fp)
             if far2 is None:
                 break
             if far2_type == "rear_port":

@@ -2,10 +2,15 @@
 
 Provides functions that create standard patch-panel pass-through cable runs
 used in fiber plant test fixtures.
+
+Every cable is created with a ``Cable.profile`` so NetBox persists the
+strand pairing on each ``CableTermination`` (connector/positions) and
+``link_peers`` can resolve the far end of each strand explicitly.
 """
 
 from __future__ import annotations
 
+from dcim.choices import CableProfileChoices
 from dcim.models import Cable, Device, FrontPort, RearPort
 
 
@@ -30,6 +35,9 @@ def cable_through_pp_pair(
         2. PP-A RP-{nn} → PP-B RP-{nn}       (trunk cable)
         3. PP-B FP-{nn} → device_b_rearport   (patch cable)
 
+    All three cables carry the ``single-1c1p`` profile (one connector,
+    one position per side).
+
     Returns:
         tuple of (patch_cable_1, trunk_cable, patch_cable_2)
     """
@@ -42,6 +50,7 @@ def cable_through_pp_pair(
 
     patch_cable_1 = Cable(
         type=cable_type,
+        profile=CableProfileChoices.SINGLE_1C1P,
         status=status,
         color=patch_color,
         label=f"{label_prefix}{sep}A-patch",
@@ -52,6 +61,7 @@ def cable_through_pp_pair(
 
     trunk_cable = Cable(
         type=cable_type,
+        profile=CableProfileChoices.SINGLE_1C1P,
         status=status,
         color=trunk_color,
         label=f"{label_prefix}{sep}trunk",
@@ -62,6 +72,7 @@ def cable_through_pp_pair(
 
     patch_cable_2 = Cable(
         type=cable_type,
+        profile=CableProfileChoices.SINGLE_1C1P,
         status=status,
         color=patch_color,
         label=f"{label_prefix}{sep}B-patch",
@@ -98,6 +109,10 @@ def cable_duplex_through_pp_pair(
 
     Uses consecutive PP port pairs (port_num and port_num + 1).
 
+    All three cables carry the ``trunk-2c1p`` profile (two connectors, one
+    position each), so each strand keeps its own connector and the TX and
+    RX fibres are paired explicitly rather than by termination order.
+
     Returns:
         tuple of (a_patch, trunk, b_patch)
     """
@@ -115,6 +130,7 @@ def cable_duplex_through_pp_pair(
 
     a_patch = Cable(
         type=cable_type,
+        profile=CableProfileChoices.TRUNK_2C1P,
         status=status,
         color=patch_color,
         label=f"{label_prefix}{sep}A-patch",
@@ -125,6 +141,7 @@ def cable_duplex_through_pp_pair(
 
     trunk = Cable(
         type=cable_type,
+        profile=CableProfileChoices.TRUNK_2C1P,
         status=status,
         color=trunk_color,
         label=f"{label_prefix}{sep}trunk",
@@ -135,6 +152,7 @@ def cable_duplex_through_pp_pair(
 
     b_patch = Cable(
         type=cable_type,
+        profile=CableProfileChoices.TRUNK_2C1P,
         status=status,
         color=patch_color,
         label=f"{label_prefix}{sep}B-patch",
