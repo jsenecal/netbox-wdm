@@ -121,7 +121,8 @@ in the chain still pick the right fibre.
 The `visited` set tracks every rear port the walk has touched, so a
 cyclic patch plant (loopback into the same PP) terminates instead of
 looping forever. The outer `_get_far_end_node` also caps total hops at
-20.
+the `max_trace_hops` plugin setting (default 20) and logs a warning
+when the cap truncates a walk.
 
 ## Validity flags
 
@@ -174,8 +175,9 @@ paths exist.
 
 ## Performance characteristics
 
-- The walk is bounded at 20 hops, so worst-case node-traversal is O(20)
-  per grid position.
+- The walk is bounded at `max_trace_hops` hops (plugin setting, default
+  20), so worst-case node-traversal is O(max_trace_hops) per grid
+  position.
 - Each cable lookup runs a few `CableTermination` queries plus a
   `RearPort` or `FrontPort` fetch. Multi-terminated cables only widen
   the per-cable work, not the hop count.

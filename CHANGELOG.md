@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `max_trace_hops` plugin setting (default 20): the cable-chain walk cap used by wavelength path discovery and circuit trace rendering is now configurable via `PLUGINS_CONFIG`, and hitting the cap logs a warning instead of silently returning an incomplete path. ([#43](https://github.com/jsenecal/netbox-wdm/issues/43))
+
 - Module-scoped WDM overlay: `WdmProfile.module_type`, `WdmChannel.module`, and `WdmLinePort.module` let a `dcim.ModuleType` (rather than only a `DeviceType`) carry a WDM profile, so cassette-style modular chassis get one independent set of channels and line ports per installed module.
 - WDM Profile tab on `ModuleType` detail pages, matching the existing DeviceType tab: profile summary, channel plans, and line port plans.
 - Full CRUD for `WdmLinePortPlan`: `wdm-line-port-plans` REST route, `wdmlineportplan` detail/edit/delete views, and a Line Port Plans card on the WDM Profile and DeviceType/ModuleType WDM Profile tab pages.
