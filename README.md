@@ -51,6 +51,22 @@ In your NetBox `configuration.py`:
 PLUGINS = ["netbox_wdm"]
 ```
 
+### Configuration
+
+Optional settings, with their defaults, in `PLUGINS_CONFIG`:
+
+```python
+PLUGINS_CONFIG = {
+    "netbox_wdm": {
+        # Maximum number of hops the cable-chain walker follows between two
+        # WDM nodes (path discovery and circuit trace rendering). Raise this
+        # if legitimate chains pass through more intermediate devices; a
+        # warning is logged when the cap truncates a trace.
+        "max_trace_hops": 20,
+    },
+}
+```
+
 Apply migrations:
 
 ```bash

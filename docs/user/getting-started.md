@@ -26,6 +26,22 @@ Enable the plugin in your NetBox `configuration.py`:
 PLUGINS = ["netbox_wdm"]
 ```
 
+### Plugin settings
+
+All settings are optional; defaults are shown below.
+
+```python
+PLUGINS_CONFIG = {
+    "netbox_wdm": {
+        "max_trace_hops": 20,
+    },
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_trace_hops` | `20` | Maximum number of hops the cable-chain walker follows between two WDM nodes. Both wavelength path discovery and circuit trace rendering stop after this many hops to guard against cabling loops. Raise it if legitimate chains pass through more intermediate devices (patch panels, amplifiers); when the cap truncates a trace, a warning is logged so the incomplete path is visible. |
+
 Apply migrations and collect static files:
 
 ```bash
