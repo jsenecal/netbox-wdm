@@ -211,6 +211,96 @@ def _cable_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
     instance._wdm_affected_node_pks = node_pks
 
 
+def _fibre_pairs(instance: Any, a_terms: list, b_terms: list) -> list[tuple[Any, Any]]:
+    """Return the (A, B) termination pairs that share a fibre on this cable.
+
+    A profiled cable knows which A connector reaches which B connector: the Nth
+    termination on an end is that end's connector N, and the profile maps each
+    of its positions to a far-end connector. Shuffle and breakout profiles route
+    one connector's positions to several connectors on the other end, so a single
+    termination can pair with more than one.
+
+    Without a profile the cable carries no strand identity, so the Nth
+    termination on one end is presumed to pair with the Nth on the other, and
+    ends of differing length pair only when one side is a single termination.
+    That presumption is a guess -- the same one the tracer degrades to for
+    unprofiled cables.
+    """
+    from dcim.choices import CableEndChoices
+
+    if not instance.profile:
+        if len(a_terms) == len(b_terms):
+            return list(zip(a_terms, b_terms, strict=True))
+        if len(a_terms) == 1 or len(b_terms) == 1:
+            return [(a, b) for a in a_terms for b in b_terms]
+        return []
+
+    profile = instance.profile_class()
+    pairs: list[tuple[Any, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for a_connector, term_a in enumerate(a_terms, start=1):
+        for position in range(1, profile.a_connectors.get(a_connector, 0) + 1):
+            mapped = profile.get_mapped_position(CableEndChoices.SIDE_A, a_connector, position)
+            if not mapped or not 1 <= mapped[0] <= len(b_terms):
+                continue
+            b_connector = mapped[0]
+            if (a_connector, b_connector) in seen:
+                continue
+            seen.add((a_connector, b_connector))
+            pairs.append((term_a, b_terms[b_connector - 1]))
+    return pairs
+
+
+def _cable_post_clean(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Reject role-incompatible WDM trunk terminations while a cable is being validated.
+
+    Raised from the post_clean signal, which fires wherever full_clean() runs
+    (forms, REST API). A bare .save() in a script bypasses clean() entirely, so
+    the port-sync flagging machinery stays in place as a backstop: this handler
+    is prevention on the common path, not a replacement for detection.
+
+    Fibre pairing comes from the cable profile, so shuffle and breakout profiles
+    are compared along the fibres they actually carry. Only terminations that are
+    WdmLinePort-managed rear ports are inspected; every other termination passes
+    through untouched.
+    """
+    from dcim.models import RearPort
+    from django.core.exceptions import ValidationError
+    from django.utils.translation import gettext as _
+
+    from .choices import WdmLineRoleChoices
+    from .models import WdmLinePort
+
+    a_terms = list(instance.a_terminations)
+    b_terms = list(instance.b_terminations)
+
+    rp_ids = {t.pk for t in a_terms + b_terms if isinstance(t, RearPort) and t.pk}
+    if not rp_ids:
+        return
+    roles = dict(WdmLinePort.objects.filter(rear_port_id__in=rp_ids).values_list("rear_port_id", "role"))
+    if not roles:
+        return
+
+    for term_a, term_b in _fibre_pairs(instance, a_terms, b_terms):
+        if not (isinstance(term_a, RearPort) and isinstance(term_b, RearPort)):
+            continue
+        role_a = roles.get(term_a.pk)
+        role_b = roles.get(term_b.pk)
+        if role_a is None or role_b is None:
+            continue
+        if role_a == role_b and role_a in (WdmLineRoleChoices.TX, WdmLineRoleChoices.RX):
+            raise ValidationError(
+                _(
+                    "Invalid WDM trunk cabling: {port_a} and {port_b} are both {role} line ports. "
+                    "Connect TX to RX (or use bidirectional line ports)."
+                ).format(
+                    port_a=term_a,
+                    port_b=term_b,
+                    role=role_a.upper(),
+                )
+            )
+
+
 def _cable_post_delete(sender: type, instance: Any, **kwargs: Any) -> None:
     """Rebuild paths for the WDM nodes whose cable paths crossed the deleted cable.
 
@@ -366,10 +456,12 @@ def connect_signals() -> None:
     """Connect device signals. Called from AppConfig.ready()."""
     from dcim.models import Cable, Device, FrontPort, Module, PortMapping, RearPort
     from dcim.models.cables import trace_paths
+    from netbox.signals import post_clean
 
     from .models import WdmChannel, WdmLinePort
 
     post_save.connect(_device_post_save, sender=Device, dispatch_uid="wdm_device_post_save")
+    post_clean.connect(_cable_post_clean, sender=Cable, dispatch_uid="wdm_cable_post_clean")
     trace_paths.connect(_cable_trace_paths, sender=Cable, dispatch_uid="wdm_cable_trace_paths")
     pre_delete.connect(_cable_pre_delete, sender=Cable, dispatch_uid="wdm_cable_pre_delete")
     post_delete.connect(_cable_post_delete, sender=Cable, dispatch_uid="wdm_cable_post_delete")
