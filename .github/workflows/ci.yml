@@ -66,6 +66,10 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python }}, NetBox ${{ matrix.netbox }})
     runs-on: ubuntu-latest
+    # A hung infrastructure step (e.g. an apt mirror outage) otherwise burns
+    # the 6-hour GitHub default per matrix job. Slowest observed green run
+    # is about 1 hour; 90 minutes leaves headroom without masking hangs.
+    timeout-minutes: 90
     needs: lint
     permissions:
       contents: read
