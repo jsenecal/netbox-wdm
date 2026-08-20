@@ -231,10 +231,8 @@ def _fibre_pairs(instance: Any, a_terms: list, b_terms: list) -> list[tuple[Any,
     if not instance.profile:
         if len(a_terms) == len(b_terms):
             return list(zip(a_terms, b_terms, strict=True))
-        if len(a_terms) == 1:
-            return [(a_terms[0], b) for b in b_terms]
-        if len(b_terms) == 1:
-            return [(a, b_terms[0]) for a in a_terms]
+        if len(a_terms) == 1 or len(b_terms) == 1:
+            return [(a, b) for a in a_terms for b in b_terms]
         return []
 
     profile = instance.profile_class()
@@ -243,11 +241,9 @@ def _fibre_pairs(instance: Any, a_terms: list, b_terms: list) -> list[tuple[Any,
     for a_connector, term_a in enumerate(a_terms, start=1):
         for position in range(1, profile.a_connectors.get(a_connector, 0) + 1):
             mapped = profile.get_mapped_position(CableEndChoices.SIDE_A, a_connector, position)
-            if not mapped:
+            if not mapped or not 1 <= mapped[0] <= len(b_terms):
                 continue
             b_connector = mapped[0]
-            if not 1 <= b_connector <= len(b_terms):
-                continue
             if (a_connector, b_connector) in seen:
                 continue
             seen.add((a_connector, b_connector))

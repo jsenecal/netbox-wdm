@@ -218,6 +218,62 @@ def test_cable_full_clean_duplex_pairing_by_index(mux_pair):
 
 
 @pytest.mark.django_db
+def test_cable_full_clean_unprofiled_single_termination_fans_out(mux_pair):
+    """A single unprofiled termination pairs against every far-end termination.
+
+    TX on the single side against [TX, RX] on the other must be rejected: one
+    of the fanned-out pairs is TX-to-TX.
+    """
+    mux_a, mux_b = mux_pair
+    cable = Cable(
+        a_terminations=[mux_a.line_ports["tx"].rear_port],
+        b_terminations=[mux_b.line_ports["tx"].rear_port, mux_b.line_ports["rx"].rear_port],
+    )
+    with pytest.raises(ValidationError, match="Invalid WDM trunk cabling"):
+        cable.full_clean()
+
+
+@pytest.mark.django_db
+def test_cable_full_clean_unprofiled_ambiguous_counts_pass(wdm_site, dt_pp, wdm_roles, mux_pair):
+    """Unprofiled ends with differing multi-termination counts have no defined pairing and pass.
+
+    Two terminations against three carry no strand identity, so even a
+    TX-into-TX arrangement cannot be attributed to a fibre and is left alone.
+    """
+    from dcim.models import RearPort
+
+    mux_a, mux_b = mux_pair
+    pp_a = create_patch_panel(wdm_site, dt_pp, wdm_roles["fiber-pp"], "AMBIG-PP-A")
+    cable = Cable(
+        a_terminations=[mux_a.line_ports["tx"].rear_port, mux_a.line_ports["rx"].rear_port],
+        b_terminations=[
+            mux_b.line_ports["tx"].rear_port,
+            mux_b.line_ports["rx"].rear_port,
+            RearPort.objects.get(device=pp_a, name="RP-01"),
+        ],
+    )
+    cable.full_clean()
+
+
+@pytest.mark.django_db
+def test_cable_full_clean_profiled_skips_connectors_without_far_termination(mux_pair):
+    """A profile position mapped to a far-end connector with no termination is skipped.
+
+    The plain trunk-2c4p profile maps A connector 2 to B connector 2; with only
+    one B termination that mapping lands nowhere and must be ignored, while the
+    connector 1 pairing (TX-to-TX here) is still validated and rejected.
+    """
+    mux_a, mux_b = mux_pair
+    cable = Cable(
+        profile=CableProfileChoices.TRUNK_2C4P,
+        a_terminations=[mux_a.line_ports["tx"].rear_port, mux_a.line_ports["rx"].rear_port],
+        b_terminations=[mux_b.line_ports["tx"].rear_port],
+    )
+    with pytest.raises(ValidationError, match="Invalid WDM trunk cabling"):
+        cable.full_clean()
+
+
+@pytest.mark.django_db
 def test_cable_full_clean_pairs_through_asymmetric_profile(mux_pair):
     """Regression test for issue #42: fibre pairing follows the cable profile, not termination order.
 
@@ -257,3 +313,17 @@ def test_cable_full_clean_ignores_non_wdm_terminations(wdm_site, dt_pp, wdm_role
         b_terminations=[FrontPort.objects.get(device=pp_a, name="FP-01")],
     )
     patch.full_clean()
+
+    # WDM trunk rear port into a patch-panel rear port: the far port has no role.
+    to_pp_rear = Cable(
+        a_terminations=[mux_a.line_ports["tx"].rear_port],
+        b_terminations=[RearPort.objects.get(device=pp_b, name="RP-02")],
+    )
+    to_pp_rear.full_clean()
+
+    # No rear ports involved at all: patch-panel front port to front port.
+    front_only = Cable(
+        a_terminations=[FrontPort.objects.get(device=pp_a, name="FP-02")],
+        b_terminations=[FrontPort.objects.get(device=pp_b, name="FP-02")],
+    )
+    front_only.full_clean()
