@@ -20,6 +20,27 @@ cd /opt/netbox/netbox
 DJANGO_SETTINGS_MODULE=netbox.settings python -m pytest /opt/netbox-wdm/tests/ -v
 ```
 
+### Parallel runs
+
+With `pytest-xdist` installed (part of the `dev` extra), the suite can run
+across multiple processes:
+
+```bash
+DJANGO_SETTINGS_MODULE=netbox.settings python -m pytest /opt/netbox-wdm/tests/ -n auto --dist loadscope
+```
+
+pytest-django gives each worker its own copy of the test database by
+suffixing its name (`_gw0`, `_gw1`, ...), so workers are fully isolated at
+the database level. The first parallel run creates the per-worker databases
+by running migrations in each worker (pass `--create-db` to force this);
+later runs reuse them via `--reuse-db`.
+
+`--dist loadscope` keeps each test class or module on one worker, which is
+what the fixtures assume. Note that `-n auto` starts one worker per CPU;
+on machines with many cores that oversubscribes the suite (each worker
+still pays for its own database), so cap it, e.g. `-n 8` or
+`PYTEST_XDIST_AUTO_NUM_WORKERS=8`.
+
 ## Linting and Formatting
 
 ```bash
