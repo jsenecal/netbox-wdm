@@ -5,13 +5,17 @@ order, which silently follows the wrong strand whenever CableTermination pk
 order diverges from strand order (e.g. after a strand re-termination).
 NetBox 4.6+ cable profiles persist the strand pairing on each
 CableTermination (connector/positions), which is authoritative.
+
+The read-only classes share committed class-scoped topology fixtures instead
+of rebuilding a topology per test (suite-runtime work in issue #48); the
+pk-shuffling class mutates its topology, so it stays function-scoped.
 """
 
 import pytest
 from dcim.choices import CableProfileChoices
 from dcim.models import CableTermination
 
-from netbox_wdm.testing import duplex_mux_pair, sf_mux_pair
+from netbox_wdm.testing import duplex_mux_pair
 from netbox_wdm.trace import trace_wavelength_path
 
 
@@ -35,26 +39,23 @@ def _shuffle_strand_pks(cable, cable_end="B", connector=1):
     replacement.save()
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestBuilderCableProfiles:
     """The testing builders assign cable profiles so strand pairing is explicit."""
 
-    def test_duplex_builder_sets_trunk_2c1p_profile(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles):
-        topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        for cable in topo.cables:
+    def test_duplex_builder_sets_trunk_2c1p_profile(self, duplex_topology):
+        for cable in duplex_topology.cables:
             assert cable.profile == CableProfileChoices.TRUNK_2C1P, f"Cable {cable.label} missing duplex profile"
 
-    def test_duplex_builder_populates_connectors(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles):
-        topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        for cable in topo.cables:
+    def test_duplex_builder_populates_connectors(self, duplex_topology):
+        for cable in duplex_topology.cables:
             connectors = sorted(
                 CableTermination.objects.filter(cable=cable, cable_end="A").values_list("connector", flat=True)
             )
             assert connectors == [1, 2], f"Cable {cable.label} A-side connectors: {connectors}"
 
-    def test_simplex_builder_sets_single_1c1p_profile(self, wdm_site, dt_cwdm_sf, dt_pp, wdm_roles):
-        topo = sf_mux_pair(wdm_site, dt_cwdm_sf, dt_pp, wdm_roles)
-        for cable in topo.cables:
+    def test_simplex_builder_sets_single_1c1p_profile(self, sf_topology):
+        for cable in sf_topology.cables:
             assert cable.profile == CableProfileChoices.SINGLE_1C1P, f"Cable {cable.label} missing simplex profile"
 
 
@@ -64,6 +65,10 @@ class TestProfileAwarePairing:
 
     Regression tests for issue #39: pk-order index pairing follows the wrong
     strand when termination rows are recreated out of creation order.
+
+    These tests mutate their topology (recreating strand terminations), so
+    they build a fresh function-scoped topology instead of sharing the
+    committed class-scoped one.
     """
 
     def _profiled_duplex_topology(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles):
@@ -110,32 +115,22 @@ class TestProfileAwarePairing:
         )
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db
 class TestUnprofiledFallback:
     """Unprofiled legacy cables still trace via index pairing, with a warning."""
 
-    def _unprofiled_duplex_topology(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles):
-        topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        for cable in topo.cables:
-            if cable.profile:
-                cable.profile = ""
-                cable.save()
-        return topo
-
-    def test_unprofiled_duplex_still_traces(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles):
-        topo = self._unprofiled_duplex_topology(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        mux_a = topo.bundles["mux_a"]
-        mux_b = topo.bundles["mux_b"]
+    def test_unprofiled_duplex_still_traces(self, unprofiled_duplex_topology):
+        mux_a = unprofiled_duplex_topology.bundles["mux_a"]
+        mux_b = unprofiled_duplex_topology.bundles["mux_b"]
 
         result = trace_wavelength_path(mux_a.channels[0])
         assert {ch.wdm_node_id for ch in result.channels} == {mux_a.node.pk, mux_b.node.pk}
         assert result.is_valid is True
 
-    def test_unprofiled_pairing_logs_warning(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles, caplog):
+    def test_unprofiled_pairing_logs_warning(self, unprofiled_duplex_topology, caplog):
         import logging
 
-        topo = self._unprofiled_duplex_topology(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        mux_a = topo.bundles["mux_a"]
+        mux_a = unprofiled_duplex_topology.bundles["mux_a"]
 
         with caplog.at_level(logging.WARNING, logger="netbox_wdm.trace"):
             trace_wavelength_path(mux_a.channels[0])
@@ -144,12 +139,11 @@ class TestUnprofiledFallback:
             "Expected a warning about index-pairing an unprofiled cable"
         )
 
-    def test_profiled_pairing_logs_no_warning(self, wdm_site, dt_cwdm_dx, dt_pp, wdm_roles, caplog):
+    def test_profiled_pairing_logs_no_warning(self, duplex_topology, caplog):
         import logging
 
-        topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
-        mux_a = topo.bundles["mux_a"]
-        assert all(cable.profile for cable in topo.cables)
+        mux_a = duplex_topology.bundles["mux_a"]
+        assert all(cable.profile for cable in duplex_topology.cables)
 
         with caplog.at_level(logging.WARNING, logger="netbox_wdm.trace"):
             trace_wavelength_path(mux_a.channels[0])
