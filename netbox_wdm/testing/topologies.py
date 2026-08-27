@@ -9,16 +9,19 @@ Topologies:
 3. dwdm_mux_to_roadm   - DWDM-MUX <-> PP pair <-> ROADM
 4. mux_roadm_mux       - DX-MUX <-> PP pair <-> ROADM <-> PP pair <-> DX-MUX
 5. modular_chassis_span - 2-cassette chassis <-> PP pairs <-> 2 single-cassette chassis
+6. cascaded_pp_chain    - SF-MUX <-> N panels cascaded rear-to-front <-> SF-MUX
+7. midspan_circuit_span - SF-MUX <-> PP <-> carrier circuit <-> PP <-> SF-MUX
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from circuits.models import Circuit, CircuitTermination, CircuitType, Provider
 from dcim.models import Cable, Device, DeviceRole, DeviceType, FrontPort, FrontPortTemplate, ModuleType, RearPort, Site
 from django.db import transaction
 
-from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
+from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair, simplex_cable
 from .devices import WdmDeviceBundle, create_duplex_mux, create_patch_panel, create_roadm, create_sf_mux
 
 
@@ -30,6 +33,7 @@ class Topology:
     bundles: dict[str, WdmDeviceBundle]
     patch_panels: list[Device]
     cables: list[Cable]
+    circuit: Circuit | None = None
 
 
 @transaction.atomic
@@ -178,9 +182,9 @@ def sf_mux_long_chain(
     cables: list[Cable] = []
 
     def add_cable(a_term, b_term, label: str) -> None:
-        cable = Cable(type="smf-os2", status="connected", label=label, a_terminations=[a_term], b_terminations=[b_term])
-        cable.save()
-        cables.append(cable)
+        # Deliberately unprofiled: a single-strand cable has no strand ambiguity,
+        # so this chain exercises core's positionless walk branch.
+        cables.append(simplex_cable(a_term, b_term, label=label, profile=""))
 
     current_rp = mux_a.line_ports["bidi"].rear_port
     idx = 0
@@ -365,3 +369,126 @@ def modular_chassis_span(
         ),
     }
     return Topology(name=f"{p}modular-chassis-span", bundles=bundles, patch_panels=panels, cables=cables)
+
+
+@transaction.atomic
+def cascaded_pp_chain(
+    site: Site,
+    dt_sf_mux: DeviceType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    panels: int = 3,
+    name_prefix: str = "",
+) -> Topology:
+    """Create two SF MUX endpoints joined by patch panels cascaded rear-to-front.
+
+    Unlike the rear-to-rear trunks of ``cable_through_pp_pair``, each panel's
+    rear port patches into the *front* port of the next panel:
+
+        MUX-A.COM ->(patch)-> PP-1.FP =PM= PP-1.RP ->(patch)-> PP-2.FP =PM= ...
+        ... PP-N.RP ->(patch)-> MUX-B.COM
+
+    Both cabling permutations appear in one run, so a walker that only knows
+    rear-to-rear trunks cannot reach the far end.
+
+    Args:
+        site: Site instance for all devices.
+        dt_sf_mux: DeviceType for single-fiber MUX devices.
+        dt_pp: DeviceType for patch panels.
+        roles: Dict with keys "wdm-mux" and "fiber-pp" mapping to DeviceRole instances.
+        panels: Number of cascaded patch panels between the two MUX devices.
+        name_prefix: Optional prefix for device names.
+
+    Returns:
+        Topology with bundles keyed "mux_a" and "mux_b".
+    """
+    p = f"{name_prefix}" if name_prefix else ""
+
+    mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-A")
+    mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-B")
+    pps = [create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-{i}") for i in range(1, panels + 1)]
+
+    cables: list[Cable] = []
+    current = mux_a.line_ports["bidi"].rear_port
+    for i, pp in enumerate(pps, start=1):
+        fp = FrontPort.objects.get(device=pp, name="FP-01")
+        cables.append(simplex_cable(current, fp, label=f"{p}cascade {i} in", color="f5e960"))
+        current = RearPort.objects.get(device=pp, name="RP-01")
+    cables.append(simplex_cable(current, mux_b.line_ports["bidi"].rear_port, label=f"{p}cascade out", color="f5e960"))
+
+    return Topology(
+        name=f"{p}cascaded-pp-chain",
+        bundles={"mux_a": mux_a, "mux_b": mux_b},
+        patch_panels=pps,
+        cables=cables,
+    )
+
+
+@transaction.atomic
+def midspan_circuit_span(
+    site: Site,
+    dt_sf_mux: DeviceType,
+    dt_pp: DeviceType,
+    roles: dict[str, DeviceRole],
+    cid: str = "DF-1001",
+    name_prefix: str = "",
+) -> Topology:
+    """Create two SF MUX endpoints joined by a leased carrier circuit mid-span.
+
+    Models the dark-fiber handoff an operator buys between two sites:
+
+        MUX-A.COM ->(patch)-> PP-A.FP =PM= PP-A.RP ->(cable)-> [ CT-A
+        circuit CT-Z ] ->(cable)-> PP-B.RP =PM= PP-B.FP ->(patch)-> MUX-B.COM
+
+    The circuit hop carries no cable of its own -- NetBox joins termination A
+    to termination Z internally -- so a walker that only follows cables
+    stops at the handoff.
+
+    Args:
+        site: Site instance for all devices and both circuit terminations.
+        dt_sf_mux: DeviceType for single-fiber MUX devices.
+        dt_pp: DeviceType for patch panels.
+        roles: Dict with keys "wdm-mux" and "fiber-pp" mapping to DeviceRole instances.
+        cid: Circuit ID for the leased span.
+        name_prefix: Optional prefix for device names.
+
+    Returns:
+        Topology with bundles keyed "mux_a" and "mux_b", and ``circuit`` set.
+    """
+    p = f"{name_prefix}" if name_prefix else ""
+
+    mux_a = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-A")
+    mux_b = create_sf_mux(site, dt_sf_mux, roles["wdm-mux"], f"{p}MUX-B")
+    pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
+    pp_b = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-B")
+
+    provider, _ = Provider.objects.get_or_create(slug="carrier", defaults={"name": "Carrier"})
+    circuit_type, _ = CircuitType.objects.get_or_create(slug="dark-fiber", defaults={"name": "Dark Fiber"})
+    circuit = Circuit.objects.create(cid=f"{p}{cid}", provider=provider, type=circuit_type)
+    ct_a = CircuitTermination.objects.create(circuit=circuit, term_side="A", termination=site)
+    ct_z = CircuitTermination.objects.create(circuit=circuit, term_side="Z", termination=site)
+
+    cables = [
+        simplex_cable(
+            mux_a.line_ports["bidi"].rear_port,
+            FrontPort.objects.get(device=pp_a, name="FP-01"),
+            label=f"{p}A-patch",
+            color="f5e960",
+        ),
+        simplex_cable(RearPort.objects.get(device=pp_a, name="RP-01"), ct_a, label=f"{p}A-handoff", color="4287f5"),
+        simplex_cable(ct_z, RearPort.objects.get(device=pp_b, name="RP-01"), label=f"{p}Z-handoff", color="4287f5"),
+        simplex_cable(
+            FrontPort.objects.get(device=pp_b, name="FP-01"),
+            mux_b.line_ports["bidi"].rear_port,
+            label=f"{p}B-patch",
+            color="f5e960",
+        ),
+    ]
+
+    return Topology(
+        name=f"{p}midspan-circuit-span",
+        bundles={"mux_a": mux_a, "mux_b": mux_b},
+        patch_panels=[pp_a, pp_b],
+        cables=cables,
+        circuit=circuit,
+    )

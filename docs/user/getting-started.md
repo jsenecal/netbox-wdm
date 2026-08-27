@@ -33,14 +33,14 @@ All settings are optional; defaults are shown below.
 ```python
 PLUGINS_CONFIG = {
     "netbox_wdm": {
-        "max_trace_hops": 20,
+        "max_trace_hops": 100,
     },
 }
 ```
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `max_trace_hops` | `20` | Maximum number of hops the cable-chain walker follows between two WDM nodes. Both wavelength path discovery and circuit trace rendering stop after this many hops to guard against cabling loops. Raise it if legitimate chains pass through more intermediate devices (patch panels, amplifiers); when the cap truncates a trace, a warning is logged so the incomplete path is visible. |
+| `max_trace_hops` | `100` | Maximum number of cable segments the chain walker follows between two WDM nodes. Both wavelength path discovery and circuit trace rendering stop after this many segments, alongside a loop check that refuses any chain revisiting a port. Raise it if legitimate chains pass through more intermediate devices (patch panels, amplifiers, carrier circuits); when the cap or the loop check stops a trace, a warning is logged so the incomplete path is visible. |
 
 Apply migrations and collect static files:
 

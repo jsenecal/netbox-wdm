@@ -16,9 +16,17 @@ from netbox_wdm.testing import duplex_mux_pair
 from netbox_wdm.trace import rebuild_wavelength_paths_for_node
 
 # One node rebuild of a duplex_mux_pair measured ~740 queries before the
-# per-pass read cache and ~150 after; the budget leaves headroom for noise
-# while still failing clearly on any return to per-channel re-walking.
-QUERY_BUDGET = 250
+# per-pass read cache and ~150 after. Delegating traversal to core's
+# CablePath walker (issue #49) re-based it to ~330: core walks further than
+# the hand-rolled version it replaced -- on through the far mux's channel
+# front ports -- and resolves cable profiles and positions on the way.
+# Measured on that change: 273 queries for the walks themselves and 56 for
+# the loop/hop pre-scan that keeps core off a cabling loop.
+#
+# The budget still does its job. It guards against re-walking the trunk
+# once per channel, which costs an order of magnitude more (~10 grid
+# positions x 4 walks), not the tens of queries between these figures.
+QUERY_BUDGET = 400
 
 
 @pytest.mark.django_db(transaction=True)

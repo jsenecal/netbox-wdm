@@ -116,8 +116,14 @@ class TestProfileAwarePairing:
 
 
 @pytest.mark.django_db
-class TestUnprofiledFallback:
-    """Unprofiled legacy cables still trace via index pairing, with a warning."""
+class TestUnprofiledDuplex:
+    """Unprofiled legacy cables carry no strand identity; role resolves direction.
+
+    Core follows every fibre of an unprofiled multi-terminated cable at
+    once, so both far line ports come back. The trace picks the one whose
+    WdmLinePort role complements the origin's, rather than guessing the
+    strand from termination row order as it once did (issue #49).
+    """
 
     def test_unprofiled_duplex_still_traces(self, unprofiled_duplex_topology):
         mux_a = unprofiled_duplex_topology.bundles["mux_a"]
@@ -127,25 +133,23 @@ class TestUnprofiledFallback:
         assert {ch.wdm_node_id for ch in result.channels} == {mux_a.node.pk, mux_b.node.pk}
         assert result.is_valid is True
 
-    def test_unprofiled_pairing_logs_warning(self, unprofiled_duplex_topology, caplog):
-        import logging
+    def test_unprofiled_duplex_lands_on_far_rx_strand(self, unprofiled_duplex_topology):
+        """A TX origin resolves to the far RX line port, not the far TX beside it."""
+        from netbox_wdm.trace import _get_far_end_node
 
         mux_a = unprofiled_duplex_topology.bundles["mux_a"]
+        mux_b = unprofiled_duplex_topology.bundles["mux_b"]
 
-        with caplog.at_level(logging.WARNING, logger="netbox_wdm.trace"):
-            trace_wavelength_path(mux_a.channels[0])
+        node, _module, far_rp = _get_far_end_node(mux_a.line_ports["tx"].rear_port)
 
-        assert any("profile" in rec.message for rec in caplog.records), (
-            "Expected a warning about index-pairing an unprofiled cable"
-        )
+        assert node == mux_b.node
+        assert far_rp == mux_b.line_ports["rx"].rear_port
 
-    def test_profiled_pairing_logs_no_warning(self, duplex_topology, caplog):
-        import logging
+    def test_unprofiled_duplex_keeps_both_directions(self, unprofiled_duplex_topology):
+        """Losing strand identity must not collapse the two directional paths into one.
 
-        mux_a = duplex_topology.bundles["mux_a"]
-        assert all(cable.profile for cable in duplex_topology.cables)
+        The fixture rebuilds paths on both nodes when it commits the topology.
+        """
+        from netbox_wdm.models import WdmWavelengthPath
 
-        with caplog.at_level(logging.WARNING, logger="netbox_wdm.trace"):
-            trace_wavelength_path(mux_a.channels[0])
-
-        assert not [rec for rec in caplog.records if "profile" in rec.message]
+        assert WdmWavelengthPath.objects.count() == 16  # 8 channels x 2 directions

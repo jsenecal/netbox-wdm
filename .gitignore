@@ -15,6 +15,7 @@ netbox_wdm/static/netbox_wdm/node_modules/
 .ruff_cache/
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 site/
 .devcontainer/home/

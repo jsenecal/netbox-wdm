@@ -36,6 +36,7 @@ function T() {
   return {
     wdmHeaderFill: d ? '#2a7070' : '#3a8a8a',
     ppHeaderFill: d ? '#3b3654' : '#6c5fa7',
+    circuitHeaderFill: d ? '#7c4a1e' : '#b3762f',
     headerText: '#fff',
     bodyFill: d ? '#1e293b' : '#fff',
     bodyStroke: d ? '#475569' : '#dee2e6',
@@ -82,6 +83,7 @@ interface InternalLink {
 interface Device {
   name: string;
   isWdm: boolean;
+  isCircuit?: boolean;
   ports: Port[];
   url: string;
   channels: { label: string; wl: number; muxConn: boolean; demuxConn: boolean; hasMux: boolean; hasDemux: boolean }[];
@@ -116,11 +118,13 @@ function buildGraph(dataList: TraceData[]): Graph {
     (a, b) => (b.cable_segments[0]?.items.length ?? 0) - (a.cable_segments[0]?.items.length ?? 0),
   );
 
-  function ensureDev(name: string, isWdm: boolean, url: string): Device {
+  function ensureDev(name: string, isWdm: boolean, url: string, isCircuit = false): Device {
     if (!deviceMap.has(name)) {
-      deviceMap.set(name, { name, isWdm, ports: [], url, channels: [], internalLinks: [] });
+      deviceMap.set(name, { name, isWdm, isCircuit, ports: [], url, channels: [], internalLinks: [] });
     }
-    return deviceMap.get(name)!;
+    const dev = deviceMap.get(name)!;
+    if (isCircuit) dev.isCircuit = true;
+    return dev;
   }
 
   // Collect WDM nodes and channel front ports from elements
@@ -166,7 +170,7 @@ function buildGraph(dataList: TraceData[]): Graph {
         const devName = item.device;
         if (!devName) continue;
 
-        ensureDev(devName, false, '');
+        ensureDev(devName, false, '', item.type === 'circuit_termination');
         if (!deviceOrder.includes(devName)) deviceOrder.push(devName);
 
         if (!portSeen.has(item.id)) {
@@ -182,7 +186,7 @@ function buildGraph(dataList: TraceData[]): Graph {
 
           deviceMap.get(devName)!.ports.push({
             id: item.id,
-            name: item.name,
+            name: item.label ? `${item.name} (${item.label})` : item.name,
             url: item.url,
             type: item.type,
             color: item.color || '',
@@ -850,7 +854,7 @@ function renderChannelTrace(sel: string, ttSel: string, dataList: TraceData[]): 
       .attr('stroke', t.bodyStroke)
       .attr('stroke-width', 1.5);
 
-    const hdrFill = isWdm ? t.wdmHeaderFill : t.ppHeaderFill;
+    const hdrFill = isWdm ? t.wdmHeaderFill : ld.dev.isCircuit ? t.circuitHeaderFill : t.ppHeaderFill;
     dg.append('path').attr('d', headerPath(ld.w, ld.headerH, CORNER_R)).attr('fill', hdrFill);
 
     dg.append('line')
@@ -928,7 +932,8 @@ function renderChannelTrace(sel: string, ttSel: string, dataList: TraceData[]): 
         .attr('stroke-width', tintColor ? 1.5 : 0.5);
       hlPorts.push({ rect, portId: lp.port.id, isChannel: isCh, origStroke: tintColor || origStroke });
 
-      const icon = lp.port.type === 'front_port' ? '\u25cb' : '\u25c9';
+      const icon =
+        lp.port.type === 'circuit_termination' ? '\u25c8' : lp.port.type === 'front_port' ? '\u25cb' : '\u25c9';
       const pText = pg
         .append('text')
         .attr('x', PORT_W / 2)
