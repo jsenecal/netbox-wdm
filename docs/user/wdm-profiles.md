@@ -9,7 +9,8 @@ defining grid choice, node type, and fibre topology.
 NetBox's DeviceType already stores port templates and mechanical layout. The
 WDM profile adds the optical metadata that NetBox does not model natively:
 
-- Which ITU grid this hardware uses (DWDM 100 GHz, DWDM 50 GHz, or CWDM).
+- Which ITU grid this hardware uses (DWDM C-band 100 GHz, DWDM C-band
+  50 GHz, DWDM L-band 100 GHz, DWDM L-band 50 GHz, or CWDM).
 - Whether it is a terminal MUX, an OADM, a ROADM, or an inline amplifier.
 - Whether each channel uses a duplex pair (separate MUX/DEMUX fibres) or a
   single bidirectional fibre.
@@ -25,7 +26,7 @@ the resulting `WdmNode`.
 |-------|----------|-------|
 | `device_type` | yes | One-to-one to `dcim.DeviceType` |
 | `node_type` | yes | `terminal_mux`, `oadm`, `roadm`, or `amplifier` |
-| `grid` | yes | `dwdm_100ghz` (44 ch), `dwdm_50ghz` (88 ch), or `cwdm` (18 ch) |
+| `grid` | yes | `dwdm_100ghz` (44 ch), `dwdm_50ghz` (88 ch), `dwdm_l_100ghz` (72 ch), `dwdm_l_50ghz` (143 ch), or `cwdm` (18 ch) |
 | `fiber_type` | yes | `duplex` (default) or `single_fiber` |
 | `description` | no | Free-form text |
 

@@ -217,7 +217,7 @@ useful filters:
 | Filter | Endpoints | Notes |
 |--------|-----------|-------|
 | `node_type` | `wdm-profiles/`, `wdm-nodes/` | `terminal_mux`, `oadm`, `roadm`, `amplifier` |
-| `grid` | `wdm-profiles/`, `wdm-nodes/` | `dwdm_100ghz`, `dwdm_50ghz`, `cwdm` |
+| `grid` | `wdm-profiles/`, `wdm-nodes/` | `dwdm_100ghz`, `dwdm_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`, `cwdm` |
 | `device_id` | `wdm-nodes/` | Match a specific device's node. |
 | `wdm_node_id` | `wdm-channels/`, `wdm-line-ports/` | Filter by parent node. |
 | `status` | `wdm-channels/`, `wdm-circuits/` | Channel/circuit status. |

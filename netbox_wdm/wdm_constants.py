@@ -65,10 +65,34 @@ DWDM_50GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
     _DWDM_C_START_FREQ, _SPACING_50GHZ, _DWDM_C_50GHZ_COUNT, _c_band_50ghz_label
 )
 
+# L-band 100 GHz / 50 GHz fixed grids. The L-band spans 1565-1625 nm, which on
+# the ITU-T G.694.1 grid anchored at 193.1 THz runs 184.50-191.60 THz -- both
+# endpoints fall exactly on the grid, and 191.60 THz sits below the C-band
+# grid's 192.10 THz start, so the two bands never share a wavelength. Unlike
+# the C-band grids, L-band channels have no assigned ITU channel numbers in
+# common use, so labels are frequency-based instead.
+_DWDM_L_START_FREQ = Decimal("184.50")
+_DWDM_L_100GHZ_COUNT = 72
+_DWDM_L_50GHZ_COUNT = 143
+
+
+def _l_band_label(i: int, freq_thz: Decimal) -> str:
+    return f"L{freq_thz:.2f}"
+
+
+DWDM_L_100GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
+    _DWDM_L_START_FREQ, _SPACING_100GHZ, _DWDM_L_100GHZ_COUNT, _l_band_label
+)
+DWDM_L_50GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
+    _DWDM_L_START_FREQ, _SPACING_50GHZ, _DWDM_L_50GHZ_COUNT, _l_band_label
+)
+
 WDM_GRIDS: dict[str, tuple[tuple[int, str, Decimal], ...]] = {
     "cwdm": CWDM_CHANNELS,
     "dwdm_100ghz": DWDM_100GHZ_CHANNELS,
     "dwdm_50ghz": DWDM_50GHZ_CHANNELS,
+    "dwdm_l_100ghz": DWDM_L_100GHZ_CHANNELS,
+    "dwdm_l_50ghz": DWDM_L_50GHZ_CHANNELS,
 }
 
 # Lookup dicts keyed by (grid, position) for fast access

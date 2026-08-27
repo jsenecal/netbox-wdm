@@ -102,8 +102,9 @@ Each field describes what the hardware is, so the device's data sheet
 or front-panel labelling is the easiest reference:
 
 - `node_type`: `terminal_mux`, `oadm`, `roadm`, or `amplifier`.
-- `grid`: `dwdm_100ghz`, `dwdm_50ghz`, or `cwdm` (see
-  [ITU Channel Plans](itu-grids.md) for which labels match which grid).
+- `grid`: `dwdm_100ghz`, `dwdm_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`, or
+  `cwdm` (see [ITU Channel Plans](itu-grids.md) for which labels match
+  which grid).
 - `fiber_type`: `duplex` if the device exposes separate MUX and DEMUX
   front ports per channel, `single_fiber` if it uses one bidirectional
   port per channel.

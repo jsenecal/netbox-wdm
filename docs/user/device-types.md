@@ -85,7 +85,7 @@ PortTemplateMappings (one per channel, plus EXP and 1310):
 WdmProfile fields:
 
 - `node_type = terminal_mux`
-- `grid = cwdm` (or `dwdm_100ghz`, `dwdm_50ghz`)
+- `grid = cwdm` (or `dwdm_100ghz`, `dwdm_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`)
 - `fiber_type = duplex`
 
 WdmChannelPlan rows (one per channel slot the hardware carries, **not**

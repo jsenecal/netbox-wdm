@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two L-band DWDM fixed grids, `dwdm_l_100ghz` (72ch) and `dwdm_l_50ghz` (143ch), spanning 184.50-191.60 THz (ITU-T G.694.1's 1565-1625 nm L-band) with frequency-based `L{freq}` labels, e.g. `L184.50`. Neither grid overlaps the existing C-band grids. ([#69](https://github.com/jsenecal/netbox-wdm/issues/69))
 - Wavelength paths now trace across `circuits.CircuitTermination` pairs, so a span that rides a leased carrier circuit mid-run (dark fibre between two sites, a handoff across an MMR) is discovered end to end instead of stopping at the handoff. Both terminations and the provider appear in the circuit trace diagram. ([#49](https://github.com/jsenecal/netbox-wdm/issues/49))
 - Wavelength paths now trace through pass-through chains in any cabling permutation and of any length -- panels entered or left at either face, and panels cascaded rear-to-front (one panel's rear port patched into the next panel's front port). Only a single rear-to-rear trunk between two panels used to resolve. ([#49](https://github.com/jsenecal/netbox-wdm/issues/49))
 - Test topology builders `cascaded_pp_chain` and `midspan_circuit_span`, plus a `simplex_cable` helper for wiring a single profiled strand between any two cabled objects. ([#49](https://github.com/jsenecal/netbox-wdm/issues/49))

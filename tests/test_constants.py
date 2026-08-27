@@ -6,7 +6,10 @@ from netbox_wdm.wdm_constants import (
     CWDM_CHANNELS,
     DWDM_50GHZ_CHANNELS,
     DWDM_100GHZ_CHANNELS,
+    DWDM_L_50GHZ_CHANNELS,
+    DWDM_L_100GHZ_CHANNELS,
     WDM_GRIDS,
+    get_channel_info,
 )
 
 
@@ -90,14 +93,85 @@ class TestDwdm50GhzChannels:
             assert ch[2] in wl_50
 
 
+class TestDwdmL100GhzChannels:
+    def test_channel_count(self):
+        assert len(DWDM_L_100GHZ_CHANNELS) == 72
+
+    def test_first_channel(self):
+        pos, label, wl = DWDM_L_100GHZ_CHANNELS[0]
+        assert pos == 1
+        assert label == "L184.50"
+        assert wl == Decimal("1624.89")
+
+    def test_last_channel(self):
+        pos, label, wl = DWDM_L_100GHZ_CHANNELS[-1]
+        assert pos == 72
+        assert label == "L191.60"
+        assert wl == Decimal("1564.68")
+
+    def test_positions_sequential(self):
+        positions = [ch[0] for ch in DWDM_L_100GHZ_CHANNELS]
+        assert positions == list(range(1, 73))
+
+    def test_wavelengths_decreasing(self):
+        for i in range(1, len(DWDM_L_100GHZ_CHANNELS)):
+            assert DWDM_L_100GHZ_CHANNELS[i][2] < DWDM_L_100GHZ_CHANNELS[i - 1][2]
+
+
+class TestDwdmL50GhzChannels:
+    def test_channel_count(self):
+        assert len(DWDM_L_50GHZ_CHANNELS) == 143
+
+    def test_first_channel(self):
+        pos, label, wl = DWDM_L_50GHZ_CHANNELS[0]
+        assert pos == 1
+        assert label == "L184.50"
+        assert wl == Decimal("1624.89")
+
+    def test_interleaved_second_channel(self):
+        _, label, _ = DWDM_L_50GHZ_CHANNELS[1]
+        assert label == "L184.55"
+
+    def test_last_channel(self):
+        pos, label, wl = DWDM_L_50GHZ_CHANNELS[-1]
+        assert pos == 143
+        assert label == "L191.60"
+        assert wl == Decimal("1564.68")
+
+    def test_positions_sequential(self):
+        positions = [ch[0] for ch in DWDM_L_50GHZ_CHANNELS]
+        assert positions == list(range(1, 144))
+
+    def test_wavelengths_decreasing(self):
+        for i in range(1, len(DWDM_L_50GHZ_CHANNELS)):
+            assert DWDM_L_50GHZ_CHANNELS[i][2] < DWDM_L_50GHZ_CHANNELS[i - 1][2]
+
+
 class TestWdmGrids:
     def test_all_grids_present(self):
-        assert set(WDM_GRIDS.keys()) == {"cwdm", "dwdm_100ghz", "dwdm_50ghz"}
+        assert set(WDM_GRIDS.keys()) == {
+            "cwdm",
+            "dwdm_100ghz",
+            "dwdm_50ghz",
+            "dwdm_l_100ghz",
+            "dwdm_l_50ghz",
+        }
 
     def test_grid_references(self):
         assert WDM_GRIDS["cwdm"] is CWDM_CHANNELS
         assert WDM_GRIDS["dwdm_100ghz"] is DWDM_100GHZ_CHANNELS
         assert WDM_GRIDS["dwdm_50ghz"] is DWDM_50GHZ_CHANNELS
+        assert WDM_GRIDS["dwdm_l_100ghz"] is DWDM_L_100GHZ_CHANNELS
+        assert WDM_GRIDS["dwdm_l_50ghz"] is DWDM_L_50GHZ_CHANNELS
+
+    def test_l_band_resolvable_via_get_channel_info(self):
+        assert get_channel_info("dwdm_l_100ghz", 1) == ("L184.50", Decimal("1624.89"))
+        assert get_channel_info("dwdm_l_50ghz", 143) == ("L191.60", Decimal("1564.68"))
+
+    def test_l_band_and_c_band_100ghz_do_not_overlap(self):
+        wl_c = {ch[2] for ch in DWDM_100GHZ_CHANNELS}
+        for ch in DWDM_L_100GHZ_CHANNELS:
+            assert ch[2] not in wl_c
 
     @pytest.mark.parametrize("grid_key", WDM_GRIDS.keys())
     def test_channel_tuple_structure(self, grid_key):
