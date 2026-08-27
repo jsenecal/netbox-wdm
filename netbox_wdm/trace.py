@@ -10,30 +10,13 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from dcim.models import Cable, CableTermination, FrontPort, PortMapping, RearPort
-from django.contrib.contenttypes.models import ContentType
+from dcim.models import Cable, RearPort
 from django.db import transaction
-from netbox.plugins import get_plugin_config
 
+from .core_walk import walk_from_rear_port
 from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPath, WdmWavelengthPathChannel
 
 logger = logging.getLogger(__name__)
-
-
-def get_max_trace_hops() -> int:
-    """Return the configured hop cap for cable-chain walks (max_trace_hops plugin setting)."""
-    return get_plugin_config("netbox_wdm", "max_trace_hops", 20)
-
-
-def warn_max_trace_hops_reached(start_rp: RearPort, max_hops: int) -> None:
-    """Log that a cable-chain walk was truncated by the hop cap, so the incomplete path is visible."""
-    logger.warning(
-        "Cable trace from rear port %s on device %s stopped after %d hops; the traced path may be "
-        "incomplete. Raise the max_trace_hops plugin setting if the chain is legitimately longer.",
-        start_rp,
-        start_rp.device,
-        max_hops,
-    )
 
 
 @dataclass
@@ -79,21 +62,9 @@ class TraceCache:
     def cable(self, pk: int) -> Cable:
         return self._memo(("cable", pk), lambda: Cable.objects.get(pk=pk))
 
-    def far_end(self, termination: FrontPort | RearPort) -> FrontPort | RearPort | None:
-        key = ("far_end", type(termination).__name__, termination.pk)
-        return self._memo(key, lambda: _compute_cable_far_end(termination))
-
-    def portmapping_for_front_port(self, front_port: FrontPort) -> PortMapping | None:
-        return self._memo(
-            ("pm_front", front_port.pk),
-            lambda: PortMapping.objects.filter(front_port=front_port).select_related("rear_port").first(),
-        )
-
-    def portmapping_for_rear_port(self, rear_port: RearPort) -> PortMapping | None:
-        return self._memo(
-            ("pm_rear", rear_port.pk),
-            lambda: PortMapping.objects.filter(rear_port=rear_port).select_related("front_port").first(),
-        )
+    def walk(self, rear_port: RearPort) -> list[list[Any]] | None:
+        """The ordered cable-chain node groups leaving a rear port, or None."""
+        return self._memo(("walk", rear_port.pk), lambda: walk_from_rear_port(rear_port))
 
     def line_port(self, rear_port: RearPort) -> WdmLinePort | None:
         """The WdmLinePort on a rear port, or None (rear_port is unique per line port)."""
@@ -123,174 +94,85 @@ class TraceCache:
         )
 
 
-def _index_paired_far_end(termination: FrontPort | RearPort) -> FrontPort | RearPort | None:
-    """Legacy strand pairing for unprofiled cables: Nth A-side pairs with Nth B-side.
+def _pick_far_line_port(candidates: list[tuple[WdmLinePort, RearPort]], origin_role: str | None):
+    """Choose which of several reachable line ports a signal actually lands on.
 
-    CableTermination rows carry no strand identity when the cable has no
-    profile, so the Nth termination on one end (in pk order) is presumed to
-    pair with the Nth termination on the other end. This only holds while
-    termination rows keep their creation order; callers must treat the
-    result as a guess.
+    A profiled cable resolves to one strand, so there is normally a single
+    candidate. Unprofiled multi-terminated cables carry no strand identity,
+    so core follows every fibre at once and both far line ports come back;
+    the signal leaving a TX lands on the RX, and vice versa. Picking by role
+    reads the direction off the WDM overlay rather than guessing it from
+    termination row order.
+
+    A genuine TX-to-TX miscable is unaffected: it resolves to one strand and
+    so reaches here as a single candidate, still flagged by
+    ``_check_far_end_role``.
     """
-    all_terms = list(CableTermination.objects.filter(cable_id=termination.cable_id).order_by("cable_end", "pk"))
-    my_ct = ContentType.objects.get_for_model(termination)
+    from .choices import WdmLineRoleChoices
 
-    my_terms = [t for t in all_terms if t.cable_end == termination.cable_end]
-    my_index = next(
-        (i for i, t in enumerate(my_terms) if t.termination_type_id == my_ct.pk and t.termination_id == termination.pk),
-        None,
-    )
-    if my_index is None:
-        return None
+    if len(candidates) == 1 or origin_role is None:
+        return candidates[0]
 
-    far_terms = [t for t in all_terms if t.cable_end != termination.cable_end]
-    if my_index >= len(far_terms):
-        return None
+    complements = {
+        WdmLineRoleChoices.TX: (WdmLineRoleChoices.RX, WdmLineRoleChoices.BIDI),
+        WdmLineRoleChoices.RX: (WdmLineRoleChoices.TX, WdmLineRoleChoices.BIDI),
+        WdmLineRoleChoices.BIDI: (WdmLineRoleChoices.BIDI, WdmLineRoleChoices.RX, WdmLineRoleChoices.TX),
+    }.get(origin_role, ())
 
-    far = far_terms[my_index].termination
-    return far if isinstance(far, (FrontPort, RearPort)) else None
+    for role in complements:
+        for candidate in candidates:
+            if candidate[0].role == role:
+                return candidate
+    return candidates[0]
 
 
-def resolve_cable_far_end(
-    termination: FrontPort | RearPort, cache: TraceCache | None = None
-) -> FrontPort | RearPort | None:
-    """Return the far-end port paired with this one on its cable strand.
+def far_line_port_in_group(group: list[Any], line_port_lookup, origin_role: str | None):
+    """Return the (WdmLinePort, RearPort) a chain reaches within one walk group, or None.
 
-    Profiled cables (NetBox 4.6+ ``Cable.profile``) persist the strand
-    pairing on each ``CableTermination`` (connector/positions), and
-    ``link_peers`` resolves the far end through the profile's connector
-    mapping; that answer is authoritative.
-
-    Unprofiled legacy cables fall back to index pairing (see
-    ``_index_paired_far_end``), which may follow the wrong strand on
-    multi-strand cables; a warning is logged whenever the pairing is
-    resolved this way.
-
-    The termination must be a fresh instance carrying its denormalized
-    cable fields (cable, cable_end, cable_connector, cable_positions).
-    When a ``cache`` is given, the resolution is memoized on it for the
-    duration of the pass.
+    Shared by the two consumers of a walk -- path discovery in this module
+    and trace rendering in ``views`` -- so the rule for which rear port
+    counts as the far end lives in one place. ``line_port_lookup`` maps a
+    rear port to its WdmLinePort, letting a caller supply a cached lookup.
     """
-    if cache is not None:
-        return cache.far_end(termination)
-    return _compute_cable_far_end(termination)
-
-
-def _compute_cable_far_end(termination: FrontPort | RearPort) -> FrontPort | RearPort | None:
-    """Uncached strand-pairing resolution behind resolve_cable_far_end."""
-    if not termination.cable_id:  # type: ignore[attr-defined]
+    candidates = []
+    for obj in group:
+        if not isinstance(obj, RearPort):
+            continue
+        lp = line_port_lookup(obj)
+        if lp is not None:
+            candidates.append((lp, obj))
+    if not candidates:
         return None
-
-    cable = termination.cable
-    if cable.profile:
-        peers = [peer for peer in termination.link_peers if isinstance(peer, (FrontPort, RearPort))]
-        return peers[0] if peers else None
-
-    logger.warning(
-        "Cable %s (pk %d) has no profile; guessing strand pairing by termination order. "
-        "Assign a cable profile (e.g. trunk-2c1p for duplex trunks) to make strand pairing explicit.",
-        cable,
-        cable.pk,
-    )
-    return _index_paired_far_end(termination)
-
-
-def _resolve_rearport_cable(
-    current_rp: RearPort, visited: set[int], cache: TraceCache | None = None
-) -> RearPort | None:
-    """Follow a cable from a RearPort to the next RearPort.
-
-    Handles both direct trunk cables (RP→RP) and patch cables through
-    pass-through devices (RP→FP→PortMapping→RP→cable→RP→PortMapping→FP→RP).
-
-    Returns the next RearPort or None. Updates visited set.
-    """
-    cache = cache if cache is not None else TraceCache()
-    fresh_rp = cache.rear_port(current_rp.pk)
-    far = resolve_cable_far_end(fresh_rp, cache)
-
-    # Direct RearPort-to-RearPort trunk cable
-    if isinstance(far, RearPort):
-        return far
-
-    # RearPort-to-FrontPort (patch cable into a pass-through device)
-    if not isinstance(far, FrontPort):
-        return None
-
-    # FrontPort → PortMapping → RearPort (enter the pass-through device)
-    pm_in = cache.portmapping_for_front_port(far)
-    if pm_in is None or pm_in.rear_port.pk in visited:
-        return None
-
-    inner_rp = pm_in.rear_port
-    visited.add(inner_rp.pk)
-
-    # Follow cable from inner RearPort (e.g., trunk cable between patch panels)
-    next_rp = resolve_cable_far_end(inner_rp, cache)
-    if not isinstance(next_rp, RearPort):
-        return None
-    if next_rp.pk in visited:
-        return None
-    visited.add(next_rp.pk)
-
-    # Check if next_rp is a WDM node directly — if so return it
-    if cache.line_port(next_rp) is not None:
-        return next_rp
-
-    # Otherwise pass through another device: PortMapping → FrontPort → cable
-    pm_exit = cache.portmapping_for_rear_port(next_rp)
-    if pm_exit is None:
-        return None
-
-    exit_far = resolve_cable_far_end(pm_exit.front_port, cache)
-    if isinstance(exit_far, FrontPort):
-        # FP→FP link, then PortMapping→RP
-        exit_pm = cache.portmapping_for_front_port(exit_far)
-        if exit_pm is not None and exit_pm.rear_port.pk not in visited:
-            return exit_pm.rear_port
-        return None
-    if isinstance(exit_far, RearPort):
-        # FP→RP patch cable directly to the next device
-        return exit_far
-    return None
+    return _pick_far_line_port(candidates, origin_role)
 
 
 def _get_far_end_node(
     rear_port: RearPort, cache: TraceCache | None = None
 ) -> tuple[WdmNode | None, Any, RearPort | None]:
-    """Follow cables from rear_port through intermediate devices until reaching a WDM node.
+    """Follow the cable chain from rear_port to the next WDM node along it.
 
-    Supports:
-    1. Direct trunk cables: RearPort →(cable)→ RearPort
-    2. Patch cables through pass-through devices (patch panels):
-       RearPort →(cable)→ FrontPort →(PortMapping)→ RearPort →(cable)→
-       RearPort →(PortMapping)→ FrontPort →(cable)→ RearPort
+    The chain may pass through any number of intermediate devices in any
+    cabling permutation, and may cross a carrier circuit mid-span; the walk
+    itself is core's (see ``core_walk``). The first rear ports along it that
+    carry a WdmLinePort are the far end, so a chain that reaches an
+    amplifier or another WDM node stops there rather than running on.
 
     Returns (WdmNode, Module | None, far_end_RearPort) or (None, None, None).
     """
     cache = cache if cache is not None else TraceCache()
-    visited = {rear_port.pk}
-    current_rp = rear_port
-    max_hops = get_max_trace_hops()
+    groups = cache.walk(rear_port)
+    if groups is None:
+        return None, None, None
 
-    for _ in range(max_hops):  # bounded to prevent infinite loops
-        far_rp = _resolve_rearport_cable(current_rp, visited, cache)
-        if far_rp is None:
-            return None, None, None
+    origin_lp = cache.line_port(rear_port)
+    origin_role = origin_lp.role if origin_lp is not None else None
 
-        if far_rp.pk in visited:
-            return None, None, None
-        visited.add(far_rp.pk)
-
-        # Check if this rear port belongs to a WDM node
-        lp = cache.line_port(far_rp)
-        if lp is not None:
+    for group in groups[1:]:  # group 0 is the origin rear port itself
+        found = far_line_port_in_group(group, cache.line_port, origin_role)
+        if found is not None:
+            lp, far_rp = found
             return lp.wdm_node, lp.module, far_rp
 
-        # Not a WDM node — continue from this rear port
-        current_rp = far_rp
-
-    warn_max_trace_hops_reached(rear_port, max_hops)
     return None, None, None
 
 

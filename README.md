@@ -62,7 +62,7 @@ PLUGINS_CONFIG = {
         # WDM nodes (path discovery and circuit trace rendering). Raise this
         # if legitimate chains pass through more intermediate devices; a
         # warning is logged when the cap truncates a trace.
-        "max_trace_hops": 20,
+        "max_trace_hops": 100,
     },
 }
 ```

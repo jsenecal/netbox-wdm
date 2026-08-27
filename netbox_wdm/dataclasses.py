@@ -76,7 +76,7 @@ def path_element_from_channel(channel: object, sequence: int) -> PathElement:
 class CableSegmentItem:
     """A single physical element in a cable segment between WDM nodes."""
 
-    type: str  # "rear_port", "cable", "front_port"
+    type: str  # "rear_port", "front_port", "cable", "circuit_termination"
     id: int
     name: str
     url: str

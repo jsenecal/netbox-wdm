@@ -69,43 +69,24 @@ The walk stops when:
   recorded; `is_active` will become false), or
 - The far end is not a `WdmLinePort` (path ends at a non-WDM device).
 
-## Cable-following helpers
+## Cable-chain traversal
 
 NetBox represents cables as `dcim.Cable` plus a list of
-`dcim.CableTermination` rows. All cable hops resolve through one shared
-helper:
+`dcim.CableTermination` rows, and it already ships a walker that follows
+them: `CablePath.from_origin`. The plugin delegates to it rather than
+following cables itself, through one helper:
 
-- `resolve_cable_far_end(port)` -- given a RearPort or FrontPort (a fresh
-  instance carrying its denormalized cable fields), returns the far-end
-  port paired with it on its cable strand, whatever its type. This is
-  also what the trace visualisation in `views.py` uses
-  (`_follow_cable_far_end`).
-- `_index_paired_far_end(port)` -- the legacy fallback for unprofiled
-  cables (see below).
-- `_resolve_rearport_cable(rp, visited)` -- glue function that follows a
-  trunk cable, then a single pass-through device, then another trunk
-  cable. This is what makes patch panel pairs invisible to the path
-  hop count.
+- `core_walk.walk_from_rear_port(rp)` -- traces the chain leaving a rear
+  port and returns the ordered node groups core recorded for it
+  (`CablePath.path_objects`: terminations and the links between them,
+  starting with the origin).
 
-Strand pairing on **multi-terminated cables** (a duplex link is one
-cable with two A-side ports and two B-side ports) is resolved through
-the NetBox 4.6+ **cable profile**. A profiled cable persists a
-`connector` on every `CableTermination`, and `link_peers` maps connector
-N on one end to connector N on the other (for symmetric profiles such as
-`trunk-2c1p`). That stored pairing is authoritative: it does not depend
-on row creation order and survives re-terminations.
+Both consumers read that one walk. `trace._get_far_end_node` scans it for
+the first rear port carrying a `WdmLinePort` -- that is the next WDM node
+along the chain. `views._trace_cable_segment` renders every object in it
+as a `CableSegmentItem` for the trace diagram.
 
-Cables without a profile have no stored strand identity, so
-`resolve_cable_far_end` falls back to `_index_paired_far_end`: the Nth
-termination on one end (pk order) is presumed to pair with the Nth on
-the other end. This is a guess -- it breaks silently if a termination
-row is ever recreated out of order -- so every use logs a warning naming
-the cable. Assigning a profile to the cable moves it to the
-authoritative path.
-
-## Pass-through device traversal
-
-`_resolve_rearport_cable` handles the patch-panel case explicitly:
+Delegating buys the permutations core already handles:
 
 ```text
 [WDM-A.RP] --(cable)--> [PP-A.FP] --(internal)--> [PP-A.RP]
@@ -113,24 +94,31 @@ authoritative path.
         --(cable)--> [WDM-B.RP]
 ```
 
-The function:
+...and equally a panel entered at its rear face, panels cascaded
+rear-to-front (`PP-A.RP --(cable)--> PP-B.FP`), chains of any length, and
+the A-to-Z hop across a `circuits.CircuitTermination` pair, which joins
+two halves of a fibre run with no cable of its own. Core resolves each
+cable's strand pairing through the cable profile, so a duplex trunk
+follows the intended fibre; unprofiled cables take core's positionless
+branch.
 
-1. Follows the first cable from the WDM RearPort to the patch panel
-   FrontPort.
-2. Looks up the patch panel's `PortMapping` to translate FP -> RP at
-   the same position.
-3. Follows the inter-PP trunk cable RP -> RP.
-4. Translates RP -> FP on the second PP via its `PortMapping`.
-5. Follows the second cable from the PP FrontPort to the WDM RearPort.
+Walk results are **ephemeral**. Nothing is written to core's `CablePath`
+table: core's signal handlers retrace or delete every row whose `_nodes`
+match a changed cable, so a plugin-created row would not survive the
+plugin's own port mappings being rebuilt.
 
-Each step's `cable_end + index` is matched, so multi-terminated cables
-in the chain still pick the right fibre.
+### Bounding the walk
 
-The `visited` set tracks every rear port the walk has touched, so a
-cyclic patch plant (loopback into the same PP) terminates instead of
-looping forever. The outer `_get_far_end_node` also caps total hops at
-the `max_trace_hops` plugin setting (default 20) and logs a warning
-when the cap truncates a walk.
+Core's walker carries no visited set and no hop bound -- a cabling loop
+spins forever -- and these walks run inside signal handlers where that
+would hang a worker. `walk_from_rear_port` therefore runs a structural
+pre-scan (`_survey_chain`) before handing the chain to core. The pre-scan
+follows the same `link_peers` strand resolution, crosses port mappings
+and circuit terminations, and keeps a visited set. It refuses the walk
+and logs a warning when the chain revisits a port, or when it is still
+going after `max_trace_hops` cable segments (plugin setting, default
+100). In both cases the trace comes back empty rather than incomplete or
+hung.
 
 ## Validity flags
 
@@ -183,12 +171,12 @@ paths exist.
 
 ## Performance characteristics
 
-- The walk is bounded at `max_trace_hops` hops (plugin setting, default
-  20), so worst-case node-traversal is O(max_trace_hops) per grid
-  position.
-- Each cable lookup runs a few `CableTermination` queries plus a
-  `RearPort` or `FrontPort` fetch. Multi-terminated cables only widen
-  the per-cable work, not the hop count.
+- The walk is bounded at `max_trace_hops` cable segments (plugin setting,
+  default 100), so worst-case node-traversal is O(max_trace_hops) per
+  grid position.
+- Each walk costs the pre-scan plus core's own traversal. Both are
+  memoized per rebuild pass by `TraceCache.walk`, so the grid positions
+  after the first are served from memory.
 - `rebuild_wavelength_paths_for_node` runs one trace per grid position,
   so a 44-channel DWDM node is bounded at 44 traces per rebuild.
 - Tracing is read-mostly except for the persistence step; on a

@@ -20,7 +20,7 @@ export interface PathElement {
 }
 
 export interface CableSegmentItem {
-  type: 'rear_port' | 'cable' | 'front_port';
+  type: 'rear_port' | 'cable' | 'front_port' | 'circuit_termination';
   id: number;
   name: string;
   url: string;
