@@ -14,6 +14,40 @@ from dcim.choices import CableProfileChoices
 from dcim.models import Cable, Device, FrontPort, RearPort
 
 
+def simplex_cable(
+    a_termination,
+    b_termination,
+    *,
+    label: str = "",
+    cable_type: str = "smf-os2",
+    status: str = "connected",
+    color: str = "",
+    profile: str = CableProfileChoices.SINGLE_1C1P,
+) -> Cable:
+    """Create one single-strand cable, profiled ``single-1c1p`` by default.
+
+    Terminations may be any cabled object -- front port, rear port, or
+    circuit termination -- so the same helper wires patch runs and carrier
+    handoffs alike.
+
+    Pass ``profile=""`` for an unprofiled cable. A single-strand cable has
+    no strand ambiguity either way, so this only chooses which branch of
+    core's walker the fixture exercises: profiled resolves through the
+    connector map, unprofiled takes the positionless legacy path.
+    """
+    cable = Cable(
+        type=cable_type,
+        profile=profile,
+        status=status,
+        color=color,
+        label=label,
+        a_terminations=[a_termination],
+        b_terminations=[b_termination],
+    )
+    cable.save()
+    return cable
+
+
 def cable_through_pp_pair(
     device_a_rearport: RearPort,
     pp_a_device: Device,
@@ -48,40 +82,16 @@ def cable_through_pp_pair(
 
     sep = " " if label_prefix else ""
 
-    patch_cable_1 = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.SINGLE_1C1P,
-        status=status,
-        color=patch_color,
-        label=f"{label_prefix}{sep}A-patch",
-        a_terminations=[device_a_rearport],
-        b_terminations=[pp_a_fp],
-    )
-    patch_cable_1.save()
+    def _leg(a, b, name: str, color: str) -> Cable:
+        return simplex_cable(
+            a, b, label=f"{label_prefix}{sep}{name}", cable_type=cable_type, status=status, color=color
+        )
 
-    trunk_cable = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.SINGLE_1C1P,
-        status=status,
-        color=trunk_color,
-        label=f"{label_prefix}{sep}trunk",
-        a_terminations=[pp_a_rp],
-        b_terminations=[pp_b_rp],
+    return (
+        _leg(device_a_rearport, pp_a_fp, "A-patch", patch_color),
+        _leg(pp_a_rp, pp_b_rp, "trunk", trunk_color),
+        _leg(pp_b_fp, device_b_rearport, "B-patch", patch_color),
     )
-    trunk_cable.save()
-
-    patch_cable_2 = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.SINGLE_1C1P,
-        status=status,
-        color=patch_color,
-        label=f"{label_prefix}{sep}B-patch",
-        a_terminations=[pp_b_fp],
-        b_terminations=[device_b_rearport],
-    )
-    patch_cable_2.save()
-
-    return (patch_cable_1, trunk_cable, patch_cable_2)
 
 
 def cable_duplex_through_pp_pair(
@@ -128,37 +138,21 @@ def cable_duplex_through_pp_pair(
 
     sep = " " if label_prefix else ""
 
-    a_patch = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.TRUNK_2C1P,
-        status=status,
-        color=patch_color,
-        label=f"{label_prefix}{sep}A-patch",
-        a_terminations=[device_a_tx_rp, device_a_rx_rp],
-        b_terminations=[pp_a_fp_tx, pp_a_fp_rx],
-    )
-    a_patch.save()
+    def _leg(a_terms: list, b_terms: list, name: str, color: str) -> Cable:
+        cable = Cable(
+            type=cable_type,
+            profile=CableProfileChoices.TRUNK_2C1P,
+            status=status,
+            color=color,
+            label=f"{label_prefix}{sep}{name}",
+            a_terminations=a_terms,
+            b_terminations=b_terms,
+        )
+        cable.save()
+        return cable
 
-    trunk = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.TRUNK_2C1P,
-        status=status,
-        color=trunk_color,
-        label=f"{label_prefix}{sep}trunk",
-        a_terminations=[pp_a_rp_tx, pp_a_rp_rx],
-        b_terminations=[pp_b_rp_tx, pp_b_rp_rx],
+    return (
+        _leg([device_a_tx_rp, device_a_rx_rp], [pp_a_fp_tx, pp_a_fp_rx], "A-patch", patch_color),
+        _leg([pp_a_rp_tx, pp_a_rp_rx], [pp_b_rp_tx, pp_b_rp_rx], "trunk", trunk_color),
+        _leg([pp_b_fp_tx, pp_b_fp_rx], [device_b_rx_rp, device_b_tx_rp], "B-patch", patch_color),
     )
-    trunk.save()
-
-    b_patch = Cable(
-        type=cable_type,
-        profile=CableProfileChoices.TRUNK_2C1P,
-        status=status,
-        color=patch_color,
-        label=f"{label_prefix}{sep}B-patch",
-        a_terminations=[pp_b_fp_tx, pp_b_fp_rx],
-        b_terminations=[device_b_rx_rp, device_b_tx_rp],
-    )
-    b_patch.save()
-
-    return (a_patch, trunk, b_patch)
