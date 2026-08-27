@@ -5,7 +5,7 @@ Used by both the sample data management command and the test suite.
 
 from __future__ import annotations
 
-from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair
+from .cabling import cable_duplex_through_pp_pair, cable_through_pp_pair, simplex_cable
 from .dcim import create_device_roles, create_manufacturer, create_site
 from .device_types import (
     create_cwdm_cassette_module_type,
@@ -29,8 +29,10 @@ from .devices import (
 )
 from .topologies import (
     Topology,
+    cascaded_pp_chain,
     duplex_mux_pair,
     dwdm_mux_to_roadm,
+    midspan_circuit_span,
     modular_chassis_span,
     mux_roadm_mux,
     sf_mux_long_chain,
@@ -40,6 +42,7 @@ from .topologies import (
 __all__ = [
     "cable_duplex_through_pp_pair",
     "cable_through_pp_pair",
+    "cascaded_pp_chain",
     "ChassisBundle",
     "create_cwdm_cassette_module_type",
     "create_cwdm_mux_dx_type",
@@ -59,11 +62,13 @@ __all__ = [
     "create_site",
     "duplex_mux_pair",
     "dwdm_mux_to_roadm",
+    "midspan_circuit_span",
     "ensure_populated",
     "modular_chassis_span",
     "mux_roadm_mux",
     "sf_mux_long_chain",
     "sf_mux_pair",
+    "simplex_cable",
     "Topology",
     "WdmDeviceBundle",
 ]
