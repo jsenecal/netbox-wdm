@@ -85,7 +85,7 @@ PortTemplateMappings (one per channel, plus EXP and 1310):
 WdmProfile fields:
 
 - `node_type = terminal_mux`
-- `grid = cwdm` (or `dwdm_100ghz`, `dwdm_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`)
+- `grid = cwdm` (or `dwdm_c_100ghz`, `dwdm_c_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`)
 - `fiber_type = duplex`
 
 WdmChannelPlan rows (one per channel slot the hardware carries, **not**
@@ -167,7 +167,7 @@ PortTemplateMapping-derived `dcim.PortMapping` rows on the device.
 WdmProfile:
 
 - `node_type = roadm`
-- `grid = dwdm_100ghz` (or whatever grid the optics support)
+- `grid = dwdm_c_100ghz` (or whatever grid the optics support)
 - `fiber_type = duplex`
 
 WdmChannelPlan rows: one per ITU position, with `ADD-{nn}` as

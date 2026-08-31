@@ -188,7 +188,7 @@ Methods:
 Defined in `netbox_wdm/choices.py`:
 
 - `WdmNodeTypeChoices`: `terminal_mux`, `oadm`, `roadm`, `amplifier`.
-- `WdmGridChoices`: `dwdm_100ghz`, `dwdm_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`, `cwdm`.
+- `WdmGridChoices`: `dwdm_c_100ghz`, `dwdm_c_50ghz`, `dwdm_l_100ghz`, `dwdm_l_50ghz`, `cwdm`.
 - `WdmLineDirectionChoices`: `common`, `east`, `west`.
 - `WdmFiberTypeChoices`: `duplex`, `single_fiber`.
 - `WdmLineRoleChoices`: `tx`, `rx`, `bidi`.

@@ -58,10 +58,10 @@ def _c_band_50ghz_label(i: int, freq_thz: Decimal) -> str:
     return f"C{channel_num}" if i % 2 == 0 else f"C{channel_num}.5"
 
 
-DWDM_100GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
+DWDM_C_100GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
     _DWDM_C_START_FREQ, _SPACING_100GHZ, _DWDM_C_100GHZ_COUNT, _c_band_100ghz_label
 )
-DWDM_50GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
+DWDM_C_50GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
     _DWDM_C_START_FREQ, _SPACING_50GHZ, _DWDM_C_50GHZ_COUNT, _c_band_50ghz_label
 )
 
@@ -89,8 +89,8 @@ DWDM_L_50GHZ_CHANNELS: tuple[tuple[int, str, Decimal], ...] = _dwdm_channels(
 
 WDM_GRIDS: dict[str, tuple[tuple[int, str, Decimal], ...]] = {
     "cwdm": CWDM_CHANNELS,
-    "dwdm_100ghz": DWDM_100GHZ_CHANNELS,
-    "dwdm_50ghz": DWDM_50GHZ_CHANNELS,
+    "dwdm_c_100ghz": DWDM_C_100GHZ_CHANNELS,
+    "dwdm_c_50ghz": DWDM_C_50GHZ_CHANNELS,
     "dwdm_l_100ghz": DWDM_L_100GHZ_CHANNELS,
     "dwdm_l_50ghz": DWDM_L_50GHZ_CHANNELS,
 }

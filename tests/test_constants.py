@@ -1,3 +1,4 @@
+import importlib
 from decimal import Decimal
 
 import pytest
@@ -5,8 +6,8 @@ import pytest
 from netbox_wdm.choices import WdmGridChoices
 from netbox_wdm.wdm_constants import (
     CWDM_CHANNELS,
-    DWDM_50GHZ_CHANNELS,
-    DWDM_100GHZ_CHANNELS,
+    DWDM_C_50GHZ_CHANNELS,
+    DWDM_C_100GHZ_CHANNELS,
     DWDM_L_50GHZ_CHANNELS,
     DWDM_L_100GHZ_CHANNELS,
     WDM_GRIDS,
@@ -37,35 +38,35 @@ class TestCwdmChannels:
 
 class TestDwdm100GhzChannels:
     def test_channel_count(self):
-        assert len(DWDM_100GHZ_CHANNELS) == 44
+        assert len(DWDM_C_100GHZ_CHANNELS) == 44
 
     def test_first_channel(self):
-        pos, label, wl = DWDM_100GHZ_CHANNELS[0]
+        pos, label, wl = DWDM_C_100GHZ_CHANNELS[0]
         assert pos == 1
         assert label == "C21"
         assert isinstance(wl, Decimal)
 
     def test_last_channel(self):
-        pos, label, wl = DWDM_100GHZ_CHANNELS[-1]
+        pos, label, wl = DWDM_C_100GHZ_CHANNELS[-1]
         assert pos == 44
         assert label == "C64"
 
     def test_labels_sequential(self):
-        for i, (_, label, _) in enumerate(DWDM_100GHZ_CHANNELS):
+        for i, (_, label, _) in enumerate(DWDM_C_100GHZ_CHANNELS):
             assert label == f"C{21 + i}"
 
 
 class TestDwdm50GhzChannels:
     def test_channel_count(self):
-        assert len(DWDM_50GHZ_CHANNELS) == 88
+        assert len(DWDM_C_50GHZ_CHANNELS) == 88
 
     def test_first_channel(self):
-        pos, label, wl = DWDM_50GHZ_CHANNELS[0]
+        pos, label, wl = DWDM_C_50GHZ_CHANNELS[0]
         assert pos == 1
         assert label == "C21"
 
     def test_half_channel_labels(self):
-        _, label, _ = DWDM_50GHZ_CHANNELS[1]
+        _, label, _ = DWDM_C_50GHZ_CHANNELS[1]
         assert label == "C21.5"
 
 
@@ -108,10 +109,10 @@ class TestDwdmL50GhzChannels:
 
 
 # CWDM is excluded where a rule holds only for the frequency-derived grids.
-DWDM_GRID_KEYS = ("dwdm_100ghz", "dwdm_50ghz", "dwdm_l_100ghz", "dwdm_l_50ghz")
+DWDM_GRID_KEYS = ("dwdm_c_100ghz", "dwdm_c_50ghz", "dwdm_l_100ghz", "dwdm_l_50ghz")
 
 # Each pair is (100 GHz grid, 50 GHz grid) within one band.
-BAND_GRID_PAIRS = (("dwdm_100ghz", "dwdm_50ghz"), ("dwdm_l_100ghz", "dwdm_l_50ghz"))
+BAND_GRID_PAIRS = (("dwdm_c_100ghz", "dwdm_c_50ghz"), ("dwdm_l_100ghz", "dwdm_l_50ghz"))
 
 
 class TestWdmGrids:
@@ -124,10 +125,23 @@ class TestWdmGrids:
         """
         assert set(WDM_GRIDS) == set(WdmGridChoices.values())
 
+    def test_grid_rename_migration_targets_current_keys(self):
+        """The C-band rename migration must land rows on keys that still resolve.
+
+        A typo in either column is silent: WdmChannel.label swallows the
+        KeyError from an unresolvable grid and renders blank, so a bad rename
+        target would blank every channel on the affected nodes.
+        """
+        module = importlib.import_module("netbox_wdm.migrations.0012_rename_c_band_grid_keys")
+        old_keys = {old for old, _new in module.GRID_RENAMES}
+        new_keys = {new for _old, new in module.GRID_RENAMES}
+        assert new_keys <= set(WDM_GRIDS)
+        assert not old_keys & set(WDM_GRIDS)
+
     def test_grid_references(self):
         assert WDM_GRIDS["cwdm"] is CWDM_CHANNELS
-        assert WDM_GRIDS["dwdm_100ghz"] is DWDM_100GHZ_CHANNELS
-        assert WDM_GRIDS["dwdm_50ghz"] is DWDM_50GHZ_CHANNELS
+        assert WDM_GRIDS["dwdm_c_100ghz"] is DWDM_C_100GHZ_CHANNELS
+        assert WDM_GRIDS["dwdm_c_50ghz"] is DWDM_C_50GHZ_CHANNELS
         assert WDM_GRIDS["dwdm_l_100ghz"] is DWDM_L_100GHZ_CHANNELS
         assert WDM_GRIDS["dwdm_l_50ghz"] is DWDM_L_50GHZ_CHANNELS
 
@@ -136,7 +150,7 @@ class TestWdmGrids:
         assert get_channel_info("dwdm_l_50ghz", 143) == DWDM_L_50GHZ_CHANNELS[-1][1:]
 
     def test_l_band_and_c_band_do_not_overlap(self):
-        wl_c = {ch[2] for ch in DWDM_100GHZ_CHANNELS} | {ch[2] for ch in DWDM_50GHZ_CHANNELS}
+        wl_c = {ch[2] for ch in DWDM_C_100GHZ_CHANNELS} | {ch[2] for ch in DWDM_C_50GHZ_CHANNELS}
         wl_l = {ch[2] for ch in DWDM_L_100GHZ_CHANNELS} | {ch[2] for ch in DWDM_L_50GHZ_CHANNELS}
         assert not wl_c & wl_l
 

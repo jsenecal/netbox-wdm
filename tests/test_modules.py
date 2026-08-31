@@ -38,7 +38,7 @@ from netbox_wdm.testing import (
     create_roadm_2d_type,
     create_sf_mux,
 )
-from netbox_wdm.wdm_constants import DWDM_100GHZ_CHANNELS
+from netbox_wdm.wdm_constants import DWDM_C_100GHZ_CHANNELS
 
 pytestmark = pytest.mark.django_db
 
@@ -174,10 +174,10 @@ class TestEffectiveGridAndFixedness:
         WdmProfile.objects.create(
             module_type=cassette_module_type,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(wdm_node=node, module=modules["MUX1"], grid_position=1)
-        assert ch.effective_grid == WdmGridChoices.DWDM_100GHZ
+        assert ch.effective_grid == WdmGridChoices.DWDM_C_100GHZ
         # node grid is CWDM; a module-null channel keeps using it
         ch_dev = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         assert ch_dev.effective_grid == WdmGridChoices.CWDM
@@ -187,7 +187,7 @@ class TestEffectiveGridAndFixedness:
         WdmProfile.objects.create(
             module_type=cassette_module_type,
             node_type=WdmNodeTypeChoices.ROADM,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(wdm_node=node, module=modules["MUX1"], grid_position=1)
         assert ch.is_fixed is False
@@ -243,7 +243,7 @@ class TestAmplifierProfileLinePorts:
         profile = WdmProfile.objects.create(
             device_type=dt,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         WdmLinePortPlan.objects.create(
             profile=profile,
@@ -253,7 +253,7 @@ class TestAmplifierProfileLinePorts:
         )
         device = Device.objects.create(name="AMP-A", site=wdm_site, device_type=dt, role=wdm_roles["wdm-amplifier"])
         node = WdmNode.objects.create(
-            device=device, node_type=WdmNodeTypeChoices.AMPLIFIER, grid=WdmGridChoices.DWDM_100GHZ
+            device=device, node_type=WdmNodeTypeChoices.AMPLIFIER, grid=WdmGridChoices.DWDM_C_100GHZ
         )
         assert node.channels.count() == 0
         assert node.line_ports.count() == 1
@@ -511,12 +511,12 @@ def _create_roadm_cassette_module_type(manufacturer, num_channels=2):
         module_type=mt,
         defaults={
             "node_type": WdmNodeTypeChoices.ROADM,
-            "grid": WdmGridChoices.DWDM_100GHZ,
+            "grid": WdmGridChoices.DWDM_C_100GHZ,
             "fiber_type": WdmFiberTypeChoices.DUPLEX,
         },
     )
     for i, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True)):
-        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        pos, label, wl = DWDM_C_100GHZ_CHANNELS[i]
         WdmChannelPlan.objects.get_or_create(
             profile=profile,
             grid_position=pos,

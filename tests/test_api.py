@@ -80,7 +80,7 @@ def profile(device_type):
     return WdmProfile.objects.create(
         device_type=device_type,
         node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-        grid=WdmGridChoices.DWDM_100GHZ,
+        grid=WdmGridChoices.DWDM_C_100GHZ,
     )
 
 
@@ -89,7 +89,7 @@ def wdm_node(device):
     return WdmNode.objects.create(
         device=device,
         node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-        grid=WdmGridChoices.DWDM_100GHZ,
+        grid=WdmGridChoices.DWDM_C_100GHZ,
     )
 
 
@@ -128,7 +128,7 @@ class TestWdmProfileAPI:
         assert response.status_code == status.HTTP_200_OK
         assert response.data["id"] == profile.pk
         assert response.data["node_type"] == WdmNodeTypeChoices.TERMINAL_MUX
-        assert response.data["grid"] == WdmGridChoices.DWDM_100GHZ
+        assert response.data["grid"] == WdmGridChoices.DWDM_C_100GHZ
 
     def test_create(self, api_client, manufacturer):
         new_dt = DeviceType.objects.create(
@@ -141,7 +141,7 @@ class TestWdmProfileAPI:
             {
                 "device_type": new_dt.pk,
                 "node_type": WdmNodeTypeChoices.ROADM,
-                "grid": WdmGridChoices.DWDM_50GHZ,
+                "grid": WdmGridChoices.DWDM_C_50GHZ,
             },
             format="json",
         )
@@ -166,7 +166,7 @@ class TestWdmProfileAPI:
         target = WdmProfile.objects.create(
             device_type=other_dt,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         response = api_client.delete(f"{self.base_url}{target.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -255,7 +255,7 @@ class TestWdmNodeAPI:
             {
                 "device": new_device.pk,
                 "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
-                "grid": WdmGridChoices.DWDM_100GHZ,
+                "grid": WdmGridChoices.DWDM_C_100GHZ,
             },
             format="json",
         )
@@ -280,7 +280,7 @@ class TestWdmNodeAPI:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         response = api_client.delete(f"{self.base_url}{node.pk}/")
         assert response.status_code == status.HTTP_204_NO_CONTENT

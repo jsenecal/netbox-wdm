@@ -9,8 +9,8 @@ that profile. The grid drives both the channel labels (e.g. `C32`,
 
 | Grid key | Display name | Channels | Spacing |
 |---------|--------------|----------|---------|
-| `dwdm_100ghz` | DWDM C-band 100 GHz | 44 | 100 GHz |
-| `dwdm_50ghz`  | DWDM C-band 50 GHz | 88 | 50 GHz |
+| `dwdm_c_100ghz` | DWDM C-band 100 GHz | 44 | 100 GHz |
+| `dwdm_c_50ghz`  | DWDM C-band 50 GHz | 88 | 50 GHz |
 | `dwdm_l_100ghz` | DWDM L-band 100 GHz | 72 | 100 GHz |
 | `dwdm_l_50ghz`  | DWDM L-band 50 GHz | 143 | 50 GHz |
 | `cwdm`        | CWDM | 18 | 20 nm |

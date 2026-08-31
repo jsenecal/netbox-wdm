@@ -55,7 +55,7 @@ def profile(device_type):
     return WdmProfile.objects.create(
         device_type=device_type,
         node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-        grid=WdmGridChoices.DWDM_100GHZ,
+        grid=WdmGridChoices.DWDM_C_100GHZ,
     )
 
 
@@ -82,7 +82,7 @@ class TestWdmProfile:
         p = WdmProfile.objects.create(
             device_type=device_type,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
             fiber_type=WdmFiberTypeChoices.SINGLE_FIBER,
         )
         assert p.fiber_type == WdmFiberTypeChoices.SINGLE_FIBER
@@ -129,7 +129,7 @@ class TestWdmNode:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         assert node.pk is not None
 
@@ -137,7 +137,7 @@ class TestWdmNode:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         assert "WDM:" in str(node)
 
@@ -147,7 +147,7 @@ class TestWdmNode:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         assert node.channels.count() == 2
 
@@ -156,7 +156,7 @@ class TestWdmNode:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.AMPLIFIER,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         assert node.channels.count() == 0
 
@@ -164,7 +164,7 @@ class TestWdmNode:
         WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         with pytest.raises(IntegrityError):
             WdmNode.objects.create(
@@ -180,7 +180,7 @@ class TestWdmChannel:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(
             wdm_node=node,
@@ -193,7 +193,7 @@ class TestWdmChannel:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(
             wdm_node=node,
@@ -235,7 +235,7 @@ class TestValidateChannelMapping:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(
             wdm_node=node,
@@ -250,7 +250,7 @@ class TestValidateChannelMapping:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
@@ -265,7 +265,7 @@ class TestValidateChannelMapping:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
@@ -280,7 +280,7 @@ class TestValidateChannelMapping:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         errors = WdmNode.validate_channel_mapping(node, {ch.pk: {"mux": 100, "demux": None}})
@@ -291,7 +291,7 @@ class TestValidateChannelMapping:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         module_type = ModuleType.objects.create(manufacturer=manufacturer, model="Cassette")
         bay = ModuleBay.objects.create(device=device, name="MUX1", position="MUX1")
@@ -312,7 +312,7 @@ class TestWdmWavelengthPath:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         path = WdmWavelengthPath.objects.create(
@@ -335,7 +335,7 @@ class TestWdmWavelengthPath:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         path = WdmWavelengthPath.objects.create(
@@ -349,7 +349,7 @@ class TestWdmWavelengthPath:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)
@@ -364,7 +364,7 @@ class TestWdmWavelengthPath:
         node = WdmNode.objects.create(
             device=device,
             node_type=WdmNodeTypeChoices.TERMINAL_MUX,
-            grid=WdmGridChoices.DWDM_100GHZ,
+            grid=WdmGridChoices.DWDM_C_100GHZ,
         )
         ch1 = WdmChannel.objects.create(wdm_node=node, grid_position=1)
         ch2 = WdmChannel.objects.create(wdm_node=node, grid_position=2)

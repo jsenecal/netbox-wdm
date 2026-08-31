@@ -69,7 +69,7 @@ def create_sf_mux(
 
 @transaction.atomic
 def create_roadm(
-    site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.DWDM_100GHZ
+    site: Site, device_type: DeviceType, role: DeviceRole, name: str, grid: str = WdmGridChoices.DWDM_C_100GHZ
 ) -> WdmDeviceBundle:
     """Create a 2-degree ROADM."""
     device = Device.objects.create(name=name, site=site, device_type=device_type, role=role)

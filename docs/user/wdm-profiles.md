@@ -26,7 +26,7 @@ the resulting `WdmNode`.
 |-------|----------|-------|
 | `device_type` | yes | One-to-one to `dcim.DeviceType` |
 | `node_type` | yes | `terminal_mux`, `oadm`, `roadm`, or `amplifier` |
-| `grid` | yes | `dwdm_100ghz` (44 ch), `dwdm_50ghz` (88 ch), `dwdm_l_100ghz` (72 ch), `dwdm_l_50ghz` (143 ch), or `cwdm` (18 ch) |
+| `grid` | yes | `dwdm_c_100ghz` (44 ch), `dwdm_c_50ghz` (88 ch), `dwdm_l_100ghz` (72 ch), `dwdm_l_50ghz` (143 ch), or `cwdm` (18 ch) |
 | `fiber_type` | yes | `duplex` (default) or `single_fiber` |
 | `description` | no | Free-form text |
 
