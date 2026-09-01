@@ -240,7 +240,7 @@ def dwdm_mux_to_roadm(
     """
     p = f"{name_prefix}" if name_prefix else ""
 
-    mux = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX", grid="dwdm_100ghz")
+    mux = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX", grid="dwdm_c_100ghz")
     roadm = create_roadm(site, dt_roadm, roles["wdm-roadm"], f"{p}ROADM")
 
     pp_a = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-A")
@@ -284,9 +284,9 @@ def mux_roadm_mux(
     """
     p = f"{name_prefix}" if name_prefix else ""
 
-    mux_a = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-A", grid="dwdm_100ghz")
+    mux_a = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-A", grid="dwdm_c_100ghz")
     roadm = create_roadm(site, dt_roadm, roles["wdm-roadm"], f"{p}ROADM")
-    mux_b = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-B", grid="dwdm_100ghz")
+    mux_b = create_duplex_mux(site, dt_dwdm, roles["wdm-mux"], f"{p}MUX-B", grid="dwdm_c_100ghz")
 
     pp_ea = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-EA")
     pp_eb = create_patch_panel(site, dt_pp, roles["fiber-pp"], f"{p}PP-EB")

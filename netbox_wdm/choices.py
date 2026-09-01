@@ -17,12 +17,16 @@ class WdmNodeTypeChoices(ChoiceSet):
 
 
 class WdmGridChoices(ChoiceSet):
-    DWDM_100GHZ = "dwdm_100ghz"
-    DWDM_50GHZ = "dwdm_50ghz"
+    DWDM_C_100GHZ = "dwdm_c_100ghz"
+    DWDM_C_50GHZ = "dwdm_c_50ghz"
+    DWDM_L_100GHZ = "dwdm_l_100ghz"
+    DWDM_L_50GHZ = "dwdm_l_50ghz"
     CWDM = "cwdm"
     CHOICES = (
-        (DWDM_100GHZ, "DWDM C-band 100GHz (44ch)"),
-        (DWDM_50GHZ, "DWDM C-band 50GHz (88ch)"),
+        (DWDM_C_100GHZ, "DWDM C-band 100GHz (44ch)"),
+        (DWDM_C_50GHZ, "DWDM C-band 50GHz (88ch)"),
+        (DWDM_L_100GHZ, "DWDM L-band 100GHz (72ch)"),
+        (DWDM_L_50GHZ, "DWDM L-band 50GHz (143ch)"),
         (CWDM, "CWDM (18ch)"),
     )
 

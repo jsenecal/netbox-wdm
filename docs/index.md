@@ -10,7 +10,8 @@ interactive circuit trace visualisation.
 ## What it manages
 
 - **Device-type blueprints** for terminal MUX, OADM, ROADM, and amplifier
-  hardware on the DWDM 100 GHz, DWDM 50 GHz, and CWDM grids.
+  hardware on the DWDM C-band 100 GHz, DWDM C-band 50 GHz, DWDM L-band
+  100 GHz, DWDM L-band 50 GHz, and CWDM grids.
 - **Channel-to-port assignments** for both duplex (separate MUX/DEMUX fibres)
   and single-fibre topologies.
 - **Trunk port identification** with direction (common / east / west) and role

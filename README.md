@@ -19,7 +19,7 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 - **Overlay pattern** -- `WdmDeviceTypeProfile` overlays `DeviceType` (blueprint), `WdmNode` overlays `Device` (instance).
 - **Dual port support** -- separate MUX and DEMUX front port assignments per channel, with duplex and single-fiber modes.
-- **ITU grid support** -- DWDM 100 GHz (44 ch), DWDM 50 GHz (88 ch), CWDM (18 ch).
+- **ITU grid support** -- DWDM C-band 100 GHz (44 ch), DWDM C-band 50 GHz (88 ch), DWDM L-band 100 GHz (72 ch), DWDM L-band 50 GHz (143 ch), CWDM (18 ch).
 - **EXP / 1310 ports** -- express upgrade and 1310 nm gray optic pass-through as COM rear port positions.
 - **Auto-population** -- channels automatically created from profile templates when a device is added.
 - **DeviceType integration** -- WDM Profile tab on DeviceType detail pages.

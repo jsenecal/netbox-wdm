@@ -13,7 +13,7 @@ from netbox_wdm.choices import (
     WdmNodeTypeChoices,
 )
 from netbox_wdm.models import WdmChannelPlan, WdmLinePortPlan, WdmProfile
-from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_100GHZ_CHANNELS
+from netbox_wdm.wdm_constants import CWDM_CHANNELS, DWDM_C_100GHZ_CHANNELS
 
 
 def create_cwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 8) -> DeviceType:
@@ -188,7 +188,7 @@ def create_dwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 44) 
 
     mux_fps = []
     demux_fps = []
-    for _pos, label, _wl in DWDM_100GHZ_CHANNELS[:num_channels]:
+    for _pos, label, _wl in DWDM_C_100GHZ_CHANNELS[:num_channels]:
         fp_mux, _ = FrontPortTemplate.objects.get_or_create(
             device_type=dt, name=f"{label}-MUX", defaults={"type": "lc-upc"}
         )
@@ -225,14 +225,14 @@ def create_dwdm_mux_dx_type(manufacturer: Manufacturer, num_channels: int = 44) 
         device_type=dt,
         defaults={
             "node_type": WdmNodeTypeChoices.TERMINAL_MUX,
-            "grid": WdmGridChoices.DWDM_100GHZ,
+            "grid": WdmGridChoices.DWDM_C_100GHZ,
             "fiber_type": WdmFiberTypeChoices.DUPLEX,
         },
     )
     channel_mux_fps = mux_fps[:-1]  # exclude EXP
     channel_demux_fps = demux_fps[:-1]
     for i, (fp_mux, fp_demux) in enumerate(zip(channel_mux_fps, channel_demux_fps, strict=True)):
-        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        pos, label, wl = DWDM_C_100GHZ_CHANNELS[i]
         WdmChannelPlan.objects.get_or_create(
             profile=profile,
             grid_position=pos,
@@ -332,12 +332,12 @@ def create_roadm_2d_type(manufacturer: Manufacturer, num_add_drop: int = 20) -> 
         device_type=dt,
         defaults={
             "node_type": WdmNodeTypeChoices.ROADM,
-            "grid": WdmGridChoices.DWDM_100GHZ,
+            "grid": WdmGridChoices.DWDM_C_100GHZ,
             "fiber_type": WdmFiberTypeChoices.DUPLEX,
         },
     )
     for i, (fp_add, fp_drop) in enumerate(zip(add_fps, drop_fps, strict=True)):
-        pos, label, wl = DWDM_100GHZ_CHANNELS[i]
+        pos, label, wl = DWDM_C_100GHZ_CHANNELS[i]
         WdmChannelPlan.objects.get_or_create(
             profile=profile,
             grid_position=pos,
