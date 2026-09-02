@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI now tests against the latest NetBox 4.6 release (4.6.10, previously
+  4.6.8), with Renovate keeping the matrix pinned to the newest release
+  of the supported minor.
 - **BREAKING:** the C-band grid keys are renamed to carry an explicit band segment, so both bands read alike now that L-band grids exist: `dwdm_100ghz` becomes `dwdm_c_100ghz` and `dwdm_50ghz` becomes `dwdm_c_50ghz`. Migration `0012_rename_c_band_grid_keys` rewrites the stored `grid` value on every `WdmProfile` and `WdmNode` row, and is reversible. Anything outside the database that names the old keys must be updated by hand: REST/GraphQL filter values, saved filters, export templates, scripts, and webhook payloads. Channel labels and wavelengths are unaffected -- only the key changes. The Python names follow suit: `WdmGridChoices.DWDM_100GHZ` becomes `WdmGridChoices.DWDM_C_100GHZ`, and `DWDM_100GHZ_CHANNELS` becomes `DWDM_C_100GHZ_CHANNELS`. ([#69](https://github.com/jsenecal/netbox-wdm/issues/69))
 - Cable-chain traversal is delegated to NetBox's own `CablePath.from_origin` walker instead of the plugin's two hand-unrolled walkers (one in `trace.py` for path discovery, one in `views.py` for trace rendering), which each understood a single cabling permutation. Both now read one ephemeral walk via `core_walk.walk_from_rear_port`; nothing is persisted to core's `CablePath` table. Strand pairing on multi-terminated cables continues to come from the cable profile. ([#49](https://github.com/jsenecal/netbox-wdm/issues/49))
 - The chain walker refuses any chain that revisits a port, logging a warning rather than tracing it: core's walker carries no visited set and would spin forever inside a signal handler. ([#49](https://github.com/jsenecal/netbox-wdm/issues/49))
