@@ -36,8 +36,12 @@ Manages ITU channel plans, channel-to-port assignments, trunk port identificatio
 
 | Plugin version    | NetBox version | Python    |
 |-------------------|----------------|-----------|
-| main (unreleased) | 4.6.6+         | 3.12-3.14 |
+| main (unreleased) | 4.6.6+ (4.7 supported) | 3.12-3.14 |
 | 0.2.x             | 4.5            | 3.12-3.14 |
+
+CI runs the full suite against the latest 4.6 and 4.7 releases. NetBox 4.7's
+module relocation (moving an installed module to another bay or device) is
+handled: a relocated module takes its WDM channels and line ports with it.
 
 ## Installation
 

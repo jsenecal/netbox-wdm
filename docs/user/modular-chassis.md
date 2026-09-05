@@ -51,7 +51,7 @@ rather than `(node,)` alone. Tables and forms show a **Module** column
 next to the channel/line-port fields for exactly this reason -- the
 channel list for a modular node is effectively a grid of per-module rows.
 
-## Install and remove lifecycle
+## Install, relocate, and remove lifecycle
 
 Channels and line ports for a module are **not** something you create by
 hand. They follow the module's own lifecycle:
@@ -63,6 +63,15 @@ hand. They follow the module's own lifecycle:
   for device-level ports. This runs after the transaction that created
   the module commits, so the module's real FrontPorts and RearPorts
   already exist to link against.
+- **Relocate.** NetBox 4.7 can move an installed `Module` to a different
+  bay, on the same device or another one. Its channels and line ports move
+  with it: they are repointed onto the `WdmNode` of the device the module
+  landed in (so each channel keeps its status), and any plan the module
+  had not yet populated is filled in there. If the destination device
+  carries no `WdmNode`, the rows are dropped just as a removal would drop
+  them. Both the node the module left and the node it arrived at -- plus
+  the far end of any wavelength path through the module -- are retraced
+  and rechecked for port sync once the move commits.
 - **Remove.** Deleting a `Module` cascades away its `WdmChannel` and
   `WdmLinePort` rows (and, through those, any `WdmWavelengthPathChannel`
   entries referencing them) via plain foreign-key `CASCADE` -- wavelength
@@ -79,7 +88,7 @@ hand. They follow the module's own lifecycle:
 
 None of this requires the WDM Profile tab, the wavelength editor, or any
 manual line-port creation step -- it happens purely from NetBox's own
-Module create/delete signals.
+Module save and delete signals.
 
 ## Line port plans
 
