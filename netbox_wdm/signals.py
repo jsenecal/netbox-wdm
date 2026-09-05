@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save, pre_delete
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
 
 def _device_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
@@ -101,6 +101,13 @@ def _flush_port_sync() -> None:
             expected_port_hash=compute_expected_port_hash(node),
             port_sync_valid=check_port_sync(node),
         )
+
+
+def _node_for_device(device_id: int | None) -> Any | None:
+    """The WDM node overlaying a device, or None when the device carries no node."""
+    from .models import WdmNode
+
+    return WdmNode.objects.filter(device_id=device_id).first()
 
 
 def _pass_through_port_kinds() -> dict[int, str]:
@@ -378,29 +385,46 @@ def _rearport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     _recheck_port_sync({node})
 
 
-def _module_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
-    """Populate channels and line ports when a profiled module is installed into a WDM node's device."""
-    if not created:
-        return
+def _module_overlay_impact(module: Any) -> tuple[set[Any], set[int]]:
+    """The WDM nodes and wavelength paths a module's overlay rows take part in.
 
-    from .models import WdmNode
+    Nodes are read from the rows themselves rather than from the module's device:
+    a relocated module's channels and line ports still sit on the node it left,
+    which is exactly the node that needs pruning and retracing. Far-end nodes
+    sharing a wavelength path with one of the module's channels come along too,
+    since those paths lose an end when the module's rows move or go away.
+    """
+    from .models import WdmChannel, WdmLinePort, WdmNode, WdmWavelengthPathChannel
 
-    try:
-        node = WdmNode.objects.get(device=instance.device)
-    except WdmNode.DoesNotExist:
-        return
+    channels = list(WdmChannel.objects.filter(module=module).values_list("pk", "wdm_node_id"))
+    channel_ids = [pk for pk, _ in channels]
+    node_pks = {node_pk for _, node_pk in channels}
+    node_pks |= set(WdmLinePort.objects.filter(module=module).values_list("wdm_node_id", flat=True))
 
-    transaction.on_commit(lambda: node.populate_module(instance))
+    affected_path_ids: set[int] = set()
+    if channel_ids:
+        entries = WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
+        affected_path_ids = set(entries.values_list("path_id", flat=True))
+        if affected_path_ids:
+            node_pks |= set(
+                WdmWavelengthPathChannel.objects.filter(path_id__in=affected_path_ids)
+                .exclude(channel_id__in=channel_ids)
+                .values_list("channel__wdm_node", flat=True)
+                .distinct()
+            )
+
+    return set(WdmNode.objects.filter(pk__in=node_pks)), affected_path_ids
 
 
-def _cleanup_after_module_delete(nodes: set[Any], affected_path_ids: set[int]) -> None:
-    """Prune broken wavelength paths and retrace affected nodes after a module's rows cascade away.
+def _prune_and_retrace(nodes: set[Any], affected_path_ids: set[int]) -> None:
+    """Prune broken wavelength paths and retrace affected nodes once a module's rows have settled.
 
-    Runs after the module (and its channels, line ports, and wavelength-path
-    entries) have already been deleted via plain FK cascades. A path that lost
-    some but not all of its channels is left partial (fewer than 2 entries) and
-    no longer means anything, so it and any leftover entries are dropped here;
-    surviving nodes are then retraced and rechecked for port sync.
+    Runs after the module's channels, line ports, and wavelength-path entries
+    have already been deleted via plain FK cascades, or -- for a relocation --
+    moved to the node that now owns the module. A path that lost some but not all
+    of its channels is left partial (fewer than 2 entries) and no longer means
+    anything, so it and any leftover entries are dropped here; the nodes are then
+    retraced and rechecked for port sync.
     """
     from .models import WdmWavelengthPath
 
@@ -413,6 +437,92 @@ def _cleanup_after_module_delete(nodes: set[Any], affected_path_ids: set[int]) -
     _recheck_port_sync(nodes)
 
 
+def _schedule_prune_and_retrace(nodes: set[Any], affected_path_ids: set[int], extra_node: Any | None = None) -> None:
+    """Queue `_prune_and_retrace` for after the transaction commits, once the rows have settled.
+
+    `extra_node` is the node the caller knows about beyond the ones the module's
+    overlay rows name: the node a relocated module landed on, or the node of the
+    device a removed module was installed in.
+    """
+    if extra_node is not None:
+        nodes.add(extra_node)
+    if nodes:
+        transaction.on_commit(lambda: _prune_and_retrace(nodes, affected_path_ids))
+
+
+def _module_pre_save(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Record the device a module is installed in before the save, so post_save can spot a move.
+
+    Read back from the database rather than from core's field tracker, which only
+    covers counter fields: the device a module is moving away from is precisely
+    what the in-memory instance no longer holds by the time post_save fires.
+    """
+    instance._wdm_previous_device_id = (
+        sender.objects.filter(pk=instance.pk).values_list("device_id", flat=True).first() if instance.pk else None
+    )
+
+
+def _module_post_save(sender: type, instance: Any, created: bool, **kwargs: Any) -> None:
+    """Keep the overlay in step with where a module is installed.
+
+    A newly installed module has its channels and line ports populated from its
+    ModuleType's profile. An existing module that changed device -- NetBox
+    relocates a module by saving the existing row into a different module bay,
+    another device's included -- has to take its overlay rows with it: those rows
+    carry the module, so leaving them on the node it left makes
+    `WdmChannel.clean()` and `WdmLinePort.clean()` reject the pair for belonging
+    to different devices. A bay change within one device needs nothing here: the
+    rows already sit on the right node and reference the module's own ports, and
+    the components core renames along the way recheck port sync themselves.
+    """
+    if created:
+        node = _node_for_device(instance.device_id)
+        if node is not None:
+            transaction.on_commit(lambda: node.populate_module(instance))
+        return
+
+    # A save that does not write the placement columns cannot have moved the
+    # module, however the in-memory instance reads -- core skips the move for the
+    # same reason, leaving the stored device untouched.
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and {"device", "device_id"}.isdisjoint(update_fields):
+        return
+
+    previous_device_id = getattr(instance, "_wdm_previous_device_id", None)
+    if previous_device_id is None or previous_device_id == instance.device_id:
+        return
+
+    _relocate_module_overlay(instance, _node_for_device(instance.device_id))
+
+
+def _relocate_module_overlay(module: Any, destination: Any) -> None:
+    """Move a relocated module's overlay rows onto the WDM node that now owns it.
+
+    The rows are repointed rather than recreated, so channel status survives the
+    move; the module's own front and rear ports travel with it, so the ports those
+    rows reference stay correct. A destination device with no WDM node has nowhere
+    to keep them and they are dropped, exactly as removing the module would. The
+    destination is then repopulated -- covering a module arriving from a device
+    that never had a node -- and both ends are pruned and retraced by the same
+    cleanup the removal path uses.
+    """
+    from .models import WdmChannel, WdmLinePort
+
+    nodes, affected_path_ids = _module_overlay_impact(module)
+    channels = WdmChannel.objects.filter(module=module)
+    line_ports = WdmLinePort.objects.filter(module=module)
+
+    if destination is None:
+        channels.delete()
+        line_ports.delete()
+    else:
+        channels.update(wdm_node=destination)
+        line_ports.update(wdm_node=destination)
+        transaction.on_commit(lambda: destination.populate_module(module))
+
+    _schedule_prune_and_retrace(nodes, affected_path_ids, destination)
+
+
 def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
     """Capture WDM nodes affected by a module's removal, then schedule cleanup for after it cascades.
 
@@ -420,36 +530,15 @@ def _module_pre_delete(sender: type, instance: Any, **kwargs: Any) -> None:
     WdmChannel and WdmLinePort rows, and further through any WdmWavelengthPathChannel
     entries referencing those channels -- wavelength paths are derived data, not
     source of truth, so none of that needs protecting. This handler only captures,
-    before the cascade runs, which nodes are affected (the module's own node, plus
-    any far-end node sharing a wavelength path with one of the module's channels)
-    and which paths those channels belonged to, then defers the actual pruning and
-    retrace to `_cleanup_after_module_delete` once the transaction commits (i.e.
-    once the cascade has already happened).
+    before the cascade runs, which nodes are affected (the nodes holding the
+    module's rows and the module's own node, plus any far-end node sharing a
+    wavelength path with one of the module's channels) and which paths those
+    channels belonged to, then defers the actual pruning and retrace to
+    `_prune_and_retrace` once the transaction commits (i.e. once the cascade has
+    already happened).
     """
-    from .models import WdmChannel, WdmNode, WdmWavelengthPathChannel
-
-    try:
-        node = WdmNode.objects.get(device=instance.device)
-    except WdmNode.DoesNotExist:
-        return
-
-    channel_ids = list(WdmChannel.objects.filter(module=instance).values_list("pk", flat=True))
-    nodes = {node}
-    affected_path_ids: set[int] = set()
-
-    if channel_ids:
-        entries = WdmWavelengthPathChannel.objects.filter(channel_id__in=channel_ids)
-        affected_path_ids = set(entries.values_list("path_id", flat=True))
-        if affected_path_ids:
-            far_node_pks = (
-                WdmWavelengthPathChannel.objects.filter(path_id__in=affected_path_ids)
-                .exclude(channel_id__in=channel_ids)
-                .values_list("channel__wdm_node", flat=True)
-                .distinct()
-            )
-            nodes |= set(WdmNode.objects.filter(pk__in=far_node_pks))
-
-    transaction.on_commit(lambda: _cleanup_after_module_delete(nodes, affected_path_ids))
+    nodes, affected_path_ids = _module_overlay_impact(instance)
+    _schedule_prune_and_retrace(nodes, affected_path_ids, _node_for_device(instance.device_id))
 
 
 def connect_signals() -> None:
@@ -475,5 +564,6 @@ def connect_signals() -> None:
     post_delete.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
     post_save.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
     post_delete.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")
+    pre_save.connect(_module_pre_save, sender=Module, dispatch_uid="wdm_module_pre_save")
     post_save.connect(_module_post_save, sender=Module, dispatch_uid="wdm_module_post_save")
     pre_delete.connect(_module_pre_delete, sender=Module, dispatch_uid="wdm_module_pre_delete")

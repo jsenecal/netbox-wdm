@@ -372,6 +372,98 @@ class TestModuleLifecycleSignals:
             assert not channel.wavelength_path_entries.exists()
 
 
+class TestModuleRelocation:
+    def test_relocated_module_overlay_follows_the_module(
+        self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks
+    ):
+        """Regression test for issue #76.
+
+        NetBox 4.7 relocates an installed module by saving the existing row into a
+        different module bay, cross-device included, so the module lands on another
+        WDM node with `created=False`. The overlay used to leave the module's
+        channels and line ports on the node it left, where `WdmChannel.clean()` and
+        `WdmLinePort.clean()` reject them for belonging to a different device, and
+        neither node was rehashed or retraced.
+        """
+        from netbox_wdm.port_sync import check_port_sync, compute_expected_port_hash
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        source = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "MOVE-SRC", mt, bays=("MUX1",))
+        dest = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "MOVE-DST", mt, bays=("MUX1",))
+        spare_bay = ModuleBay.objects.create(device=dest.device, name="MUX2", position="MUX2")
+        module = source.modules["MUX1"]
+        assert source.node.channels.filter(module=module).count() == 8
+
+        # An edit that leaves the module where it is must not disturb the overlay,
+        # nor may a save that names another device without writing the placement
+        # columns -- core leaves the module where it is for that one too.
+        with django_capture_on_commit_callbacks(execute=True):
+            module.serial = "SN-STAY"
+            module.save()
+        assert source.node.channels.filter(module=module).count() == 8
+
+        module.device = dest.device
+        with django_capture_on_commit_callbacks(execute=True):
+            module.save(update_fields=["serial"])
+        assert source.node.channels.filter(module=module).count() == 8
+        module.refresh_from_db()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            module.device = dest.device
+            module.module_bay = spare_bay
+            module.save()
+
+        assert not source.node.channels.filter(module=module).exists()
+        assert not source.node.line_ports.filter(module=module).exists()
+        assert dest.node.channels.filter(module=module).count() == 8
+        assert dest.node.line_ports.filter(module=module).count() == 2
+        # the destination node now carries both cassettes' channels
+        assert dest.node.channels.count() == 16
+
+        # the rows the relocation used to strand validate against their new node
+        for row in [*dest.node.channels.filter(module=module), *dest.node.line_ports.filter(module=module)]:
+            row.full_clean()
+
+        # both ends were rehashed: the destination against its two cassettes, the
+        # source against the nothing the move left it with
+        dest.node.refresh_from_db()
+        assert dest.node.expected_port_hash == compute_expected_port_hash(dest.node)
+        assert check_port_sync(dest.node) is True
+        source.node.refresh_from_db()
+        assert check_port_sync(source.node) is True
+        assert source.node.port_sync_valid is True
+
+    def test_relocation_to_a_device_without_a_node_drops_the_overlay_rows(
+        self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks
+    ):
+        """A cassette moved into a device carrying no WDM node has nowhere for its
+        overlay rows to live, so they go away exactly as removing the module would
+        rather than staying behind on the node the module left (issue #76).
+        """
+        from netbox_wdm.testing import create_cwdm_cassette_module_type, create_modular_chassis
+
+        mt = create_cwdm_cassette_module_type(wdm_manufacturer)
+        source = create_modular_chassis(wdm_site, wdm_roles["wdm-mux"], "MOVE-PLAIN-SRC", mt, bays=("MUX1",))
+        plain = Device.objects.create(
+            name="MOVE-PLAIN-DST",
+            site=wdm_site,
+            device_type=source.device.device_type,
+            role=wdm_roles["wdm-mux"],
+        )
+        bay = ModuleBay.objects.create(device=plain, name="MUX1", position="MUX1")
+        module = source.modules["MUX1"]
+        assert not WdmNode.objects.filter(device=plain).exists()
+
+        with django_capture_on_commit_callbacks(execute=True):
+            module.device = plain
+            module.module_bay = bay
+            module.save()
+
+        assert not WdmChannel.objects.filter(module=module).exists()
+        assert not WdmLinePort.objects.filter(module=module).exists()
+
+
 class TestDeviceLevelRearPortDeletion:
     def test_deleting_rear_port_cascades_line_port(self, wdm_site, wdm_manufacturer, wdm_roles):
         """Device-level (non-modular) line ports also cascade when their rear port is
