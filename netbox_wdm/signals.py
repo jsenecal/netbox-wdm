@@ -349,11 +349,8 @@ def _lineport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
 
 def _portmapping_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     """Rebuild wavelength paths and recheck port sync when a port mapping changes."""
-    from .models import WdmNode
-
-    try:
-        node = WdmNode.objects.get(device=instance.device)
-    except WdmNode.DoesNotExist:
+    node = _node_for_device(instance.device_id)
+    if node is None:
         return
 
     nodes = {node}
@@ -361,25 +358,10 @@ def _portmapping_changed(sender: type, instance: Any, **kwargs: Any) -> None:
     _recheck_port_sync(nodes)
 
 
-def _frontport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Recheck port sync when a FrontPort is created, updated, or deleted."""
-    from .models import WdmNode
-
-    try:
-        node = WdmNode.objects.get(device=instance.device)
-    except WdmNode.DoesNotExist:
-        return
-
-    _recheck_port_sync({node})
-
-
-def _rearport_changed(sender: type, instance: Any, **kwargs: Any) -> None:
-    """Recheck port sync when a RearPort is created, updated, or deleted."""
-    from .models import WdmNode
-
-    try:
-        node = WdmNode.objects.get(device=instance.device)
-    except WdmNode.DoesNotExist:
+def _port_changed(sender: type, instance: Any, **kwargs: Any) -> None:
+    """Recheck port sync when a FrontPort or RearPort is created, updated, or deleted."""
+    node = _node_for_device(instance.device_id)
+    if node is None:
         return
 
     _recheck_port_sync({node})
@@ -560,10 +542,10 @@ def connect_signals() -> None:
     post_delete.connect(_lineport_changed, sender=WdmLinePort, dispatch_uid="wdm_lineport_post_delete")
     post_save.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_save")
     post_delete.connect(_portmapping_changed, sender=PortMapping, dispatch_uid="wdm_portmapping_post_delete")
-    post_save.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_save")
-    post_delete.connect(_frontport_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
-    post_save.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
-    post_delete.connect(_rearport_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")
+    post_save.connect(_port_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_save")
+    post_delete.connect(_port_changed, sender=FrontPort, dispatch_uid="wdm_frontport_post_delete")
+    post_save.connect(_port_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_save")
+    post_delete.connect(_port_changed, sender=RearPort, dispatch_uid="wdm_rearport_post_delete")
     pre_save.connect(_module_pre_save, sender=Module, dispatch_uid="wdm_module_pre_save")
     post_save.connect(_module_post_save, sender=Module, dispatch_uid="wdm_module_post_save")
     pre_delete.connect(_module_pre_delete, sender=Module, dispatch_uid="wdm_module_pre_delete")
