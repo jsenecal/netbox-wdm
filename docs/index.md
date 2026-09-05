@@ -73,4 +73,5 @@ External:
 ## Status
 
 netbox-wdm is alpha software. The data model and REST API may change between
-0.x releases. The plugin requires NetBox 4.6.6 or later.
+0.x releases. The plugin requires NetBox 4.6.6 or later, and supports the 4.6
+and 4.7 series.
