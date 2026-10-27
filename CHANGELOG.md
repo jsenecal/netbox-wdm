@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-27
+
 ### Added
 
 - Two L-band DWDM fixed grids, `dwdm_l_100ghz` (72ch) and `dwdm_l_50ghz` (143ch), spanning 184.50-191.60 THz (ITU-T G.694.1's 1565-1625 nm L-band) with frequency-based `L{freq}` labels, e.g. `L184.50`. Neither grid overlaps the existing C-band grids. ([#69](https://github.com/jsenecal/netbox-wdm/issues/69))
