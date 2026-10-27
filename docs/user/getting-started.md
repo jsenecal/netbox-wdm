@@ -8,7 +8,7 @@ reference docs for each step.
 
 ## Requirements
 
-- NetBox 4.6.6 or later (4.6 and 4.7 series supported)
+- NetBox 4.7.0 or later (4.7 series)
 - Python 3.12, 3.13, or 3.14
 - PostgreSQL with PostGIS (the standard NetBox database)
 

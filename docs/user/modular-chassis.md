@@ -63,7 +63,7 @@ hand. They follow the module's own lifecycle:
   for device-level ports. This runs after the transaction that created
   the module commits, so the module's real FrontPorts and RearPorts
   already exist to link against.
-- **Relocate.** NetBox 4.7 can move an installed `Module` to a different
+- **Relocate.** NetBox can move an installed `Module` to a different
   bay, on the same device or another one. Its channels and line ports move
   with it: they are repointed onto the `WdmNode` of the device the module
   landed in (so each channel keeps its status), and any plan the module

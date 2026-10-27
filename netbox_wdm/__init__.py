@@ -15,7 +15,7 @@ class NetBoxWDMConfig(PluginConfig):
     author = "Jonathan Senecal"
     author_email = "contact@jonathansenecal.com"
     base_url = "wdm"
-    min_version = "4.6.6"
+    min_version = "4.7.0"
     default_settings = {
         # Maximum number of hops the cable-chain walker follows between two
         # WDM nodes before giving up (guards against cabling loops).

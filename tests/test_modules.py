@@ -372,22 +372,13 @@ class TestModuleLifecycleSignals:
             assert not channel.wavelength_path_entries.exists()
 
 
-def _core_moves_module_components() -> bool:
-    """Whether this NetBox release relocates a module's components along with it (4.7+)."""
-    try:
-        import dcim.models.module_moves  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 class TestModuleRelocation:
     def test_relocated_module_overlay_follows_the_module(
         self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks
     ):
         """Regression test for issue #76.
 
-        NetBox 4.7 relocates an installed module by saving the existing row into a
+        NetBox relocates an installed module by saving the existing row into a
         different module bay, cross-device included, so the module lands on another
         WDM node with `created=False`. The overlay used to leave the module's
         channels and line ports on the node it left, where `WdmChannel.clean()` and
@@ -435,19 +426,15 @@ class TestModuleRelocation:
             row.full_clean()
 
         # Both ends were rehashed: the destination against its two cassettes, the
-        # source against the nothing the move left it with. Full port sync also
-        # needs the module's own front and rear ports on the new device, which
-        # only NetBox 4.7's move machinery does; on 4.6 relocation is not a core
-        # feature, the ports stay behind, and the overlay correctly reports both
-        # nodes out of sync -- so the sync assertions apply only where core moves
-        # the components.
-        if _core_moves_module_components():
-            dest.node.refresh_from_db()
-            assert dest.node.expected_port_hash == compute_expected_port_hash(dest.node)
-            assert check_port_sync(dest.node) is True
-            source.node.refresh_from_db()
-            assert check_port_sync(source.node) is True
-            assert source.node.port_sync_valid is True
+        # source against the nothing the move left it with. Core's move machinery
+        # carries the module's own front and rear ports to the new device, so both
+        # nodes report in sync.
+        dest.node.refresh_from_db()
+        assert dest.node.expected_port_hash == compute_expected_port_hash(dest.node)
+        assert check_port_sync(dest.node) is True
+        source.node.refresh_from_db()
+        assert check_port_sync(source.node) is True
+        assert source.node.port_sync_valid is True
 
     def test_relocation_to_a_device_without_a_node_drops_the_overlay_rows(
         self, wdm_site, wdm_manufacturer, wdm_roles, django_capture_on_commit_callbacks

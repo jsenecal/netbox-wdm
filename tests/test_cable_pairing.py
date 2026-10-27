@@ -3,7 +3,7 @@
 The tracer used to pair A-side termination N with B-side termination N by pk
 order, which silently follows the wrong strand whenever CableTermination pk
 order diverges from strand order (e.g. after a strand re-termination).
-NetBox 4.6+ cable profiles persist the strand pairing on each
+NetBox cable profiles persist the strand pairing on each
 CableTermination (connector/positions), which is authoritative.
 
 The read-only classes share committed class-scoped topology fixtures instead
