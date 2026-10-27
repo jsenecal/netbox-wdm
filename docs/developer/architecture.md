@@ -110,7 +110,7 @@ The plugin uses NetBox's public plugin API consistently:
 | `ViewTab`, `register_model_view` | `utilities.views` |
 | `PluginTemplateExtension` | `netbox.plugins.PluginTemplateExtension` |
 
-These imports follow NetBox 4.5's stable plugin contract.
+These imports follow NetBox 4.7's stable plugin contract.
 
 ## URL naming convention
 

@@ -58,7 +58,7 @@ A duplex link between two MUXes via a patch panel pair therefore needs
 `b_terminations` are lists of two ports each.
 
 **Duplex cables must carry a cable profile.** Assign the `trunk-2c1p`
-profile (NetBox 4.6+, "Trunk / 2C1P": two connectors per side, one
+profile ("Trunk / 2C1P": two connectors per side, one
 position each) to every duplex WDM cable. The profile makes NetBox
 persist the strand identity on each termination (its *connector*), and
 the tracer resolves the far end of each strand through the profile's
