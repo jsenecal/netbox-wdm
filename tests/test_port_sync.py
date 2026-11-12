@@ -188,6 +188,7 @@ class TestSignalInvalidation:
         assert node.port_sync_valid is False
 
 
+from dcim.models import CablePath
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory
 from rest_framework.test import force_authenticate
@@ -233,6 +234,26 @@ class TestSyncPortsAPI:
         assert response.data["dry_run"] is False
         assert response.data["changes"]["port_mappings"]["create"] > 0
         assert check_port_sync(bundle.node)
+
+    def test_dry_run_false_retraces_lit_path(self, lit_duplex_pair):
+        """Regression test for issue #93: syncing a node whose line ports are cabled.
+
+        The client's CablePath ends at MUX-B's CH1 demux front port. Removing
+        MUX-B's PortMappings cuts it short at MUX-B's line port. The sync must
+        succeed, and the path must reach the front port again afterwards.
+        """
+        mux_b = lit_duplex_pair.bundles["mux_b"]
+        far_end = mux_b.channels[0].demux_front_port
+        assert CablePath.objects.filter(_nodes__contains=far_end).exists()
+        PortMapping.objects.filter(device=mux_b.device).delete()
+        assert not CablePath.objects.filter(_nodes__contains=far_end).exists()
+
+        response = self._make_request(mux_b.node, {"dry_run": "false"})
+
+        assert response.status_code == 200
+        assert response.data["changes"]["port_mappings"]["create"] > 0
+        assert check_port_sync(mux_b.node)
+        assert CablePath.objects.filter(_nodes__contains=far_end).exists()
 
     def test_response_includes_warnings(self, wdm_site, dt_cwdm_dx, wdm_roles):
         """Response includes warnings section."""

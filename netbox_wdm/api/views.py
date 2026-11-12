@@ -176,7 +176,7 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
 def _retrace_affected_paths(wdm_node: Any, line_ports: list[Any]) -> None:
     """Retrace CablePaths that traverse cables connected to the node's line ports."""
-    from dcim.models import CablePath, CableTermination
+    from dcim.models import Cable, CablePath, CableTermination
     from django.contrib.contenttypes.models import ContentType
 
     rp_ids = [tp.rear_port_id for tp in line_ports]
@@ -189,13 +189,16 @@ def _retrace_affected_paths(wdm_node: Any, line_ports: list[Any]) -> None:
         .values_list("cable_id", flat=True)
         .distinct()
     )
+    cables = list(Cable.objects.filter(pk__in=cable_ids))
 
-    if not cable_ids:
+    if not cables:
         return
 
+    # NetBox's `_nodes__contains` lookup compiles a model instance to a path
+    # node itself; it does not accept a raw dict or ID.
     q = Q()
-    for cid in cable_ids:
-        q |= Q(_nodes__contains=[{"cable_id": cid}])
+    for cable in cables:
+        q |= Q(_nodes__contains=cable)
     affected_paths = CablePath.objects.filter(q).distinct()
     for path in affected_paths:
         path.retrace()

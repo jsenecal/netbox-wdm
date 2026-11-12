@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 import pytest
-from dcim.models import Device, DeviceRole, DeviceType, Manufacturer, Site
+from dcim.models import CablePath, Device, DeviceRole, DeviceType, Manufacturer, Site
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -387,6 +387,30 @@ class TestApplyMappingAPI:
         assert response.data["removed"] == 0
         assert response.data["changed"] == 0
         assert "last_updated" in response.data
+
+    def test_remap_on_cabled_node_retraces_lit_path(self, api_client, lit_duplex_pair):
+        """Regression test for issue #93: remapping channels on a node whose line ports are cabled.
+
+        The client's CablePath ends at MUX-B's CH1 demux front port. Freeing
+        CH2's ports and then moving CH1 onto them must both succeed, and the
+        path must then end at the front port CH1 maps to after the move.
+        """
+        mux_b = lit_duplex_pair.bundles["mux_b"]
+        ch1, ch2 = mux_b.channels[0], mux_b.channels[1]
+        old_end, new_end = ch1.demux_front_port, ch2.demux_front_port
+        new_ports = {"mux": ch2.mux_front_port_id, "demux": ch2.demux_front_port_id}
+        assert CablePath.objects.filter(_nodes__contains=old_end).exists()
+
+        url = self._url(mux_b.node.pk)
+        freed = api_client.post(url, {"mapping": {str(ch2.pk): {"mux": None, "demux": None}}}, format="json")
+        moved = api_client.post(url, {"mapping": {str(ch1.pk): new_ports}}, format="json")
+
+        assert freed.status_code == status.HTTP_200_OK
+        assert freed.data["removed"] == 1
+        assert moved.status_code == status.HTTP_200_OK
+        assert moved.data["changed"] == 1
+        assert CablePath.objects.filter(_nodes__contains=new_end).exists()
+        assert not CablePath.objects.filter(_nodes__contains=old_end).exists()
 
 
 # ---------------------------------------------------------------------------
