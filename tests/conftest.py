@@ -15,6 +15,8 @@ from dataclasses import dataclass, field  # noqa: E402
 from itertools import count  # noqa: E402
 from typing import Any  # noqa: E402
 
+from dcim.models import Cable, Device, DeviceType, Interface  # noqa: E402
+
 from netbox_wdm.testing import (  # noqa: E402
     create_cwdm_mux_dx_type,
     create_cwdm_mux_sf_type,
@@ -68,6 +70,22 @@ def dt_roadm(wdm_manufacturer):
 @pytest.fixture
 def dt_pp(wdm_manufacturer):
     return create_fiber_pp_type(wdm_manufacturer)
+
+
+@pytest.fixture
+def lit_duplex_pair(wdm_site, wdm_manufacturer, dt_cwdm_dx, dt_pp, wdm_roles):
+    """A duplex_mux_pair lit by a client interface cabled into MUX-A's CH1 mux front port.
+
+    The interface originates the only CablePath in the topology. It crosses
+    both nodes' line-port cables and ends at MUX-B's CH1 demux front port.
+    """
+    topo = duplex_mux_pair(wdm_site, dt_cwdm_dx, dt_pp, wdm_roles)
+    dt_client = DeviceType.objects.create(manufacturer=wdm_manufacturer, model="Client-XCVR", slug="client-xcvr")
+    client = Device.objects.create(site=wdm_site, device_type=dt_client, role=wdm_roles["wdm-mux"], name="CLIENT-A")
+    iface = Interface.objects.create(device=client, name="xe-0/0/0", type="10gbase-x-sfpp")
+    ch1 = topo.bundles["mux_a"].channels[0]
+    Cable(status="connected", a_terminations=[iface], b_terminations=[ch1.mux_front_port]).save()
+    return topo
 
 
 # ---------------------------------------------------------------------------
