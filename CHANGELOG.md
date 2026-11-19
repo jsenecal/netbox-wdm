@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Port sync (`sync-ports?dry_run=false`) and channel mapping apply (`apply-mapping`) no longer fail with HTTP 500 (`AttributeError: 'Func' object has no attribute '_meta'`) on a node whose line ports are cabled. The affected-path lookup passed a dict to NetBox's `_nodes__contains`, which only accepts a model instance; it now passes the cables themselves, so cable paths crossing the node's line port cables are retraced as intended. ([#93](https://github.com/jsenecal/netbox-wdm/issues/93))
+- Port sync (`sync-ports?dry_run=false`) and channel mapping apply (`apply-mapping`) no longer fail with HTTP 500 (`AttributeError: 'Func' object has no attribute '_meta'`) on a node whose line ports are cabled. After creating port mappings in bulk, they now retrace every cable path through the new mappings' front or rear ports, as NetBox core's own PortMapping receiver does for single saves. This also retraces a path cut short at the synced node's own front port. ([#93](https://github.com/jsenecal/netbox-wdm/issues/93))
 
 ## [0.3.0] - 2026-10-27
 

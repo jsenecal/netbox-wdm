@@ -255,6 +255,27 @@ class TestSyncPortsAPI:
         assert check_port_sync(mux_b.node)
         assert CablePath.objects.filter(_nodes__contains=far_end).exists()
 
+    def test_dry_run_false_retraces_path_cut_at_own_front_port(self, lit_duplex_pair):
+        """Syncing the node a path enters retraces a path cut short at that node's front port.
+
+        The client is cabled into MUX-A's CH1 mux front port. Removing MUX-A's
+        PortMappings cuts its CablePath short at that front port, before any
+        line-port cable. The sync must extend the path to MUX-B's CH1 demux
+        front port again.
+        """
+        mux_a = lit_duplex_pair.bundles["mux_a"]
+        near_end = mux_a.channels[0].mux_front_port
+        far_end = lit_duplex_pair.bundles["mux_b"].channels[0].demux_front_port
+        PortMapping.objects.filter(device=mux_a.device).delete()
+        assert CablePath.objects.filter(_nodes__contains=near_end).exists()
+        assert not CablePath.objects.filter(_nodes__contains=far_end).exists()
+
+        response = self._make_request(mux_a.node, {"dry_run": "false"})
+
+        assert response.status_code == 200
+        assert check_port_sync(mux_a.node)
+        assert CablePath.objects.filter(_nodes__contains=far_end).exists()
+
     def test_response_includes_warnings(self, wdm_site, dt_cwdm_dx, wdm_roles):
         """Response includes warnings section."""
         bundle = create_duplex_mux(wdm_site, dt_cwdm_dx, wdm_roles["wdm-mux"], "MUX-A")

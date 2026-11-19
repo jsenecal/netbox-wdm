@@ -476,11 +476,10 @@ def apply_sync(node: WdmNode) -> dict[str, Any]:
         if new_mappings:
             PortMapping.objects.bulk_create(new_mappings)
 
-        # Retrace affected CablePaths
-        from .api.views import _retrace_affected_paths
+            # Retrace CablePaths through the new mappings' ports
+            from .api.views import _retrace_paths_through_mappings
 
-        line_ports = list(node.line_ports.select_related("rear_port").all())
-        _retrace_affected_paths(node, line_ports)
+            _retrace_paths_through_mappings(new_mappings)
 
         # Update hash and flag
         node.expected_port_hash = compute_expected_port_hash(node)

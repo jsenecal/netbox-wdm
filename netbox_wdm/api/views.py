@@ -167,40 +167,37 @@ def _apply_mapping(wdm_node: Any, desired_mapping: dict[int, dict[str, int | Non
 
     if new_mappings_to_create:
         PortMapping.objects.bulk_create(new_mappings_to_create)
-
-    if channels_to_update:
-        _retrace_affected_paths(wdm_node, line_ports)
+        _retrace_paths_through_mappings(new_mappings_to_create)
 
     return {"added": added, "removed": removed, "changed": changed}
 
 
-def _retrace_affected_paths(wdm_node: Any, line_ports: list[Any]) -> None:
-    """Retrace CablePaths that traverse cables connected to the node's line ports."""
-    from dcim.models import Cable, CablePath, CableTermination
+def _retrace_paths_through_mappings(mappings: list[Any]) -> None:
+    """Retrace the CablePaths that run through the ports of bulk-created PortMappings.
+
+    NetBox core retraces these paths in its PortMapping receiver
+    (``dcim.signals.update_passthrough_port_paths``), but ``bulk_create`` sends
+    no ``post_save``. This does the same for the created mappings, matching every
+    path that contains one of their front or rear ports: a path cut short at
+    either port by an earlier delete, or one that runs through them. Deletes go
+    through ``QuerySet.delete()``, which sends ``post_delete``, so core already
+    retraces those.
+    """
+    from dcim.models import CablePath
+    from dcim.utils import compile_path_node
     from django.contrib.contenttypes.models import ContentType
 
-    rp_ids = [tp.rear_port_id for tp in line_ports]
-    if not rp_ids:
+    if not mappings:
         return
 
-    rp_ct = ContentType.objects.get_for_model(RearPort)
-    cable_ids = (
-        CableTermination.objects.filter(termination_type=rp_ct, termination_id__in=rp_ids)
-        .values_list("cable_id", flat=True)
-        .distinct()
-    )
-    cables = list(Cable.objects.filter(pk__in=cable_ids))
+    fp_ct = ContentType.objects.get_for_model(FrontPort).pk
+    rp_ct = ContentType.objects.get_for_model(RearPort).pk
+    nodes = set()
+    for mapping in mappings:
+        nodes.add(compile_path_node(fp_ct, mapping.front_port_id))
+        nodes.add(compile_path_node(rp_ct, mapping.rear_port_id))
 
-    if not cables:
-        return
-
-    # NetBox's `_nodes__contains` lookup compiles a model instance to a path
-    # node itself; it does not accept a raw dict or ID.
-    q = Q()
-    for cable in cables:
-        q |= Q(_nodes__contains=cable)
-    affected_paths = CablePath.objects.filter(q).distinct()
-    for path in affected_paths:
+    for path in list(CablePath.objects.filter(_nodes__overlap=sorted(nodes))):
         path.retrace()
 
 
